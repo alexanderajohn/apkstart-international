@@ -24,3 +24,13 @@ test('fork release endpoint stays separate from upstream', () => {
   assert.match(source,/OWNER_GH = 'alexanderajohn'/);
   assert.match(source,/REPO = 'apkstart-international'/);
 });
+
+test('primary user journeys have translated labels', () => {
+  const keys=['运行时与环境','一键完成','重置安卓数据','系统语言','检查更新','打开设置','性能与资源占用'];
+  for (const key of keys) {
+    for (const locale of ['en','vi']) assert.notEqual(dict[locale][key], key, locale + ': ' + key);
+  }
+});
+test('catalog includes at least 100 checked UI strings', () => {
+  assert.ok(Object.keys(dict.en).length >= 100);
+});

@@ -39,7 +39,7 @@ function relTime(ts) {
   if (d < 3600000) return `${Math.floor(d / 60000)} 分钟前`;
   if (d < 86400000) return `${Math.floor(d / 3600000)} 小时前`;
   if (d < 86400000 * 30) return `${Math.floor(d / 86400000)} 天前`;
-  return new Date(ts).toLocaleDateString('zh-CN');
+  return new Date(ts).toLocaleDateString(window.ASI_I18N?.getLanguage() || 'en');
 }
 
 /**
