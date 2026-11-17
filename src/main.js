@@ -2793,6 +2793,26 @@ if (!gotLock) {
               );
               console.log('[smoke] dom =', dbg);
             }
+            if (process.argv.includes('--smartcheck')) {
+              // CI-only synthetic APK demo: inspect in the real renderer, without installing.
+              const fixture = process.env.ASI_SMARTCHECK_FIXTURE;
+              if (!fixture || !fs.existsSync(fixture)) throw new Error('SmartCheck fixture missing');
+              const started = await mainWindow.webContents.executeJavaScript(
+                'window.ASI_SMARTCHECK.confirm(' + JSON.stringify(fixture) + '); true;',
+              );
+              if (!started) throw new Error('SmartCheck dialog did not start');
+              let verified = false;
+              for (let i = 0; i < 35; i += 1) {
+                await new Promise((r) => setTimeout(r, 100));
+                const state = await mainWindow.webContents.executeJavaScript(
+                  "JSON.stringify({ opened: document.getElementById('smartCheckMask').classList.contains('on'), ready: !document.getElementById('smartCheckProceed').disabled, hash: document.getElementById('smartCheckDetails').textContent.includes('SHA-256') })",
+                );
+                const status = JSON.parse(state);
+                if (status.opened && status.ready && status.hash) { verified = true; break; }
+              }
+              if (!verified) throw new Error('SmartCheck did not render local APK inspection');
+              console.log('[smoke] SmartCheck visible with local SHA-256; no install triggered');
+            }
             // 窗口可能被遮挡导致拿到旧帧：强制重绘 + 连拍两帧取后一帧
             const snap = async (file) => {
               mainWindow.webContents.invalidate();

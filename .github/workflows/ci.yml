@@ -86,8 +86,8 @@ jobs:
           $ui = Join-Path $root 'resources/app/src/ui/index.html'
           if (!(Test-Path $ui)) { throw "Renderer files missing: $ui" }
           Write-Host "Preview built at $exe"
-      - name: Smoke-run Windows UI without Android provisioning
-        continue-on-error: true
+      - name: Smoke-run SmartCheck with synthetic APK (no Android provisioning)
+        continue-on-error: false
         timeout-minutes: 3
         shell: pwsh
         run: |
@@ -97,7 +97,9 @@ jobs:
           '{"autoDeploy":false,"autoStart":false,"welcome":{"disabled":true},"engine":{"prewarm":false,"chineseIme":false}}' | Set-Content -Encoding utf8 (Join-Path $data 'settings.json')
           $exe = Join-Path $PWD 'dist/ApkStart-International-win64-portable/ApkStart International.exe'
           $shot = Join-Path $env:RUNNER_TEMP 'asi-preview-smoke.png'
-          $p = Start-Process -FilePath $exe -ArgumentList @('--smoke', $shot) -PassThru
+          $env:ASI_SMARTCHECK_FIXTURE = Join-Path $env:RUNNER_TEMP 'asi-smartcheck-synthetic.apk'
+          node -e "const fs=require('fs'); const { buildApkBytes }=require('./test/lib/make-apk'); fs.writeFileSync(process.env.ASI_SMARTCHECK_FIXTURE,buildApkBytes({permissions:['android.permission.CAMERA','android.permission.INTERNET']}));"
+          $p = Start-Process -FilePath $exe -ArgumentList @('--smoke', $shot, '--smartcheck') -PassThru
           if (-not $p.WaitForExit(45000)) {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
             throw 'UI smoke timed out (Windows CI may not provide a desktop session)'
