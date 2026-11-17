@@ -119,3 +119,15 @@ test('portable preview excludes redistributable third-party IME bundle', () => {
   assert.ok(pack.includes('lzma-win32-x64-msvc'));
   assert.ok(pack.includes('ApkStart-International-win64-portable'));
 });
+
+test('status counts and window branding are internationalized', () => {
+  const vm=require('node:vm'), context={window:{ASI_CATALOGS:dict}};
+  vm.runInNewContext(fs.readFileSync(path.join(root,'src/ui/i18n/translator.js'),'utf8'),context);
+  const t=context.window.ASI_TRANSLATOR.t;
+  assert.equal(t('1 项提示','en'),'1 notice');
+  assert.equal(t('2 项提示','vi'),'2 thông báo');
+  assert.equal(t('1 项待修复','en'),'1 item needs attention');
+  assert.equal(t('3 项待修复','vi'),'3 mục cần sửa');
+  const html=fs.readFileSync(path.join(root,'src/ui/index.html'),'utf8');
+  assert.ok(html.includes('<span class="brand-name">ApkStart International</span>'));
+});

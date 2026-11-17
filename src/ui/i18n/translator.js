@@ -29,6 +29,20 @@ function t(value, code) {
       ? n + ' ứng dụng'
       : n + (n === 1 ? ' app' : ' apps')) + match[3];
   }
+  const notices = source.match(/^(\d+)\s*项提示$/);
+  if (notices) {
+    const n = Number(notices[1]);
+    return match[1] + (normalize(code) === 'vi'
+      ? n + ' thông báo'
+      : n + (n === 1 ? ' notice' : ' notices')) + match[3];
+  }
+  const repairs = source.match(/^(\d+)\s*项待修复$/);
+  if (repairs) {
+    const n = Number(repairs[1]);
+    return match[1] + (normalize(code) === 'vi'
+      ? n + ' mục cần sửa'
+      : n + (n === 1 ? ' item needs attention' : ' items need attention')) + match[3];
+  }
   // Translate only known system status templates. Do not translate user-supplied
   // application names or use broad Chinese substring replacement.
   const rules = [

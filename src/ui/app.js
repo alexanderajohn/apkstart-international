@@ -2021,7 +2021,7 @@ async function maybeShowWelcome() {
   $('welcomeHi').textContent = `${greetingOf(h)}，欢迎回来`;
   const ver = (startupInfo && startupInfo.version) || (state.status && state.status.version) || '';
   const ready = state.status && state.status.ready;
-  $('welcomeSub').textContent = `ApkStart${ver ? ` v${ver}` : ''} · ${ready ? '运行时就绪，点开即用' : '运行时会按需自动准备'}`;
+  $('welcomeSub').textContent = `ApkStart International${ver ? ` v${ver}` : ''} · ${ready ? '运行时就绪，点开即用' : '运行时会按需自动准备'}`;
 
   const apps = (state.apps || []).length;
   const dev = $('statusDevice') ? $('statusDevice').textContent.trim() : '';
