@@ -99,16 +99,16 @@ test('uninstall confirmation dialogs use localized strings', () => {
 
 test('runtime pack source only references this fork', () => {
   const source=fs.readFileSync(path.join(root,'src/core/provision.js'),'utf8');
-  assert.match(source,/api\\.github\\.com\\/repos\\/alexanderajohn\\/apkstart-international\\/releases/);
-  assert.doesNotMatch(source,/repos\\/RoutineMiku\\/apkstart\\/releases/);
-  assert.doesNotMatch(source,/gitee\\.com\\/daily-miku\\/apkstart/);
+  assert.match(source,/api\.github\.com\/repos\/alexanderajohn\/apkstart-international\/releases/);
+  assert.doesNotMatch(source,/repos\/RoutineMiku\/apkstart\/releases/);
+  assert.doesNotMatch(source,/gitee\.com\/daily-miku\/apkstart/);
 });
 test('preview package identity avoids upstream collisions', () => {
   const source=fs.readFileSync(path.join(root,'build/pack.js'),'utf8');
   const nsis=fs.readFileSync(path.join(root,'build/installer.nsh'),'utf8');
-  assert.match(source,/ApkStart International\\.exe/);
-  assert.match(source,/numericFileVersion\\(PKG\\.version\\)/);
-  assert.match(nsis,/ApkStart International\\\\/);
-  assert.doesNotMatch(nsis,/taskkill\\.exe \\/F \\/T \\/IM adb\\.exe/);
-  assert.doesNotMatch(nsis,/taskkill\\.exe \\/F \\/T \\/IM emulator\\.exe/);
+  assert.match(source,/ApkStart International\.exe/);
+  assert.match(source,/numericFileVersion\(PKG\.version\)/);
+  assert.match(nsis,/ApkStart International\\/);
+  assert.doesNotMatch(nsis,/taskkill\.exe \/F \/T \/IM adb\.exe/);
+  assert.doesNotMatch(nsis,/taskkill\.exe \/F \/T \/IM emulator\.exe/);
 });

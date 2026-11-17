@@ -142,9 +142,9 @@ fs.renameSync(path.join(OUT, 'electron.exe'), exePath);
  */
 // Windows PE VERSIONINFO must use 4 numeric parts (prerelease labels are invalid).
 function numericFileVersion(version) {
-  const nums = String(version).match(/^(\\d+)\\.(\\d+)\\.(\\d+)/);
+  const nums = String(version).match(/^(\d+)\.(\d+)\.(\d+)/);
   if (!nums) throw new Error('Invalid release version: ' + version);
-  const beta = /beta[.-]?(\\d+)/i.exec(String(version));
+  const beta = /beta[.-]?(\d+)/i.exec(String(version));
   return [nums[1],nums[2],nums[3],beta ? beta[1] : '0'].join('.');
 }
 function embedExeMeta(exe) {

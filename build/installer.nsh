@@ -28,7 +28,7 @@
 
   DetailPrint "正在结束 ApkStart 残留进程…"
   ; /F 强杀 /T 连带子进程。进程不存在时 taskkill 返回 128，忽略即可。
-  nsExec::Exec 'taskkill.exe /F /T /IM ApkStart International.exe'
+  nsExec::Exec 'taskkill.exe /F /T /IM "ApkStart International.exe"'
   ; Never globally terminate adb.exe, emulator.exe or qemu.exe here.
   ; Those processes may belong to Android Studio, ApkStart upstream or other tools.
   ; A locked runtime file should fail gracefully instead of shutting down unrelated work.
