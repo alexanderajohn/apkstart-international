@@ -36,3 +36,8 @@ npm run i18n:build
 ```
 
 Dự án gốc: https://github.com/RoutineMiku/apkstart — tác giả RoutineMiku, giấy phép MIT. Đọc thêm [CREDITS.md](CREDITS.md) và [docs/RELEASE_BLOCKERS.md](docs/RELEASE_BLOCKERS.md).
+## SmartCheck — kiểm tra APK trước khi cài
+
+Chọn hoặc kéo tệp APK vào giao diện để kiểm tra ngay trên máy: Android tối thiểu, target SDK, CPU ABI, quyền ứng dụng, dấu hiệu chữ ký (chưa xác minh mật mã) và SHA-256. Không tải APK lên máy chủ. Chỉ bắt đầu cài khi người dùng nhấn xác nhận.
+
+Gói .apks/.xapk hiện chỉ kiểm tra giới hạn, kèm cảnh báo. SmartCheck không phải công cụ diệt virus và không bảo đảm APK chạy được. Cài trực tiếp qua liên kết tệp Windows hoặc dòng lệnh chưa đi qua hộp thoại này.

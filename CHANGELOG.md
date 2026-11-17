@@ -1,3 +1,10 @@
+## Unreleased — SmartCheck pre-install APK analysis
+
+- Read Android API requirements, native ABIs, requested permissions, signer-file presence and streaming SHA-256 locally before installation.
+- Show EN/VI/ZH review and require consent for GUI picker and drag/drop imports.
+- Block minSdk newer than Android 14 by default. Warn about old target SDKs, sensitive permissions and ARM translation requirements.
+- Add offline regression coverage and clearly document split-format, signing and runtime-compatibility limits.
+
 ## Unreleased — privacy-aware diagnostic report
 
 - Export local-only diagnostic reports with best-effort redaction of common credentials, email addresses and user paths.

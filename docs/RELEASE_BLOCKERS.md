@@ -22,3 +22,8 @@
 
 - [x] Redact common personal paths, email addresses and credentials from default diagnostic exports; document best-effort limitations.
 - [ ] Review privacy-redaction results with real Windows/Android logs before public release.
+
+- [x] Add local SmartCheck API/ABI/permission/signature-evidence/SHA-256 analysis for GUI picker and drag-drop installation.
+- [ ] Verify SmartCheck against real APKs and complete split bundle inspection.
+- [ ] Extend SmartCheck confirmation to Windows file association / direct command line installs.
+- [ ] Perform actual cryptographic APK signature verification before claiming signatures are valid.

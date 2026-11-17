@@ -63,3 +63,10 @@ The original [ApkStart project](https://github.com/RoutineMiku/apkstart) is by *
 
 - [Tiếng Việt](README.vi.md)
 - [Original Chinese upstream README](docs/UPSTREAM_README.zh-CN.md)
+## SmartCheck — inspect APKs before installation
+
+SmartCheck performs a local read-only inspection when the user selects or drags an APK in the Electron UI. It displays Android API requirements, native ABIs, requested/sensitive permissions, APK signing **evidence only (not a cryptographic signature verification)** and SHA-256. No content is uploaded, Android does not start during analysis, and installation requires a deliberate confirmation click.
+
+For Android 14 (API 34), APKs requiring a minimum API higher than 34 cannot proceed through the SmartCheck dialog. Older target SDKs and ARM-only binaries produce compatibility warnings, not safety verdicts. Split .apks/.xapk bundles get a limited filename/size/hash preview with a conspicuous warning.
+
+Static inspection cannot establish that an APK is safe or will work. Direct command-line and Windows file-association installs are not yet covered by the renderer's confirmation UI. See [SmartCheck details](docs/SMARTCHECK.md).

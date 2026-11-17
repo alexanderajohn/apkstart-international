@@ -111,3 +111,26 @@ test('Unreadable file names, wrong extensions and tiny files are rejected', asyn
     fs.rmSync(folder, { recursive: true, force: true });
   }
 });
+
+
+test('GUI installs are guarded by a user-approved SmartCheck modal', () => {
+  const main = fs.readFileSync(path.join(__dirname, '../src/main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../src/preload.js'), 'utf8');
+  const ui = fs.readFileSync(path.join(__dirname, '../src/ui/app.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../src/ui/index.html'), 'utf8');
+  const dialog = fs.readFileSync(path.join(__dirname, '../src/ui/smartcheck.js'), 'utf8');
+  assert.ok(main.includes("ipcMain.handle('apk:inspect'"));
+  assert.ok(preload.includes("smartCheck: (p) => invoke('apk:inspect', p)"));
+  assert.ok(ui.includes('await window.ASI_SMARTCHECK.confirm(p)'));
+  assert.ok(ui.indexOf('await window.ASI_SMARTCHECK.confirm(p)') < ui.indexOf('const r = await api.installApk(p)'));
+  for (const id of ['smartCheckMask', 'smartCheckStatus', 'smartCheckProceed', 'smartCheckCancel']) {
+    assert.ok(html.includes('id="' + id + '"'), id);
+  }
+  assert.ok(html.includes('<script src="smartcheck.js"></script>'));
+  assert.ok(dialog.includes('proceed.disabled=true'));
+  assert.ok(dialog.includes('report.canProceed!==true'));
+  assert.ok(dialog.includes('finish(true)'), 'Approval must require explicit user input');
+  assert.ok(dialog.includes('textContent'), 'Show strings as text, not arbitrary HTML');
+  assert.ok(dialog.includes("'zh-CN':"), 'Chinese translation should be present');
+  assert.ok(dialog.includes('vi:'), 'Vietnamese translation should be present');
+});
