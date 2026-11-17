@@ -19,3 +19,6 @@
 - [ ] Verify runtime archive content hashes and licenses before any public binary release.
 
 - [ ] Confirm Windows portable preview builds on CI, inspect UI smoke result and manually launch on Windows with the official runtime.
+
+- [x] Redact common personal paths, email addresses and credentials from default diagnostic exports; document best-effort limitations.
+- [ ] Review privacy-redaction results with real Windows/Android logs before public release.

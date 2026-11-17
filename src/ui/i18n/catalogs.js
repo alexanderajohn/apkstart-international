@@ -173,7 +173,11 @@ window.ASI_CATALOGS = {
     "确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。": "Uninstall “{app}”?\n\nIts app data and desktop shortcut will be removed.",
     "确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。": "Uninstall ApkStart International?\n\nThis removes the .apk file association and the program. This cannot be undone.",
     "已卸载": "Uninstalled",
-    "卸载失败": "Uninstallation failed"
+    "卸载失败": "Uninstallation failed",
+    "导出隐私保护诊断报告": "Export privacy-safe diagnostics",
+    "诊断报告只保存在本机，会遮盖常见敏感信息；分享前仍请检查内容。重建会补齐桌面 + 开始菜单入口。": "Reports stay on your computer and mask common sensitive details. Review before sharing. Rebuild restores missing desktop and Start Menu shortcuts.",
+    "隐私保护报告已导出": "Privacy-safe report exported",
+    "报告已保存在本机。分享前请检查是否仍有敏感信息。": "Report saved locally. Review it for any remaining sensitive information before sharing."
   },
   "vi": {
     "设置": "Cài đặt",
@@ -349,7 +353,11 @@ window.ASI_CATALOGS = {
     "确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。": "Gỡ cài đặt “{app}”?\n\nDữ liệu ứng dụng và lối tắt trên Desktop cũng sẽ bị xóa.",
     "确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。": "Gỡ cài đặt ApkStart International?\n\nThao tác này sẽ bỏ liên kết tệp .apk và gỡ ứng dụng. Không thể hoàn tác.",
     "已卸载": "Đã gỡ cài đặt",
-    "卸载失败": "Gỡ cài đặt thất bại"
+    "卸载失败": "Gỡ cài đặt thất bại",
+    "导出隐私保护诊断报告": "Xuất chẩn đoán bảo vệ riêng tư",
+    "诊断报告只保存在本机，会遮盖常见敏感信息；分享前仍请检查内容。重建会补齐桌面 + 开始菜单入口。": "Báo cáo chỉ lưu trên máy và che những thông tin nhạy cảm thường gặp. Hãy kiểm tra trước khi chia sẻ. Tạo lại lối tắt sẽ khôi phục các biểu tượng bị thiếu.",
+    "隐私保护报告已导出": "Đã xuất báo cáo bảo vệ riêng tư",
+    "报告已保存在本机。分享前请检查是否仍有敏感信息。": "Báo cáo đã lưu trên máy. Hãy kiểm tra lại thông tin nhạy cảm trước khi chia sẻ."
   },
   "zh-CN": {
     "设置": "设置",
@@ -525,6 +533,10 @@ window.ASI_CATALOGS = {
     "确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。": "确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。",
     "确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。": "确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。",
     "已卸载": "已卸载",
-    "卸载失败": "卸载失败"
+    "卸载失败": "卸载失败",
+    "导出隐私保护诊断报告": "导出隐私保护诊断报告",
+    "诊断报告只保存在本机，会遮盖常见敏感信息；分享前仍请检查内容。重建会补齐桌面 + 开始菜单入口。": "诊断报告只保存在本机，会遮盖常见敏感信息；分享前仍请检查内容。重建会补齐桌面 + 开始菜单入口。",
+    "隐私保护报告已导出": "隐私保护报告已导出",
+    "报告已保存在本机。分享前请检查是否仍有敏感信息。": "报告已保存在本机。分享前请检查是否仍有敏感信息。"
   }
 };

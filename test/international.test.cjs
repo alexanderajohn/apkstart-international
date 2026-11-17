@@ -131,3 +131,45 @@ test('status counts and window branding are internationalized', () => {
   const html=fs.readFileSync(path.join(root,'src/ui/index.html'),'utf8');
   assert.ok(html.includes('<span class="brand-name">ApkStart International</span>'));
 });
+
+test('privacy-safe diagnostics redact credentials and personal paths', () => {
+  const { redactText, redactValue } = require('../src/core/diagnostic-privacy');
+  const sample = 'C:\\Users\\Alice\\AppData\\Roaming\\sample login jane@example.com Authorization: Bearer abc123456789';
+  const output=redactText(sample);
+  assert.doesNotMatch(output,/Alice|jane@example\.com|abc123456789/);
+  assert.match(output,/C:\\Users\\\[USER\]/);
+  assert.match(output,/\[EMAIL\]/);
+  assert.match(output,/Authorization: \[REDACTED\]/);
+  assert.equal(redactText('https://example.com/download?token=verysecret&version=1').includes('verysecret'), false);
+  assert.equal(redactText('X-API-Key: secret-value').includes('secret-value'), false);
+  assert.equal(redactText('127.0.0.1:5555'), '127.0.0.1:5555');
+  const obj=redactValue({ apiKey:'hello123', path:'/home/bob/project', nested:{password:'letmein', notes:'contact jane@example.com'} });
+  assert.equal(obj.apiKey,'[REDACTED]');
+  assert.equal(obj.nested.password,'[REDACTED]');
+  assert.equal(obj.path,'/home/[USER]/project');
+  assert.doesNotMatch(obj.nested.notes,/jane@example\.com/);
+});
+test('exported diagnostic reports mask secrets while retaining failure evidence', () => {
+  const os=require('node:os'), temp=fs.mkdtempSync(path.join(os.tmpdir(),'asi-diagnostic-test-'));
+  const { writeReport }=require('../src/core/doctor');
+  try {
+    const profile={memoryMB:4096,cores:4,gpu:'auto',port:5554,accelOk:true,
+      homePath:'C:\\Users\\Alice\\Desktop', access_token:'hello123'};
+    const result=writeReport({dataDir:temp,profile,extra:{password:'private123',runtimeDir:'C:\\Users\\Alice\\AppData'},
+      logLines:['emulator: snapshot could not load','Authorization: Bearer qwerty123456','contact jane@example.com']});
+    const body=fs.readFileSync(result.file,'utf8');
+    assert.equal(result.privacy,'best-effort-redacted');
+    assert.doesNotMatch(body,/Alice|hello123|private123|qwerty123456|jane@example\.com/);
+    assert.match(body,/SNAPSHOT/);
+    assert.match(body,/snapshot could not load/);
+    assert.match(body,/Review its contents before sharing/);
+  } finally {
+    fs.rmSync(temp,{recursive:true,force:true});
+  }
+});
+test('diagnostic export UI communicates local storage and manual review', () => {
+  const html=fs.readFileSync(path.join(root,'src/ui/index.html'),'utf8');
+  const app=fs.readFileSync(path.join(root,'src/ui/app.js'),'utf8');
+  assert.ok(html.includes('导出隐私保护诊断报告'));
+  assert.ok(app.includes("title: '隐私保护报告已导出'"));
+});

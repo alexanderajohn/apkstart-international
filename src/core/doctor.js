@@ -17,6 +17,7 @@ const net = require('net');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { memoryLimits } = require('./resources');
+const { redactText, redactValue } = require('./diagnostic-privacy');
 
 const ASCII = /^[\x20-\x7e]*$/;
 const isAsciiPath = (p) => ASCII.test(String(p || ''));
@@ -533,28 +534,30 @@ function writeReport({ dataDir, profile, logLines = [], extra = {} }) {
   const file = path.join(dir, `diagnostic-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`);
   const d = diagnose(logLines);
   const body = [
-    'ApkStart 诊断报告',
+    'ApkStart International — Privacy-safe diagnostics',
+    'The report is saved locally and is NOT uploaded. Sensitive details are masked on a best-effort basis.',
+    'Review its contents before sharing. Some unusual secrets may not be detected.',
     `生成时间：${new Date().toLocaleString()}`,
     '',
     '== 本机 ==',
-    JSON.stringify(hostInfo(), null, 2),
+    JSON.stringify(redactValue(hostInfo()), null, 2),
     '',
     '== 自动配置 ==',
-    JSON.stringify(profile || {}, null, 2),
-    describeProfile(profile || chooseProfile()),
+    JSON.stringify(redactValue(profile || {}), null, 2),
+    redactText(describeProfile(profile || chooseProfile())),
     '',
     '== 诊断 ==',
     `${d.code}：${d.title}`,
     d.hint,
     '',
     '== 附加信息 ==',
-    JSON.stringify(extra, null, 2),
+    JSON.stringify(redactValue(extra), null, 2),
     '',
     '== 运行时日志（末尾 300 行）==',
-    ...(Array.isArray(logLines) ? logLines.slice(-300) : String(logLines || '').split('\n')),
+    ...(Array.isArray(logLines) ? logLines.slice(-300) : String(logLines || '').split('\n')).map((line) => redactText(line)),
   ].join('\n');
   fs.writeFileSync(file, body, 'utf8');
-  return { file, diagnosis: d };
+  return { file, diagnosis: d, privacy: 'best-effort-redacted' };
 }
 
 /**

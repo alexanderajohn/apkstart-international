@@ -172,5 +172,9 @@
   "确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。": "Gỡ cài đặt “{app}”?\n\nDữ liệu ứng dụng và lối tắt trên Desktop cũng sẽ bị xóa.",
   "确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。": "Gỡ cài đặt ApkStart International?\n\nThao tác này sẽ bỏ liên kết tệp .apk và gỡ ứng dụng. Không thể hoàn tác.",
   "已卸载": "Đã gỡ cài đặt",
-  "卸载失败": "Gỡ cài đặt thất bại"
+  "卸载失败": "Gỡ cài đặt thất bại",
+  "导出隐私保护诊断报告": "Xuất chẩn đoán bảo vệ riêng tư",
+  "诊断报告只保存在本机，会遮盖常见敏感信息；分享前仍请检查内容。重建会补齐桌面 + 开始菜单入口。": "Báo cáo chỉ lưu trên máy và che những thông tin nhạy cảm thường gặp. Hãy kiểm tra trước khi chia sẻ. Tạo lại lối tắt sẽ khôi phục các biểu tượng bị thiếu.",
+  "隐私保护报告已导出": "Đã xuất báo cáo bảo vệ riêng tư",
+  "报告已保存在本机。分享前请检查是否仍有敏感信息。": "Báo cáo đã lưu trên máy. Hãy kiểm tra lại thông tin nhạy cảm trước khi chia sẻ."
 }

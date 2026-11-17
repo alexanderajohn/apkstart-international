@@ -1,3 +1,9 @@
+## Unreleased — privacy-aware diagnostic report
+
+- Export local-only diagnostic reports with best-effort redaction of common credentials, email addresses and user paths.
+- Keep error codes and runtime configuration useful for troubleshooting.
+- Add EN/VI/ZH export labels, explicit review warning and regression tests.
+
 ## Unreleased — international foundation
 
 - Default Android app permissions to user consent; optional runtime-grant setting.

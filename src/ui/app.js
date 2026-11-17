@@ -1417,7 +1417,7 @@ function bindSettings() {
   $('btnDiagnostics').addEventListener('click', async () => {
     try {
       const r = await api.doctorReport();
-      toast({ title: '诊断报告已导出', body: `${r.diagnosis.title} · ${r.file}`, type: 'ok', sticky: true });
+      toast({ title: '隐私保护报告已导出', body: '报告已保存在本机。分享前请检查是否仍有敏感信息。', type: 'ok', sticky: true });
     } catch (e) {
       toast({ title: '导出失败', body: e.message, type: 'error' });
     }
