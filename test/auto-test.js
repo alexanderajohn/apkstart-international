@@ -998,8 +998,8 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
       '不能再用无效的 -prop persist.sys.locale');
     assert(/_guestLocale/.test(emuJs), '要有可配置的语言来源');
     // 默认中文
-    assert(/locale:\s*'zh-CN'/.test(storeJs), '默认语言必须是简体中文');
-    assert(/chineseIme:\s*true/.test(storeJs), '默认开启中文输入法');
+    assert(/locale:\s*'en-US'/.test(storeJs), 'International fork defaults Android guest locale to English');
+    assert(/chineseIme:\s*false/.test(storeJs), 'International fork must not silently enable Chinese IME');
 
     // 输入法：随包带 APK、开机装好并启用
     assert(fs.existsSync(path.join(root, 'assets', 'PinyinIME.apk')), '缺少 PinyinIME.apk');
@@ -2505,7 +2505,7 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     assert(/--set-icon/.test(packJs), '要写图标');
     assert(/--set-file-version/.test(packJs), '要写文件版本');
     assert(/--set-version-string', 'FileDescription'/.test(packJs), '要写 FileDescription');
-    assert(/--set-version-string', 'ProductName', 'ApkStart'/.test(packJs), 'ProductName 必须是 ApkStart');
+    assert(/--set-version-string', 'ProductName', 'ApkStart International'/.test(packJs), 'ProductName must be ApkStart International');
     assert(/embedExeMeta\(exePath\)/.test(packJs), '要在改名之后真的调用');
     // 找不到 rcedit 时要明确告警，不能静默产出「Electron 图标」的包
     assert(/找不到 rcedit\.exe/.test(packJs), '缺 rcedit 要告警');
@@ -2514,28 +2514,25 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     assert(/setAumid\(APP_AUMID\);/.test(mainJs), '启动时要设置 AppUserModelID');
 
     // 完整版（含运行时）作为一个可交付版本
-    assert(/--full/.test(packJs) && /ApkStart-v\$\{PKG\.version\}-win64-full/.test(packJs),
+    assert(/--full/.test(packJs) && /ApkStart-International-v\$\{PKG\.version\}-win64-full/.test(packJs),
       '--full 要产出带版本号的完整版目录');
     assert(/build', 'runtime'/.test(packJs), '完整版要内置 build/runtime');
   });
 
-  await test('版本统一：package.json / MSIX 四段号 / 文档包名一致', () => {
-    const root = path.join(__dirname, '..');
-    const pkg = require(path.join(root, 'package.json'));
-    const { msixVersion } = require(path.join(root, 'build', 'msix.js'));
-    const four = msixVersion(pkg.version);
-    assert(/^\d+\.\d+\.\d+\.0$/.test(four), `MSIX 四段版本号格式不对：${four}`);
-    const artifact = `ApkStart_${four}_x64.msix`;
-    for (const f of ['docs/store-listing.md', 'docs/store-msix.md', 'docs/store-upload-walkthrough.md']) {
-      const t = fs.readFileSync(path.join(root, f), 'utf8');
-      assert(t.includes(artifact), `${f} 里应引用当前版本的包名 ${artifact}`);
-    }
-    // exe 的文件版本也要用同一个号（四段），别和 package.json 各说各话
-    const packJs = fs.readFileSync(path.join(root, 'build', 'pack.js'), 'utf8');
-    assert(/\$\{PKG\.version\}\.0/.test(packJs), 'exe 文件版本要跟 package.json 对齐');
-    // 商店包和 exe 用的是同一个版本来源，不该有第二份硬编码版本号
-    const msixJs = fs.readFileSync(path.join(root, 'build', 'msix.js'), 'utf8');
-    assert(/const VERSION = String\(pkg\.version/.test(msixJs), 'MSIX 版本号必须取自 package.json');
+
+  await test('国际版版本信息和预发行 EXE 均符合规则，MSIX 发布关闭', () => {
+    const root=path.join(__dirname,'..');
+    const pkg=require(path.join(root,'package.json'));
+    const { msixVersion }=require(path.join(root,'build','msix.js'));
+    const four=msixVersion(pkg.version);
+    assert(/^\d+\.\d+\.\d+\.0$/.test(four),'MSIX version must remain numeric: '+four);
+    const buildConfig=fs.readFileSync(path.join(root,'electron-builder.yml'),'utf8');
+    assert(!/^appx:/m.test(buildConfig),'Fork must not reuse upstream Microsoft Store identity');
+    const packJs=fs.readFileSync(path.join(root,'build','pack.js'),'utf8');
+    assert(/numericFileVersion\(PKG\.version\)/.test(packJs),'Preview PE file metadata must be normalized');
+    assert(/ApkStart International\.exe/.test(packJs),'Preview EXE must be independently named');
+    const msixJs=fs.readFileSync(path.join(root,'build','msix.js'),'utf8');
+    assert(/const VERSION = String\(pkg\.version/.test(msixJs),'MSIX version still derives from package.json');
   });
 
   await test('安卓应用的快捷方式必须用它自己的图标 + 自己的任务栏身份', () => {
@@ -2550,11 +2547,11 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     assert(/iconIcoPath: ico/.test(installerJs), 'writeShortcut 要拿到应用图标');
     assert(!/iconIcoPath:\s*(APPICON|appicon|brandIcon)/.test(installerJs), '不能用 ApkStart 的品牌图标');
     // 每个应用一个 AUMID：任务栏按应用分组，固定项才认得出是哪个应用
-    assert(/appUserModelId: `RoutineMiku\.ApkStart\.\$\{app\.package\}`/.test(installerJs),
+    assert(/appUserModelId: `ApkStartInternational\.Desktop\.\$\{app\.package\}`/.test(installerJs),
       '每个应用要有自己的 AUMID');
     // Windows 只在「进程 AUMID == 快捷方式 AUMID」时沿用快捷方式图标，
     // 所以打开某个应用时要把进程身份切过去，回管理窗口再切回 ApkStart。
-    assert(/const APP_AUMID = 'RoutineMiku\.ApkStart';/.test(mainJs), '要有统一的 AUMID 前缀');
+    assert(/const APP_AUMID = 'ApkStartInternational\.Desktop';/.test(mainJs), '要有统一的 AUMID 前缀');
     assert(/setAumid\(`\$\{APP_AUMID\}\.\$\{pkg\}`\)/.test(mainJs), '开应用窗口前要切到该应用的 AUMID');
     assert(/function showWindow\(\) \{\s*\n\s*\/\/[^\n]*\n\s*setAumid\(APP_AUMID\);/.test(mainJs),
       '回管理窗口要切回 ApkStart 的 AUMID');
