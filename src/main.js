@@ -102,7 +102,7 @@ process.on('unhandledRejection', (e) => appLog(`REJECT ${e && (e.stack || e.mess
 
 /**
  * 完整版（内置运行时）自动接管：
- * 发行包里 ApkStart.exe 旁边带有 runtime/（emulator + platform-tools + AEHD + ARM 兼容镜像）。
+ * 发行包里 ApkStart International.exe 旁边带有 runtime/（emulator + platform-tools + AEHD + ARM 兼容镜像）。
  * 首次启动（settings.json 尚不存在）时直接把 runtime.dir 指向它并开启兼容模式，
  * 用户无需任何下载与设置，开箱即用。之后用户仍可在设置里改回在线版。
  */
@@ -306,7 +306,7 @@ function displaySettings() { return store.getSettings().display || {}; }
  * Windows 任务栏 / 通知的身份。
  *
  * 为什么要按应用切换：每个安卓应用的桌面快捷方式都写了自己的 AUMID
- * （`RoutineMiku.ApkStart.<包名>`，见 installer.createShortcut），而且快捷方式的
+ * （`ApkStartInternational.Desktop.<包名>`，见 installer.createShortcut），而且快捷方式的
  * 图标是**那个应用自己的图标**。Windows 只有在「运行进程的 AUMID == 快捷方式的
  * AUMID」时，才会把正在运行的窗口和任务栏固定项合并成同一个按钮、并沿用快捷方式
  * 的图标。身份对不上就会出现「固定项是应用图标、任务栏上却另起一个 ApkStart 图标」。
@@ -315,7 +315,7 @@ function displaySettings() { return store.getSettings().display || {}; }
  * 一个进程跑多个应用的壳层就是这么做的）。这里只在开窗口之前切，且全程 try/catch ——
  * 万一某个 Windows 版本忽略它，也只是退化成按 exe 图标显示，不影响功能。
  */
-const APP_AUMID = 'RoutineMiku.ApkStart';
+const APP_AUMID = 'ApkStartInternational.Desktop';
 function setAumid(id) {
   try { app.setAppUserModelId(String(id || APP_AUMID).slice(0, 128)); } catch (_) { /* 非 Windows 或旧版本忽略 */ }
 }
@@ -2204,7 +2204,7 @@ function registerIpc() {
       try { await assoc.unregisterAssociation(); } catch (_) { /* 取消关联失败不影响卸载 */ }
       const exeDir = path.dirname(process.execPath);
       // 和 updater.flavor 用同一套识别规则：electron-builder 生成的是
-      // "Uninstall ApkStart.exe"，旧代码只找 "uninstaller.exe"，
+      // "Uninstall ApkStart International.exe"，旧代码只找 "uninstaller.exe"，
       // 导致安装版点「一键卸载」被误判成便携版、只弹提示不真卸载（issue #51）。
       const unName = findUninstaller(exeDir);
       if (!unName) {

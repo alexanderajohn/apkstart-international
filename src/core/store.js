@@ -27,8 +27,8 @@ const STORE_BUILD = (() => {
 })();
 
 const DATA_DIR = STORE_BUILD
-  ? path.join(os.homedir(), 'ApkStart', 'data')
-  : path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'apkstart');
+  ? path.join(os.homedir(), 'ApkStart International', 'data')
+  : path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'apkstart-international');
 const ICON_DIR = path.join(DATA_DIR, 'icons');
 const APK_DIR = path.join(DATA_DIR, 'apks');
 const APPS_FILE = path.join(DATA_DIR, 'apps.json');
@@ -143,7 +143,7 @@ const DEFAULT_SETTINGS = {
     // 想用 Gitee 作为更新源就在这里填一个只读 token；留空则只用 GitHub + 镜像。
     giteeToken: '',
   },
-  sharedDir: path.join(os.homedir(), 'ApkStartShared'),
+  sharedDir: path.join(os.homedir(), 'ApkStartInternationalShared'),
   deviceSharedDir: '/sdcard/ApkStartShared',
   autoConnect: true,
   createShortcutOnInstall: true,

@@ -13,22 +13,22 @@
 ; 和 electron-builder 的重复执行也只是覆盖同一个 .lnk。
 !macro customInstall
   DetailPrint "正在创建桌面快捷方式…"
-  CreateShortcut "$DESKTOP\ApkStart.lnk" "$INSTDIR\ApkStart.exe" "" "$INSTDIR\ApkStart.exe" 0 \
+  CreateShortcut "$DESKTOP\ApkStart International.lnk" "$INSTDIR\ApkStart International.exe" "" "$INSTDIR\ApkStart International.exe" 0 \
     SW_SHOWNORMAL "" "ApkStart — 在电脑上直接运行安卓应用"
   CreateDirectory "$SMPROGRAMS\ApkStart"
-  CreateShortcut "$SMPROGRAMS\ApkStart\ApkStart.lnk" "$INSTDIR\ApkStart.exe" "" "$INSTDIR\ApkStart.exe" 0 \
+  CreateShortcut "$SMPROGRAMS\ApkStart\ApkStart International.lnk" "$INSTDIR\ApkStart International.exe" "" "$INSTDIR\ApkStart International.exe" 0 \
     SW_SHOWNORMAL "" "ApkStart — 在电脑上直接运行安卓应用"
 !macroend
 
 !macro customUnInstall
   ; 先删自己写的快捷方式入口（未安装 ApkStart 时也应无残留）
-  Delete "$DESKTOP\ApkStart.lnk"
-  Delete "$SMPROGRAMS\ApkStart\ApkStart.lnk"
+  Delete "$DESKTOP\ApkStart International.lnk"
+  Delete "$SMPROGRAMS\ApkStart\ApkStart International.lnk"
   RMDir "$SMPROGRAMS\ApkStart"
 
   DetailPrint "正在结束 ApkStart 残留进程…"
   ; /F 强杀 /T 连带子进程。进程不存在时 taskkill 返回 128，忽略即可。
-  nsExec::Exec 'taskkill.exe /F /T /IM ApkStart.exe'
+  nsExec::Exec 'taskkill.exe /F /T /IM ApkStart International.exe'
   nsExec::Exec 'taskkill.exe /F /T /IM qemu-system-x86_64.exe'
   nsExec::Exec 'taskkill.exe /F /T /IM qemu-system-i386.exe'
   nsExec::Exec 'taskkill.exe /F /T /IM emulator.exe'
