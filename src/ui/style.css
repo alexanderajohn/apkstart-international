@@ -849,3 +849,32 @@ kbd {
 
 /* 行内按钮不要折行（空间紧张时「立即扩容」会被拆成两行） */
 .row .btn { white-space: nowrap; flex: 0 0 auto; }
+
+
+/* SmartCheck — local pre-install review */
+.asi-sc-mask { z-index: 125; }
+.asi-sc-mask[hidden] { display:none !important; }
+.asi-sc-panel { width:min(650px,calc(100vw - 26px));max-height:90vh;display:flex;flex-direction:column;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:17px;box-shadow:var(--shadow-lg); }
+.asi-sc-head { display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--line); }
+.asi-sc-head h2 { margin:3px 0 0;font-size:19px; }
+.asi-sc-head .icon-btn {font-size:22px}
+.asi-sc-eyebrow { font-size:10px;letter-spacing:1.5px;color:var(--brand);font-weight:750; }
+.asi-sc-scroll {overflow-y:auto;padding:16px 22px;}
+.asi-sc-scroll>p:first-child {overflow-wrap:anywhere;font-weight:600}
+.asi-sc-status {background:rgba(58,112,166,.08);border-radius:10px;padding:11px 13px;font-size:12.5px;font-weight:650;}
+.asi-sc-status.ready {color:#15803d;background:rgba(22,163,74,.08)}
+.asi-sc-status.caution {color:#a15f05;background:rgba(215,135,25,.12)}
+.asi-sc-status.blocked {color:#c32e2e;background:rgba(211,39,39,.09)}
+#smartCheckDetails {margin-top:12px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.asi-sc-row {display:grid;grid-template-columns:155px minmax(0,1fr);gap:12px;padding:8px 10px;font-size:12px;border-bottom:1px solid var(--line)}
+.asi-sc-key {color:var(--muted)}
+.asi-sc-val {overflow-wrap:anywhere}
+.asi-sc-code {font:11px/1.6 ui-monospace,Consolas,monospace}
+#smartCheckDetails details {font-size:11px;padding:10px;cursor:pointer}
+#smartCheckDetails details p {font:11px/1.7 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+#smartCheckFindings {margin-top:12px;display:grid;gap:6px}
+.asi-sc-warning {margin:0;padding:10px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;font-size:12px;line-height:1.5}
+#smartCheckDisclaimer {font-size:11px;line-height:1.65;color:var(--muted)}
+.asi-sc-footer {display:flex;justify-content:flex-end;gap:8px;padding:13px 22px;border-top:1px solid var(--line)}
+.asi-sc-footer button:disabled {opacity:.55;cursor:not-allowed}
+@media(max-width:560px){.asi-sc-row{grid-template-columns:117px minmax(0,1fr)}.asi-sc-head,.asi-sc-scroll,.asi-sc-footer{padding-left:12px;padding-right:12px}}

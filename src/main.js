@@ -12,6 +12,7 @@ const { Runtime } = require('./core/engine');
 const { Installer } = require('./core/installer');
 const { Sharer } = require('./core/sharer');
 const { parseApk } = require('./core/apk');
+const { inspectApk } = require('./core/smartcheck');
 const { drawAppIcon } = require('./core/png');
 
 // 品牌 Logo（build/render-logo.js 生成）；缺失时回退到程序化绘制的旧版图标
@@ -1306,6 +1307,8 @@ function registerIpc() {
   });
 
   ipcMain.handle('apk:parse', async (_e, filePath) => parseApk(filePath));
+  // Offline read-only inspection; does not execute or upload APKs.
+  ipcMain.handle('apk:inspect', async (_e, filePath) => inspectApk(filePath));
 
   ipcMain.handle('apk:install', async (_e, filePath) => {
     const r = await runInstall(filePath);

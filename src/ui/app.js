@@ -516,6 +516,8 @@ async function installFiles(paths) {
   let failed = 0;
 
   for (const p of paths) {
+    // Never install a picked or dragged package without explicit SmartCheck consent.
+    if (!window.ASI_SMARTCHECK || !(await window.ASI_SMARTCHECK.confirm(p))) break;
     const name = p.split(/[\\/]/).pop();
     const t = toast({ title: `正在安装 ${name}`, body: '解析 APK…', progress: 8, sticky: true, spinner: true });
     installToast = t;

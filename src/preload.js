@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('apkstart', {
   listApps: () => invoke('apps:list'),
   pickApk: () => invoke('apk:pick'),
   parseApk: (p) => invoke('apk:parse', p),
+  smartCheck: (p) => invoke('apk:inspect', p),
   installApk: (p) => invoke('apk:install', p),
   launch: (pkg) => invoke('app:launch', pkg),
   stop: (pkg) => invoke('app:stop', pkg),
