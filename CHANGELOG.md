@@ -1,3 +1,12 @@
+## Unreleased — international foundation
+
+- Default Android app permissions to user consent; optional runtime-grant setting.
+- Preserve installed app data on repeated startup failures.
+- Temporarily disable unverified automatic executable updates.
+- Expand English and Vietnamese UI catalogs, including dynamic app status messages.
+- Make the app-data deletion confirmation localizable.
+- Add automated regression coverage for localization and safety.
+
 # Changelog
 
 All notable changes to the **independent ApkStart International fork** are documented here.

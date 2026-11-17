@@ -668,7 +668,9 @@ async function handleMenu(act) {
     case 'keymap': return showKeymapPicker(pkg, app.label);
     case 'reveal': return api.revealApk(pkg);
     case 'clear': {
-      if (!window.confirm(`清除「${app.label}」的全部数据？此操作不可撤销。`)) return;
+      const question = (window.ASI_I18N?.t('清除「{app}」的全部数据？此操作不可撤销。')
+        || '清除「{app}」的全部数据？此操作不可撤销。').replace('{app}', app.label);
+      if (!window.confirm(question)) return;
       try {
         await api.clearData(pkg);
         toast({ title: '数据已清除', body: app.label, type: 'ok' });

@@ -64,3 +64,28 @@ test('installer does not automatically dismiss Android permission dialogs', () =
   assert.doesNotMatch(installer,/rt\.client\.dismissPermissionDialog\(/);
   assert.match(installer,/if \(autoGrant\) \{/);
 });
+
+test('dynamic renderer notifications follow the selected UI language', () => {
+  const vm = require('node:vm');
+  const context={window:{ASI_CATALOGS:dict}};
+  const src=fs.readFileSync(path.join(root,'src/ui/i18n/translator.js'),'utf8');
+  vm.runInNewContext(src,context,{filename:'translator.js'});
+  const translate=context.window.ASI_TRANSLATOR.t;
+  assert.equal(translate('3 个应用','en'),'3 apps');
+  assert.equal(translate('1 个应用','en'),'1 app');
+  assert.equal(translate('2 个应用','vi'),'2 ứng dụng');
+  assert.equal(translate('正在打开 Example App','vi'),'Đang mở Example App…');
+  assert.equal(translate('正在安装 Example App','en'),'Installing Example App…');
+  assert.equal(translate('Example App 已安装','vi'),'Đã cài Example App');
+  assert.equal(translate('5 分钟前','en'),'5 minutes ago');
+  assert.equal(translate('2 小时前','vi'),'2 giờ trước');
+  assert.equal(translate('正在安装 Example App','zh-CN'),'正在安装 Example App');
+  assert.equal(translate('用户原始文本','vi'),'用户原始文本');
+});
+test('destructive app data prompt is localized and remains explicit', () => {
+  const app=fs.readFileSync(path.join(root,'src/ui/app.js'),'utf8');
+  assert.match(app,/window\.confirm\(question\)/);
+  for (const language of ['en','vi','zh-CN']) {
+    assert.ok(dict[language]['清除「{app}」的全部数据？此操作不可撤销。']);
+  }
+});
