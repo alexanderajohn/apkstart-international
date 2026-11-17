@@ -70,13 +70,14 @@ function axmlEndElement(nsIdx, nameIdx) {
 }
 
 /** 生成 AndroidManifest.xml 的二进制 AXML */
-function buildManifestAxml() {
+function buildManifestAxml({ minSdk = 21, targetSdk = 34, permissions = [] } = {}) {
   const S = [
     'manifest', 'package', 'com.example.test', 'android', ANDROID_NS,
     'versionCode', 'versionName', '1.2.3',
     'uses-sdk', 'minSdkVersion', 'targetSdkVersion',
     'application', 'label', 'TestApp', 'icon', 'res/mipmap-hdpi/ic_launcher.png',
     'activity', 'name', '.Main',
+    'uses-permission', ...permissions,
     'intent-filter', 'action', 'android.intent.action.MAIN',
     'category', 'android.intent.category.LAUNCHER',
   ];
@@ -91,10 +92,14 @@ function buildManifestAxml() {
       { ns, name: idx.versionName, data: idx['1.2.3'], type: 0x03 },
     ]),
     axmlStartElement(idx['uses-sdk'], [
-      { ns, name: idx.minSdkVersion, data: 21, type: 0x10 },
-      { ns, name: idx.targetSdkVersion, data: 34, type: 0x10 },
+      { ns, name: idx.minSdkVersion, data: minSdk, type: 0x10 },
+      { ns, name: idx.targetSdkVersion, data: targetSdk, type: 0x10 },
     ]),
     axmlEndElement(0xffffffff, idx['uses-sdk']),
+    ...permissions.flatMap((permission) => [
+      axmlStartElement(idx['uses-permission'], [{ ns, name: idx.name, data: idx[permission], type: 0x03 }]),
+      axmlEndElement(0xffffffff, idx['uses-permission']),
+    ]),
     axmlStartElement(idx.application, [
       { ns, name: idx.label, data: idx.TestApp, type: 0x03 },
       { ns, name: idx.icon, data: idx['res/mipmap-hdpi/ic_launcher.png'], type: 0x03 },
@@ -154,13 +159,14 @@ function buildStoredZip(entries) {
 }
 
 /** 一个可直接被 parseApk 解析的最小 APK 的字节 */
-function buildApkBytes() {
+function buildApkBytes(options = {}) {
   const png = drawAppIcon(96);
   return buildStoredZip([
-    { name: 'AndroidManifest.xml', data: buildManifestAxml() },
+    { name: 'AndroidManifest.xml', data: buildManifestAxml(options) },
     { name: 'res/mipmap-hdpi/ic_launcher.png', data: png },
-    { name: 'lib/arm64-v8a/libtest.so', data: Buffer.from('ELF-fake') },
+    ...((options.abis === undefined ? ['arm64-v8a'] : options.abis).map((abi) => ({ name: `lib/${abi}/libtest.so`, data: Buffer.from('ELF-fake') }))),
     { name: 'classes.dex', data: Buffer.from('dex\n035\0') },
+    ...(options.extraEntries || []),
   ]);
 }
 

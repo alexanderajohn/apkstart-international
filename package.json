@@ -47,7 +47,7 @@
     "icons": "electron build/build-icons.js",
     "shots": "electron build/store-shots.js",
     "pack:full": "node build/pack.js --full",
-    "test:international": "node --test test/international.test.cjs",
+    "test:international": "node --test test/international.test.cjs test/smartcheck.test.cjs",
     "audit:international": "node scripts/asi/audit.cjs",
     "i18n:build": "node scripts/asi/build-catalogs.cjs"
   },
