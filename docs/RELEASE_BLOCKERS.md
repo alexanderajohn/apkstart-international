@@ -17,3 +17,5 @@
 - [x] Pin runtime-pack metadata to fork; default to direct official SDK components until independently released.
 - [x] Rename portable EXE / Start Menu entries to avoid upstream collisions and stop global process kills on uninstall.
 - [ ] Verify runtime archive content hashes and licenses before any public binary release.
+
+- [ ] Confirm Windows portable preview builds on CI, inspect UI smoke result and manually launch on Windows with the official runtime.

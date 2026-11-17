@@ -112,3 +112,10 @@ test('preview package identity avoids upstream collisions', () => {
   assert.doesNotMatch(nsis,/taskkill\.exe \/F \/T \/IM adb\.exe/);
   assert.doesNotMatch(nsis,/taskkill\.exe \/F \/T \/IM emulator\.exe/);
 });
+
+test('portable preview excludes redistributable third-party IME bundle', () => {
+  const pack=fs.readFileSync(path.join(root,'build/pack.js'),'utf8');
+  assert.ok(pack.includes("['package.json', 'src', 'LICENSE']"));
+  assert.ok(pack.includes('lzma-win32-x64-msvc'));
+  assert.ok(pack.includes('ApkStart-International-win64-portable'));
+});

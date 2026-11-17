@@ -5,6 +5,20 @@
 
 **Development status:** Early technical preview. This fork does **not** yet claim complete localization, Windows compatibility, a safe updater, or a production installer. Please do not publish bundled Android/Google components before reviewing their redistribution terms.
 
+
+## Windows developer preview (not a production release)
+
+The international feature branch now includes a GitHub Actions job that builds a **Windows portable application shell** after its test matrix passes. The preview includes the Electron UI, not a preinstalled Android runtime, proprietary system image or Chinese Pinyin IME APK. On first setup, Android components are downloaded from the configured official SDK sources.
+
+1. Open [Actions](https://github.com/alexanderajohn/apkstart-international/actions) and choose the latest successful CI run for Pull Request #1.
+2. Download the artifact named `ApkStart-International-Windows-dev-preview`.
+3. Extract the archive and run `ApkStart International.exe` on a Windows test machine.
+4. Do not install it over the upstream project; use a separate folder and back up important data first.
+
+**Not yet validated:** full Android app launch, crash recovery, release integrity/signatures, third-party license distribution, and Windows installer/uninstaller. No public binary release is authorized by this preview build.
+
+See [preview build notes](docs/PREVIEW_BUILD.md) and [release gates](docs/RELEASE_BLOCKERS.md).
+
 ## Why this fork?
 
 - English-first documentation, localized UI and language selector (English / Tiếng Việt / 简体中文).

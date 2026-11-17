@@ -86,9 +86,18 @@ for (const rel of ['d3dcompiler_47.dll']) {
 // Runtime.prepare() 静默装进安卓。漏掉它用户就打不了中文。
 console.log('复制应用…');
 const appDir = path.join(OUT, 'resources', 'app');
-for (const item of ['package.json', 'src', 'assets', 'LICENSE']) {
+// Preview artifacts do not redistribute the upstream-bundled Chinese IME APK.
+for (const item of ['package.json', 'src', 'LICENSE']) {
   const src = path.join(ROOT, item);
   if (fs.existsSync(src)) copy(src, path.join(appDir, item));
+}
+
+// Portable runtime needs the native LZMA package for on-demand image expansion.
+for (const name of ['lzma', 'lzma-win32-x64-msvc']) {
+  const dep = path.join(ROOT, 'node_modules', '@napi-rs', name);
+  if (fs.existsSync(dep)) {
+    copy(dep, path.join(appDir, 'node_modules', '@napi-rs', name));
+  }
 }
 
 // 3. 可选目录
@@ -187,7 +196,7 @@ embedExeMeta(exePath);
 
 // 5. 版本信息
 const pkg = PKG;
-const fullNote = FULL ? '完整版（内置运行时，装完不联网）' : '轻量版（首次启动下载运行时）';
+const fullNote = FULL ? 'Bundled runtime (NOT cleared for redistribution)' : 'Developer preview: no bundled runtime or Pinyin IME; Android SDK downloads on demand';
 fs.writeFileSync(path.join(OUT, 'VERSION.txt'),
   `ApkStart International ${pkg.version}\n${fullNote}\n构建时间：${new Date().toLocaleString('en-US')}\n`);
 
