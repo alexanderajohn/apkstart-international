@@ -936,6 +936,7 @@ function fillSettings(s) {
   if ($('setFastDns')) $('setFastDns').checked = eng.fastDns !== false;
   if ($('setLocale')) $('setLocale').value = eng.locale || 'zh-CN';
   if ($('setChineseIme')) $('setChineseIme').checked = eng.chineseIme !== false;
+  if ($('setAutoGrantAppPermissions')) $('setAutoGrantAppPermissions').checked = eng.autoGrantAppPermissions === true;
   if ($('setKeepSnapshot')) $('setKeepSnapshot').checked = eng.keepSnapshot !== false;
   $('setDisplayMode').value = d.mode === 'fullscreen' ? 'fullscreen' : 'window';
   if ($('setAutoFullscreen')) $('setAutoFullscreen').value = d.autoFullscreenOnLaunch === true ? 'on' : 'off';
@@ -1199,6 +1200,17 @@ function bindSettings() {
     $('setLocale').addEventListener('change', async (e) => {
       state.settings = await api.setSettings({ engine: { locale: e.target.value } });
       toast({ title: '系统语言已更新', body: '下次重启安卓运行时后生效', type: 'ok' });
+    });
+  }
+  if ($('setAutoGrantAppPermissions')) {
+    $('setAutoGrantAppPermissions').addEventListener('change', async (e) => {
+      const enabled = e.target.checked;
+      await save({ engine: { autoGrantAppPermissions: enabled } });
+      toast({
+        title: enabled ? '已开启自动授权' : '已关闭自动授权',
+        body: '仅影响之后的应用安装与启动；已授予的权限不会自动撤销。',
+        type: enabled ? 'info' : 'ok',
+      });
     });
   }
   if ($('setChineseIme')) {

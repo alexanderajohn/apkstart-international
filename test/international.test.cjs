@@ -34,3 +34,33 @@ test('primary user journeys have translated labels', () => {
 test('catalog includes at least 100 checked UI strings', () => {
   assert.ok(Object.keys(dict.en).length >= 100);
 });
+
+test('Android permission auto-grants require explicit opt-in', () => {
+  const policy = require('../src/core/permission-policy');
+  assert.equal(policy.autoGrantEnabled({}), false);
+  assert.equal(policy.autoGrantEnabled({engine:{}}), false);
+  assert.equal(policy.autoGrantEnabled({engine:{autoGrantAppPermissions:false}}), false);
+  assert.equal(policy.autoGrantEnabled({engine:{autoGrantAppPermissions:'true'}}), false);
+  assert.equal(policy.autoGrantEnabled({engine:{autoGrantAppPermissions:true}}), true);
+  assert.ok(policy.installVariants('example.apk', {}).every(args => !args.includes('-g')));
+  assert.ok(policy.installVariants('example.apk', {engine:{autoGrantAppPermissions:true}}).some(args => args.includes('-g')));
+});
+test('automatic special Android permission overrides are absent', () => {
+  const adb=fs.readFileSync(path.join(root,'src/core/adb.js'),'utf8');
+  assert.doesNotMatch(adb,/cmd appops set \$\{pkg\} \$\{op\} allow/);
+  assert.match(adb,/installVariants\(file, store.getSettings\(\)\)/);
+});
+test('settings exposes an explicit permission opt-in', () => {
+  const store=fs.readFileSync(path.join(root,'src/core/store.js'),'utf8');
+  const html=fs.readFileSync(path.join(root,'src/ui/index.html'),'utf8');
+  const app=fs.readFileSync(path.join(root,'src/ui/app.js'),'utf8');
+  assert.match(store,/autoGrantAppPermissions:\s*false/);
+  assert.match(html,/id="setAutoGrantAppPermissions"/);
+  assert.match(app,/save\(\{ engine: \{ autoGrantAppPermissions: enabled \} \}\)/);
+  assert.match(app,/autoGrantAppPermissions === true/);
+});
+test('installer does not automatically dismiss Android permission dialogs', () => {
+  const installer=fs.readFileSync(path.join(root,'src/core/installer.js'),'utf8');
+  assert.doesNotMatch(installer,/rt\.client\.dismissPermissionDialog\(/);
+  assert.match(installer,/if \(autoGrant\) \{/);
+});

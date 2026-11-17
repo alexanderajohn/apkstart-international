@@ -406,6 +406,13 @@
         </div>
         <div class="field switch-field">
           <div>
+            <label>自动授予应用权限（不推荐）</label>
+            <span class="sub">关闭时由 Android 逐项询问应用权限。开启后会自动授予应用请求的普通运行时权限；特殊权限仍须用户手动允许。此选项仅适合可信任的 APK，关闭后不会撤销以前授予的权限。</span>
+          </div>
+          <input type="checkbox" id="setAutoGrantAppPermissions" class="switch" />
+        </div>
+        <div class="field switch-field">
+          <div>
             <label>中文输入法（推荐）</label>
             <span class="sub">镜像只带英文键盘，勾上会静默安装并启用随包的谷歌拼音输入法，
               这样在安卓应用里能直接打中文。关掉则保持系统原生输入法。</span>

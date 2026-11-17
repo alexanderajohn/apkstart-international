@@ -111,7 +111,7 @@ window.ASI_CATALOGS = {
     "正在读取数据分区…": "Reading data partition…",
     "系统语言": "Android system language",
     "简体中文（推荐）": "Simplified Chinese (recommended)",
-    "中文输入法（推荐）": "Chinese input method (recommended)",
+    "中文输入法（推荐）": "Chinese input method (optional)",
     "网络加速（推荐）": "Network optimization (recommended)",
     "安卓声音": "Android audio",
     "保留快速启动快照（推荐）": "Keep quick-boot snapshots (recommended)",
@@ -140,7 +140,13 @@ window.ASI_CATALOGS = {
     "立即更新": "Update now",
     "稍后": "Later",
     "正在更新中": "Update in progress",
-    "已经是最新版本": "Already up to date"
+    "已经是最新版本": "Already up to date",
+    "自动授予应用权限（不推荐）": "Automatically grant app permissions (not recommended)",
+    "关闭时由 Android 逐项询问应用权限。开启后会自动授予应用请求的普通运行时权限；特殊权限仍须用户手动允许。此选项仅适合可信任的 APK，关闭后不会撤销以前授予的权限。": "Off: Android asks for each permission. On: automatically grant requested runtime permissions; special permissions still require manual approval. Enable only for trusted APKs. Turning it off does not revoke existing grants.",
+    "已开启自动授权": "Automatic grants enabled",
+    "已关闭自动授权": "Automatic grants disabled",
+    "仅影响之后的应用安装与启动；已授予的权限不会自动撤销。": "Affects future app installs and launches only; permissions already granted are not automatically revoked.",
+    "English（镜像原生）": "English (system image default)"
   },
   "vi": {
     "设置": "Cài đặt",
@@ -254,7 +260,7 @@ window.ASI_CATALOGS = {
     "正在读取数据分区…": "Đang đọc phân vùng dữ liệu…",
     "系统语言": "Ngôn ngữ hệ thống Android",
     "简体中文（推荐）": "Tiếng Trung giản thể (đề xuất)",
-    "中文输入法（推荐）": "Bàn phím tiếng Trung (đề xuất)",
+    "中文输入法（推荐）": "Bàn phím tiếng Trung (tùy chọn)",
     "网络加速（推荐）": "Tối ưu mạng (đề xuất)",
     "安卓声音": "Âm thanh Android",
     "保留快速启动快照（推荐）": "Giữ ảnh khởi động nhanh (đề xuất)",
@@ -283,7 +289,13 @@ window.ASI_CATALOGS = {
     "立即更新": "Cập nhật ngay",
     "稍后": "Để sau",
     "正在更新中": "Đang cập nhật",
-    "已经是最新版本": "Đã là bản mới nhất"
+    "已经是最新版本": "Đã là bản mới nhất",
+    "自动授予应用权限（不推荐）": "Tự động cấp quyền ứng dụng (không khuyến nghị)",
+    "关闭时由 Android 逐项询问应用权限。开启后会自动授予应用请求的普通运行时权限；特殊权限仍须用户手动允许。此选项仅适合可信任的 APK，关闭后不会撤销以前授予的权限。": "Tắt: Android sẽ hỏi quyền từng lần. Bật: tự cấp các quyền runtime ứng dụng yêu cầu; quyền đặc biệt vẫn cần cho phép thủ công. Chỉ bật với APK đáng tin cậy. Tắt tùy chọn không thu hồi quyền đã cấp.",
+    "已开启自动授权": "Đã bật tự động cấp quyền",
+    "已关闭自动授权": "Đã tắt tự động cấp quyền",
+    "仅影响之后的应用安装与启动；已授予的权限不会自动撤销。": "Chỉ áp dụng cho lần cài đặt và mở ứng dụng sau này; các quyền đã cấp không tự thu hồi.",
+    "English（镜像原生）": "Tiếng Anh (mặc định ảnh hệ thống)"
   },
   "zh-CN": {
     "设置": "设置",
@@ -426,6 +438,12 @@ window.ASI_CATALOGS = {
     "立即更新": "立即更新",
     "稍后": "稍后",
     "正在更新中": "正在更新中",
-    "已经是最新版本": "已经是最新版本"
+    "已经是最新版本": "已经是最新版本",
+    "自动授予应用权限（不推荐）": "自动授予应用权限（不推荐）",
+    "关闭时由 Android 逐项询问应用权限。开启后会自动授予应用请求的普通运行时权限；特殊权限仍须用户手动允许。此选项仅适合可信任的 APK，关闭后不会撤销以前授予的权限。": "关闭时由 Android 逐项询问应用权限。开启后会自动授予应用请求的普通运行时权限；特殊权限仍须用户手动允许。此选项仅适合可信任的 APK，关闭后不会撤销以前授予的权限。",
+    "已开启自动授权": "已开启自动授权",
+    "已关闭自动授权": "已关闭自动授权",
+    "仅影响之后的应用安装与启动；已授予的权限不会自动撤销。": "仅影响之后的应用安装与启动；已授予的权限不会自动撤销。",
+    "English（镜像原生）": "English（镜像原生）"
   }
 };

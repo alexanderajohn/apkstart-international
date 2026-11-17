@@ -8,6 +8,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const store = require('./store');
+const { autoGrantEnabled } = require('./permission-policy');
 const { parseApk } = require('./apk');
 const { ZipFile } = require('./zip');
 const { iconToIco, writeShortcut, removeShortcut, safeFileName, shortcutExt } = require('./shortcut');
@@ -508,6 +509,7 @@ class Installer {
       }
     }
     const settings = store.getSettings();
+    const autoGrant = autoGrantEnabled(settings);
     const start = () => rt.client.startApp(app ? app.package : pkg, app ? app.activity : null, {
       freeform: settings.freeform,
       bounds: app ? app.bounds : null,
@@ -561,20 +563,24 @@ class Installer {
       return seen; // 一直没见过进程才算失败
     };
     try {
-      // 先确保运行时权限齐备：安装时的 -g 在清过数据后可能失效，
-      // 缺权限时应用会被系统授权框挡住，用户看到的就是「点了没反应/打不开」。
-      await rt.client.grantRuntimePermissions(pkg).catch(() => {});
-      onMark('permissions granted');
+      // Default: preserve Android's normal permission prompts.
+      // Advanced users may explicitly opt into runtime permission grants.
+      if (autoGrant) {
+        await rt.client.grantRuntimePermissions(pkg).catch(() => {});
+        onMark('runtime permissions auto-granted (user opt-in)');
+      } else {
+        onMark('Android permission prompts enabled');
+      }
       let ok = false;
       for (let attempt = 1; attempt <= 3 && !ok; attempt += 1) {
         if (attempt > 1) {
           // eslint-disable-next-line no-await-in-loop
           await rt.client.forceStop(pkg).catch(() => {});
-          // 授权框挡在最前面时，应用看起来就是「打不开」；先补授权再收掉弹窗
-          // eslint-disable-next-line no-await-in-loop
-          await rt.client.grantRuntimePermissions(pkg).catch(() => {});
-          // eslint-disable-next-line no-await-in-loop
-          await rt.client.dismissPermissionDialog().catch(() => {});
+          // Never dismiss a permission prompt on behalf of the user.
+          if (autoGrant) {
+            // eslint-disable-next-line no-await-in-loop
+            await rt.client.grantRuntimePermissions(pkg).catch(() => {});
+          }
           // eslint-disable-next-line no-await-in-loop
           await sleep(600 * attempt);
         }

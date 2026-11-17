@@ -9,6 +9,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const store = require('./store');
+const { installVariants } = require('./permission-policy');
 
 /**
  * 平板排版的逻辑密度。
@@ -444,13 +445,8 @@ class AdbClient {
     if (!fs.existsSync(apkPath)) throw new Error(`APK 不存在: ${apkPath}`);
     const staged = stageApk(apkPath);
     const file = staged.path;
-    const variants = [
-      // -g 自动授予运行时权限，省掉应用里的授权弹窗；部分镜像不支持则自动降级去掉
-      ['install', '-r', '-t', '-g', '--bypass-low-target-sdk-block', file],
-      ['install', '-r', '-t', '--bypass-low-target-sdk-block', file],
-      ['install', '-r', '-t', file],
-      ['install', '-r', file],
-    ];
+    // Only use adb install -g after explicit opt-in in Settings.
+    const variants = installVariants(file, store.getSettings());
     let last = '';
     let timeout = 240000;
     try { timeout = installTimeoutMs(fs.statSync(file).size); } catch (_) { /* 取不到大小就用默认值 */ }
@@ -848,9 +844,8 @@ class AdbClient {
     // 四五个权限就是 1 秒，而这些命令本身没有任何依赖关系。
     const cmds = [];
     for (const p of denied) cmds.push(`pm grant ${pkg} ${p}`);
-    // 特殊权限走 appops，否则仍然会弹窗
-    const ops = ['MANAGE_EXTERNAL_STORAGE', 'SYSTEM_ALERT_WINDOW', 'REQUEST_INSTALL_PACKAGES', 'WRITE_SETTINGS'];
-    for (const op of ops) cmds.push(`cmd appops set ${pkg} ${op} allow`);
+    // Special Android permissions must be granted by the user in Android Settings.
+    // Never blanket-allow appops such as MANAGE_EXTERNAL_STORAGE or overlay access.
     if (cmds.length) {
       await this.shell(cmds.join(' ; '), { timeout: 20000 }).catch(() => '');
       granted.push(...denied);
