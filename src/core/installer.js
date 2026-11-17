@@ -97,7 +97,7 @@ class Installer {
     if (this.ctx.startMenuDir && store.getSettings().createStartMenuShortcut !== false) {
       // 放在独立子目录：既能被 Windows 搜索索引到，又不会覆盖同名第三方应用的快捷方式
       // （实测「红果免费短剧」在开始菜单里已被另一个桌面助手占用）
-      out.push(path.join(this.ctx.startMenuDir, 'ApkStart', `${safeFileName(app.label)}${shortcutExt()}`));
+      out.push(path.join(this.ctx.startMenuDir, 'ApkStart International', `${safeFileName(app.label)}${shortcutExt()}`));
     }
     return [...new Set(out)];
   }

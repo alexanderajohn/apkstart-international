@@ -127,7 +127,7 @@ const DEFAULT_SETTINGS = {
     deployFailedAt: 0,       // 上次自动部署失败的时间戳（0=无失败）。失败后 30 分钟内不再自动重下
     // 轻量版的运行时整包：默认从本项目 GitHub Release 下载（与「软件更新」同源），
     // 拿不到时自动退回 dl.google.com 分组件下载。可在这里换成自建镜像地址。
-    preferGithubRuntime: true,
+    preferGithubRuntime: false,
     runtimePackUrl: '',
     // GitHub 加速镜像前缀（可选）。国内直连 GitHub Releases 经常只有几十 KB/s，
     // 填成 https://ghfast.top/ 之类的镜像前缀即可把 downloads 请求转过去。
@@ -140,7 +140,7 @@ const DEFAULT_SETTINGS = {
     sourcePreference: 'auto',
     // 自动尝试公共 GitHub 加速镜像（ghfast / gh-proxy）。关掉后只用直连 + 自定义前缀。
     // 这两个是第三方服务，只是转发公开的 release 文件，不涉及账号信息。
-    autoMirror: true,
+    autoMirror: false,
     // Gitee 的 releases 接口对公开仓库也要求 access_token（无 token 直接 404），
     // 想用 Gitee 作为更新源就在这里填一个只读 token；留空则只用 GitHub + 镜像。
     giteeToken: '',

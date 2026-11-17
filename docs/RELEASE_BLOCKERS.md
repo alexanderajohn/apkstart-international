@@ -13,3 +13,7 @@
 - [ ] Add Windows CI and signed builds with artifact integrity checks.
 
 **No public Windows installer is validated by this commit.**
+
+- [x] Pin runtime-pack metadata to fork; default to direct official SDK components until independently released.
+- [x] Rename portable EXE / Start Menu entries to avoid upstream collisions and stop global process kills on uninstall.
+- [ ] Verify runtime archive content hashes and licenses before any public binary release.

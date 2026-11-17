@@ -96,3 +96,19 @@ test('uninstall confirmation dialogs use localized strings', () => {
   const required=["确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。","确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。"];
   for (const key of required) for (const lang of ['en','vi','zh-CN']) assert.ok(dict[lang][key]);
 });
+
+test('runtime pack source only references this fork', () => {
+  const source=fs.readFileSync(path.join(root,'src/core/provision.js'),'utf8');
+  assert.match(source,/api\\.github\\.com\\/repos\\/alexanderajohn\\/apkstart-international\\/releases/);
+  assert.doesNotMatch(source,/repos\\/RoutineMiku\\/apkstart\\/releases/);
+  assert.doesNotMatch(source,/gitee\\.com\\/daily-miku\\/apkstart/);
+});
+test('preview package identity avoids upstream collisions', () => {
+  const source=fs.readFileSync(path.join(root,'build/pack.js'),'utf8');
+  const nsis=fs.readFileSync(path.join(root,'build/installer.nsh'),'utf8');
+  assert.match(source,/ApkStart International\\.exe/);
+  assert.match(source,/numericFileVersion\\(PKG\\.version\\)/);
+  assert.match(nsis,/ApkStart International\\\\/);
+  assert.doesNotMatch(nsis,/taskkill\\.exe \\/F \\/T \\/IM adb\\.exe/);
+  assert.doesNotMatch(nsis,/taskkill\\.exe \\/F \\/T \\/IM emulator\\.exe/);
+});

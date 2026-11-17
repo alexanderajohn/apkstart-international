@@ -51,12 +51,12 @@ const SOURCES = {
   // 以前轻量版要从 dl.google.com 分别下 emulator / 系统镜像，国内网络经常
   // 卡在几十 KB/s 甚至直接 404；改成整包 + 本项目 GitHub 之后，下载源和更新源
   // 是同一个地方，出了问题也只需要在一个地方修。
-  ghReleaseApi: 'https://api.github.com/repos/RoutineMiku/apkstart/releases',
-  ghReleasePage: 'https://github.com/RoutineMiku/apkstart/releases',
+  ghReleaseApi: 'https://api.github.com/repos/alexanderajohn/apkstart-international/releases',
+  ghReleasePage: 'https://github.com/alexanderajohn/apkstart-international/releases',
   // 同内容的 Gitee 镜像：国内直连 api.github.com 常常几十秒才响应，Gitee 一般几百毫秒。
   // 两边都问一次，谁先给出「带运行时整包的最高版本」就用谁。
-  giteeReleaseApi: 'https://gitee.com/api/v5/repos/daily-miku/apkstart/releases',
-  giteeReleasePage: 'https://gitee.com/daily-miku/apkstart/releases',
+  giteeReleaseApi: null,
+  giteeReleasePage: null,
 };
 
 /**
@@ -547,10 +547,8 @@ class Provisioner {
     if (custom) return { url: absUrl(custom), name: path.basename(custom.split('?')[0]), size: 0, tag: 'custom' };
     if (this._cache.pack) return this._cache.pack;
 
-    const pref = String(store.getSettings().runtime.sourcePreference || 'auto');
-    const apis = [];
-    if (pref !== 'gitee') apis.push({ api: SOURCES.ghReleaseApi, page: SOURCES.ghReleasePage, name: 'GitHub' });
-    if (pref !== 'github') apis.push({ api: SOURCES.giteeReleaseApi, page: SOURCES.giteeReleasePage, name: 'Gitee' });
+    // Independent fork: never fetch runtime packs from an upstream Gitee mirror.
+    const apis = [{ api: SOURCES.ghReleaseApi, page: SOURCES.ghReleasePage, name: 'GitHub' }];
 
     // 并发问两边；任何一个失败都不影响另一个
     const lists = await Promise.all(apis.map(async (a) => {
@@ -577,7 +575,7 @@ class Provisioner {
     }
     if (!cands.length) {
       const errs = lists.filter((x) => !x.list).map((x) => `${x.name} 不可达`).join('、');
-      throw new Error(`两个源上都没有运行时整包${errs ? `（${errs}）` : ''}`);
+      throw new Error(`本项目尚未发布可验证的运行时整包${errs ? `（${errs}）` : ''}。请使用官方 Android SDK 组件。`);
     }
     cands.sort((a, b) => cmpVer(b.tag, a.tag));
     this._cache.pack = cands[0];

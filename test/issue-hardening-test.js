@@ -127,41 +127,37 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'apkstart-hardening-'));
   });
 
   console.log('\n[issue #98 · 更新不重启死循环]');
-  await atest('已就绪的载荷可被找回续做，版本不符/缺 exe 则不可用', async () => {
+
+  await atest('已经就绪的载荷可验证，但未审计自动更新必须禁止恢复', async () => {
     const dataDir = path.join(TMP, 'upd-resume');
-    const exe = path.join(dataDir, 'ApkStart.exe');
+    const exe = path.join(dataDir, 'ApkStart International.exe');
     fs.mkdirSync(dataDir, { recursive: true });
     fs.writeFileSync(exe, 'x');
-    const u = new Updater({ currentVersion: '0.5.3', exePath: exe, isPackaged: true, dataDir });
-
-    const payload = path.join(dataDir, 'update', '0.5.4', 'payload');
-    fs.mkdirSync(payload, { recursive: true });
-    fs.writeFileSync(path.join(payload, 'ApkStart.exe'), 'new');
-    assert.equal(u.findResumableJob(), null, '没有就绪标记不应复用');
-    u._markPayloadReady(payload, '0.5.4');
-    const job = u.findResumableJob();
-    assert.ok(job && job.version === '0.5.4', '应找回 0.5.4 的续做任务');
-
-    // 版本比当前旧 → 不复用
-    const cur = new Updater({ currentVersion: '0.5.4', exePath: exe, isPackaged: true, dataDir });
-    assert.equal(cur.findResumableJob(), null, '不低于当前版本的载荷不能续做');
-    // 标记版本不符 → 不复用
-    fs.writeFileSync(u._readyFile(payload), JSON.stringify({ version: '0.5.2' }));
-    assert.equal(u.findResumableJob(), null, '标记版本不符不能复用');
+    const u = new Updater({currentVersion:'0.1.0',exePath:exe,isPackaged:true,dataDir});
+    const payload = path.join(dataDir,'update','0.1.1','payload');
+    fs.mkdirSync(payload, {recursive:true});
+    fs.writeFileSync(path.join(payload,'ApkStart International.exe'),'new');
+    assert.equal(u._payloadReady(payload,'0.1.1'),false,'Missing ready marker must fail validation');
+    u._markPayloadReady(payload,'0.1.1');
+    assert.equal(u._payloadReady(payload,'0.1.1'),true,'Valid cached payload should remain inspectable');
+    assert.equal(u._payloadReady(payload,'0.1.2'),false,'Mismatched version must fail');
+    assert.equal(u.findResumableJob(),null,'Disabled self-update must never auto-resume');
   });
-  test('apply 脚本用字节数校验替换成功，且保留失败载荷、有双路径重启', () => {
+  test('chặn chạy script cập nhật, nhưng vẫn giữ kiểm tra an toàn ở nguồn', () => {
     const dataDir = path.join(TMP, 'upd-apply');
-    const exe = path.join(dataDir, 'ApkStart.exe');
-    fs.mkdirSync(dataDir, { recursive: true });
-    fs.writeFileSync(exe, 'old');
-    const u = new Updater({ currentVersion: '0.5.3', exePath: exe, isPackaged: true, dataDir });
-    const payload = path.join(dataDir, 'update', '0.5.4', 'payload');
-    fs.mkdirSync(payload, { recursive: true });
-    fs.writeFileSync(path.join(payload, 'ApkStart.exe'), 'new-version-bytes');
-    const script = u.apply({ mode: 'zip', payload, version: '0.5.4' }, { spawn: false });
-    assert.ok(/\(Get-Item \$target\)\.Length -eq \$expected/.test(script), '必须按字节数验证新 exe');
-    assert.ok(/keeping payload for next launch/.test(script), '复制失败必须保留载荷供续做');
-    assert.ok(/Start-Process -FilePath/.test(script) && /cmd\.exe/.test(script), '重启必须有兜底路径');
+    const exe = path.join(dataDir, 'ApkStart International.exe');
+    fs.mkdirSync(dataDir, {recursive:true});
+    fs.writeFileSync(exe,'old');
+    const u = new Updater({currentVersion:'0.1.0',exePath:exe,isPackaged:true,dataDir});
+    const payload = path.join(dataDir,'update','0.1.1','payload');
+    fs.mkdirSync(payload,{recursive:true});
+    fs.writeFileSync(path.join(payload,'ApkStart International.exe'),'new');
+    assert.throws(() => u.apply({mode:'zip',payload,version:'0.1.1'},{spawn:false}), e => e && e.code === 'ASI_UPDATES_DISABLED');
+    assert.equal(fs.existsSync(path.join(dataDir,'update','apply.log.ps1')),false,'Blocked updates must not create apply scripts');
+    const source = fs.readFileSync(path.join(__dirname,'../src/core/updater.js'),'utf8');
+    assert.ok(source.includes('(Get-Item $target).Length -eq $expected'),'Byte-count check must stay');
+    assert.ok(source.includes('keeping payload for next launch'),'Failed payload retention must stay');
+    assert.ok(source.includes('Start-Process -FilePath') && source.includes('cmd.exe'),'Relaunch fallback must stay');
   });
 
   console.log(`\n结果：${passed} 通过，${failed} 失败\n`);
