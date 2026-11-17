@@ -6,3 +6,21 @@ test('catalog keys align',()=>{const expected=Object.keys(dict.en).sort();for(co
 test('all translations are non-empty strings',()=>{for(const d of Object.values(dict)) for(const value of Object.values(d)) assert.ok(typeof value==='string' && value.trim());});
 test('renderer loads all local i18n scripts',()=>{const html=fs.readFileSync(path.join(root,'src/ui/index.html'),'utf8'); for(const f of ['catalogs.js','translator.js','bridge.js']) assert.ok(html.includes('i18n/'+f));});
 test('upstream MIT license remains',()=>assert.ok(fs.readFileSync(path.join(root,'LICENSE'),'utf8').includes('MIT')));
+
+test('failed launches never clear installed app data automatically', () => {
+  const source=fs.readFileSync(path.join(root,'src/core/installer.js'),'utf8');
+  assert.doesNotMatch(source,/pm\s+clear\s+\$\{pkg\}/);
+});
+test('fork self-updater blocks automatic executable replacement', () => {
+  const policy=require('../src/core/update-policy');
+  assert.equal(policy.SELF_UPDATE_ENABLED,false);
+  assert.throws(() => policy.assertSelfUpdateAllowed(), {code:'ASI_UPDATES_DISABLED'});
+  const source=fs.readFileSync(path.join(root,'src/core/updater.js'),'utf8');
+  assert.match(source,/async prepare\(info\)\s*\{\s*assertSelfUpdateAllowed\(\)/);
+  assert.match(source,/apply\(job, opts = \{\}\)\s*\{\s*assertSelfUpdateAllowed\(\)/);
+});
+test('fork release endpoint stays separate from upstream', () => {
+  const source=fs.readFileSync(path.join(root,'src/core/sources.js'),'utf8');
+  assert.match(source,/OWNER_GH = 'alexanderajohn'/);
+  assert.match(source,/REPO = 'apkstart-international'/);
+});

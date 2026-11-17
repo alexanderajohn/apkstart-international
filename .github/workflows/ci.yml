@@ -32,6 +32,21 @@ jobs:
       - name: 运行测试
         run: npm test
 
+      - name: Check independent fork metadata
+        run: npm run audit:international
+
+      - name: Run internationalization and fork-safety tests
+        run: npm run test:international
+
+      - name: Verify generated locale bundles are committed
+        shell: pwsh
+        run: |
+          npm run i18n:build
+          if (git status --porcelain -- src/ui/i18n/catalogs.js) {
+            Write-Error "Localization bundle is stale. Run npm run i18n:build and commit catalogs.js."
+            exit 1
+          }
+
       # 直接驱动 agent.ps1 内嵌 C# 的钩子回调，防止键位映射被改坏
       - name: 鼠标钩子逻辑冒烟测试
         shell: powershell

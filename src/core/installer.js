@@ -601,21 +601,12 @@ class Installer {
         if (!ok && attempt < 3) onLog(`应用启动后退出（第 ${attempt} 次），正在自动重试…`);
       }
       if (!ok) {
-        // 兜底：异常退出会留下「半初始化」的数据，导致之后每次都崩。
-        // 清一次应用数据再拉起来，成功率最高（用户不必自己去设置里清缓存）。
-        onLog('应用连续退出，正在重置应用数据后重试…');
-        await rt.client.shell(`pm clear ${pkg}`, { timeout: 20000 }).catch(() => '');
-        await sleep(800);
-        // pm clear 会把运行时权限一并清掉，必须重新授，否则会卡在系统授权框
-        await rt.client.grantRuntimePermissions(pkg).catch(() => {});
-        await start().catch((e) => {
-          if (e.code === 'APP_CRASHED' && e.crash) throw e;
-        });
-        ok = await staysAlive();
-        if (!ok) await rt.client.dismissPermissionDialog().catch(() => {});
+        // Fork safety policy: failed launches must never erase installed-app data.
+        // The user can explicitly clear app data from the application's context menu.
+        onLog('应用多次启动失败：为保护用户数据，已跳过自动清除应用数据。');
       }
       if (!ok) {
-        const err = new Error('应用启动后立即退出，已自动重试并重置应用数据仍未成功');
+        const err = new Error('应用启动后立即退出，已自动重试；未清除应用数据，请检查兼容性或手动排障');
         err.code = 'APP_UNSTABLE';
         throw err;
       }
