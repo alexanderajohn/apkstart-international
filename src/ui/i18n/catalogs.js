@@ -169,7 +169,11 @@ window.ASI_CATALOGS = {
     "已就绪": "Ready",
     "清空安卓 /data 用户数据 + 已装应用 + 快速启动快照，还原成刚装好系统的干净状态": "Delete Android /data, installed apps and quick-boot snapshots; restore a fresh system state",
     "扫描并清掉旧版本留下的程序目录、失效的卸载项和更新临时文件": "Remove old program folders, broken uninstall entries and update cache",
-    "安卓虚拟机没有网络时（应用里联网页面一直黑屏/转圈），用这个把安卓数据重置掉来修网络。应用清单会保留，点开应用会自动重装": "Network repair may reset Android data if the emulator cannot connect. The app list is retained and apps reinstall when opened."
+    "安卓虚拟机没有网络时（应用里联网页面一直黑屏/转圈），用这个把安卓数据重置掉来修网络。应用清单会保留，点开应用会自动重装": "Network repair may reset Android data if the emulator cannot connect. The app list is retained and apps reinstall when opened.",
+    "确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。": "Uninstall “{app}”?\n\nIts app data and desktop shortcut will be removed.",
+    "确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。": "Uninstall ApkStart International?\n\nThis removes the .apk file association and the program. This cannot be undone.",
+    "已卸载": "Uninstalled",
+    "卸载失败": "Uninstallation failed"
   },
   "vi": {
     "设置": "Cài đặt",
@@ -341,7 +345,11 @@ window.ASI_CATALOGS = {
     "已就绪": "Sẵn sàng",
     "清空安卓 /data 用户数据 + 已装应用 + 快速启动快照，还原成刚装好系统的干净状态": "Xóa dữ liệu Android /data, ứng dụng và ảnh khởi động nhanh; khôi phục trạng thái như mới cài",
     "扫描并清掉旧版本留下的程序目录、失效的卸载项和更新临时文件": "Dọn thư mục bản cũ, mục gỡ cài đặt lỗi và bộ nhớ đệm cập nhật",
-    "安卓虚拟机没有网络时（应用里联网页面一直黑屏/转圈），用这个把安卓数据重置掉来修网络。应用清单会保留，点开应用会自动重装": "Sửa mạng có thể đặt lại dữ liệu Android khi máy ảo mất mạng. Danh sách ứng dụng được giữ lại và ứng dụng sẽ cài lại khi mở."
+    "安卓虚拟机没有网络时（应用里联网页面一直黑屏/转圈），用这个把安卓数据重置掉来修网络。应用清单会保留，点开应用会自动重装": "Sửa mạng có thể đặt lại dữ liệu Android khi máy ảo mất mạng. Danh sách ứng dụng được giữ lại và ứng dụng sẽ cài lại khi mở.",
+    "确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。": "Gỡ cài đặt “{app}”?\n\nDữ liệu ứng dụng và lối tắt trên Desktop cũng sẽ bị xóa.",
+    "确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。": "Gỡ cài đặt ApkStart International?\n\nThao tác này sẽ bỏ liên kết tệp .apk và gỡ ứng dụng. Không thể hoàn tác.",
+    "已卸载": "Đã gỡ cài đặt",
+    "卸载失败": "Gỡ cài đặt thất bại"
   },
   "zh-CN": {
     "设置": "设置",
@@ -513,6 +521,10 @@ window.ASI_CATALOGS = {
     "已就绪": "已就绪",
     "清空安卓 /data 用户数据 + 已装应用 + 快速启动快照，还原成刚装好系统的干净状态": "清空安卓 /data 用户数据 + 已装应用 + 快速启动快照，还原成刚装好系统的干净状态",
     "扫描并清掉旧版本留下的程序目录、失效的卸载项和更新临时文件": "扫描并清掉旧版本留下的程序目录、失效的卸载项和更新临时文件",
-    "安卓虚拟机没有网络时（应用里联网页面一直黑屏/转圈），用这个把安卓数据重置掉来修网络。应用清单会保留，点开应用会自动重装": "安卓虚拟机没有网络时（应用里联网页面一直黑屏/转圈），用这个把安卓数据重置掉来修网络。应用清单会保留，点开应用会自动重装"
+    "安卓虚拟机没有网络时（应用里联网页面一直黑屏/转圈），用这个把安卓数据重置掉来修网络。应用清单会保留，点开应用会自动重装": "安卓虚拟机没有网络时（应用里联网页面一直黑屏/转圈），用这个把安卓数据重置掉来修网络。应用清单会保留，点开应用会自动重装",
+    "确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。": "确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。",
+    "确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。": "确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。",
+    "已卸载": "已卸载",
+    "卸载失败": "卸载失败"
   }
 };

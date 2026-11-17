@@ -89,3 +89,10 @@ test('destructive app data prompt is localized and remains explicit', () => {
     assert.ok(dict[language]['清除「{app}」的全部数据？此操作不可撤销。']);
   }
 });
+
+test('uninstall confirmation dialogs use localized strings', () => {
+  const app=fs.readFileSync(path.join(root,'src/ui/app.js'),'utf8');
+  assert.ok(app.includes('window.ASI_I18N?.t('));
+  const required=["确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。","确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。"];
+  for (const key of required) for (const lang of ['en','vi','zh-CN']) assert.ok(dict[lang][key]);
+});

@@ -168,5 +168,9 @@
   "已就绪": "Ready",
   "清空安卓 /data 用户数据 + 已装应用 + 快速启动快照，还原成刚装好系统的干净状态": "Delete Android /data, installed apps and quick-boot snapshots; restore a fresh system state",
   "扫描并清掉旧版本留下的程序目录、失效的卸载项和更新临时文件": "Remove old program folders, broken uninstall entries and update cache",
-  "安卓虚拟机没有网络时（应用里联网页面一直黑屏/转圈），用这个把安卓数据重置掉来修网络。应用清单会保留，点开应用会自动重装": "Network repair may reset Android data if the emulator cannot connect. The app list is retained and apps reinstall when opened."
+  "安卓虚拟机没有网络时（应用里联网页面一直黑屏/转圈），用这个把安卓数据重置掉来修网络。应用清单会保留，点开应用会自动重装": "Network repair may reset Android data if the emulator cannot connect. The app list is retained and apps reinstall when opened.",
+  "确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。": "Uninstall “{app}”?\n\nIts app data and desktop shortcut will be removed.",
+  "确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。": "Uninstall ApkStart International?\n\nThis removes the .apk file association and the program. This cannot be undone.",
+  "已卸载": "Uninstalled",
+  "卸载失败": "Uninstallation failed"
 }

@@ -22,7 +22,7 @@ function t(value, code) {
     const viUnit = {'分钟':'phút','小时':'giờ','天':'ngày'}[time[2]];
     return match[1] + (normalize(code) === 'vi' ? n + ' ' + viUnit + ' trước' : n + ' ' + enUnit + (n === 1 ? '' : 's') + ' ago') + match[3];
   }
-  const count = source.match(/^(\\d+)\\s*个应用$/);
+  const count = source.match(/^(\d+)\s*个应用$/);
   if (count) {
     const n = Number(count[1]);
     return match[1] + (normalize(code) === 'vi'
@@ -32,8 +32,8 @@ function t(value, code) {
   // Translate only known system status templates. Do not translate user-supplied
   // application names or use broad Chinese substring replacement.
   const rules = [
-    [/^正在打开\\s+(.+)$/, {en: name => 'Opening ' + name + '…', vi: name => 'Đang mở ' + name + '…'}],
-    [/^正在安装\\s+(.+)$/, {en: name => 'Installing ' + name + '…', vi: name => 'Đang cài ' + name + '…'}],
+    [/^正在打开\s+(.+)$/, {en: name => 'Opening ' + name + '…', vi: name => 'Đang mở ' + name + '…'}],
+    [/^正在安装\s+(.+)$/, {en: name => 'Installing ' + name + '…', vi: name => 'Đang cài ' + name + '…'}],
     [/^(.+) 已安装$/, {en: name => name + ' installed', vi: name => 'Đã cài ' + name}],
     [/^(.+) 兼容性提示$/, {en: name => name + ': compatibility notice', vi: name => name + ': lưu ý tương thích'}],
   ];

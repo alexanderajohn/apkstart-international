@@ -590,7 +590,7 @@ async function createShortcut(pkg) {
 async function uninstall(pkg) {
   const app = state.apps.find((a) => a.package === pkg);
   if (!app) return;
-  const ok = window.confirm(`确定卸载「${app.label}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。`);
+  const ok = window.confirm((window.ASI_I18N?.t("确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。") || "确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。").replace('{app}', app.label));
   if (!ok) return;
   try {
     await api.uninstall(pkg);
@@ -1628,7 +1628,7 @@ function bindSettings() {
 
   // 一键卸载 ApkStart 本体（取消 .apk 关联 + 启动卸载程序；便携版手动删除）
   $('btnUninstall').addEventListener('click', async () => {
-    const ok = window.confirm('确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。');
+    const ok = window.confirm(window.ASI_I18N?.t("确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。") || "确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。");
     if (!ok) return;
     const btn = $('btnUninstall');
     btn.disabled = true;
