@@ -119,6 +119,36 @@
           </div>
         </div>
       </div>
+      <div class="asi-backup-actions">
+        <button id="btnBackupHealthToggle" class="btn ghost sm" type="button" aria-expanded="false" aria-controls="backupHealthPanel">Disaster Recovery &amp; Integrity Health Check</button>
+      </div>
+      <div id="backupHealthPanel" class="asi-backup-preview" hidden>
+        <strong id="backupHealthTitle">Disaster Recovery &amp; Integrity Health Check</strong>
+        <p id="backupHealthNotice">Read-only scan detects interrupted cleanup, restore stages and unfinished encrypted archives. It never automatically repairs or deletes anything.</p>
+        <div class="asi-backup-actions">
+          <button id="btnBackupHealthRun" class="btn ghost sm" type="button">Scan local recovery health</button>
+        </div>
+        <div id="backupHealthSummary" class="asi-backup-progress" role="status" aria-live="polite">Run an offline scan to inspect recovery artifacts.</div>
+        <div class="asi-backup-actions">
+          <label id="backupHealthArchiveLabel" for="backupHealthArchiveSelect">Encrypted archives to authenticate</label>
+          <select id="backupHealthArchiveSelect" aria-label="Select encrypted archive for full integrity check"></select>
+          <button id="btnBackupHealthVerify" class="btn ghost sm" type="button">Verify selected encrypted archive with password</button>
+        </div>
+        <div class="asi-backup-actions">
+          <label id="backupHealthQuarantineLabel" for="backupHealthQuarantineSelect">Interrupted cleanup fragments</label>
+          <select id="backupHealthQuarantineSelect" aria-label="Select interrupted cleanup fragments for manual rescue"></select>
+          <button id="btnBackupRescuePreview" class="btn ghost sm" type="button">Inspect selected rescue</button>
+        </div>
+        <div id="backupRescuePreviewPanel" class="asi-backup-preview" hidden>
+          <strong id="backupRescueTitle">Manual fragment rescue preview</strong>
+          <div id="backupRescueDetails"></div>
+          <p id="backupRescueNotice">RESCUE returns only surviving plaintext fragments to safety-copy locations. It cannot recreate missing data or restore active Android files.</p>
+          <div class="asi-backup-actions">
+            <button id="btnBackupRescueApply" class="btn primary sm" type="button">Rescue fragments after confirmation</button>
+            <button id="btnBackupRescueCancel" class="btn ghost sm" type="button">Cancel rescue preview</button>
+          </div>
+        </div>
+      </div>
       <div id="backupProgress" class="asi-backup-progress" role="status" aria-live="polite">Ready. Choose an external folder for a backup.</div>
       <div id="backupPreview" class="asi-backup-preview" hidden>
         <strong id="backupPreviewTitle">Verified snapshot</strong>
