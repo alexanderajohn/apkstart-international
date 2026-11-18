@@ -250,6 +250,7 @@ function resourcePreset(mode) {
 
 const store = {
   DATA_DIR,
+  backupLocked:false,
   profiles: profileRegistry,
   // Dynamic getters preserve the default data while isolating APKs/icons.
   get ICON_DIR() { return profileRegistry.paths().iconsDir; },
@@ -297,6 +298,7 @@ const store = {
   },
 
   saveApps(apps) {
+    if (this.backupLocked) throw new Error('Profile backup/restore in progress');
     writeJson(profileRegistry.paths().appsFile, { apps });
   },
 

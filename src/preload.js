@@ -8,6 +8,10 @@ contextBridge.exposeInMainWorld('apkstart', {
   profilesList: () => invoke('profiles:list'),
   profilesCreate: (name) => invoke('profiles:create', name),
   profilesSwitch: (id) => invoke('profiles:switch', id),
+  backupStatus: () => invoke('backup:status'),
+  backupCreate: () => invoke('backup:create'),
+  backupPickRestore: () => invoke('backup:pickRestore'),
+  backupRestore: (token) => invoke('backup:restore', token),
   listApps: () => invoke('apps:list'),
   pickApk: () => invoke('apk:pick'),
   parseApk: (p) => invoke('apk:parse', p),
@@ -158,7 +162,7 @@ contextBridge.exposeInMainWorld('apkstart', {
     const allowed = [
       'install:start', 'install:progress', 'install:done', 'install:error',
       'app:launched', 'runtime:log', 'toast', 'ui:navigate', 'provision:progress',
-      'update:progress', 'update:state',
+      'update:progress', 'update:state', 'backup:progress',
     ];
     if (!allowed.includes(channel)) return () => {};
     const handler = (_e, payload) => cb(payload);

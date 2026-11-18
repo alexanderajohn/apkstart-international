@@ -10,6 +10,7 @@ const path = require('path');
 const store = require('./core/store');
 const { Runtime } = require('./core/engine');
 const { PerformanceMonitor } = require('./core/performance-monitor');
+const { BackupCenter } = require('./core/backup-center');
 const performance = require('./core/performance');
 const { validPackageName } = require('./core/pkgname');
 const { Installer } = require('./core/installer');
@@ -218,6 +219,8 @@ let mainWindow = null;
 let tray = null;
 let runtime = null;
 let performanceMonitor = null;
+let backupCenter = null;
+let backupBusy = false;
 // 「哪些窗口算我们的」由 whenReady 里赋值（见 agentScope）。放模块级是因为
 // runLaunch / 预热定时器都早于那段代码定义，闭包里的 const 在它们的作用域外看不到。
 let armAgent = async () => ({ ok: false });
@@ -566,7 +569,7 @@ async function toggleDisplayMode() {
 /** 首次运行把 adb / emulator / 系统镜像一次装完，不再分 1~5 步 */
 let deploying = false;
 async function autoDeploy({ force = false } = {}) {
-  if (deploying || !store.getSettings().autoDeploy) return { ok: false, error: 'skipped' };
+  if (backupBusy || deploying || !store.getSettings().autoDeploy) return { ok: false, error: 'skipped' };
   // 下载失败冷却：以前只要 checkEnv() 还缺组件，每次启动 ApkStart 都会重新
   // 拉一遍 1.5GB 的运行时包，用户看到的就是「一直重复下载」。
   // 失败后记一个时间戳，30 分钟内不再自动重试；用户手动点「一键部署」时
@@ -892,6 +895,7 @@ let installBusy = null;   // 正在安装的文件路径：双击 APK 连点会�
 let lastInstallErr = { msg: '', at: 0 };
 
 async function runInstall(filePath) {
+  if (backupBusy) throw new Error('Backup or restore is in progress');
   showWindow();
   // 同一个包正在装（用户连点了几次图标 / 拖了好几次）→ 只提示一次，别重复跑一遍安装
   if (installBusy) {
@@ -984,6 +988,7 @@ let launchInFlight = null;
 let accelWarned = false;
 
 async function runLaunch(pkg) {
+  if (backupBusy) throw new Error('Backup or restore is in progress');
   if (launchInFlight) {
     if (launchInFlight.pkg === pkg) {
       appLog(`launch reused in-flight ${pkg}`);
@@ -1251,7 +1256,7 @@ function registerIpc() {
   // Android Profiles: one live guest at a time. Never switch with Android,
   // installer, auto-download, app windows or another emulator still active.
   async function profileBusyReason() {
-    if (installBusy || deploying || updateBusy || runtime.vmStarting
+    if (backupBusy || installBusy || deploying || updateBusy || runtime.vmStarting
        || runtime.installing || runtime._ensurePromise || runtime.activeApps.length
        || currentAppPkg || (appWin && appWin.isOpen)) {
       return 'Finish active installs, app windows and runtime tasks before switching Android profiles.';
@@ -1268,6 +1273,52 @@ function registerIpc() {
     }
     return '';
   }
+  // Backup & Restore Center: fixed profile files only. Every path for an export
+  // or import is selected by the operating-system folder dialog. A restore
+  // requires a verified preview AND a short-lived, single-use approval token.
+  async function backupIdleCheck() {
+    if (installBusy || deploying || updateBusy || runtime.vmStarting ||
+        runtime.installing || runtime._ensurePromise || runtime.activeApps.length ||
+        currentAppPkg || (appWin && appWin.isOpen)) {
+      throw new Error('Close app windows and finish installations/downloads before backup or restore');
+    }
+    if (runtime.vmRunning) throw new Error('Stop Android runtime in Settings before backup or restore');
+    if (await runtime.client().isOnline().catch(() => false))
+      throw new Error('An Android device is online. Stop runtime before proceeding');
+    const ports=await runtime.emulatorPorts();
+    if (ports.length) throw new Error('An Android emulator is still running. Stop it before proceeding');
+  }
+  ipcMain.handle('backup:status', () => ({
+    profileId:store.profiles.currentId(),busy:backupBusy,
+    directoryFormat:true,encrypted:false,
+  }));
+  ipcMain.handle('backup:create', async () => {
+    if (backupBusy) throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    const picked=await dialog.showOpenDialog(mainWindow,{
+      title:'Choose a folder OUTSIDE ApkStart data for a verified Android profile backup',
+      properties:['openDirectory','createDirectory'],
+      buttonLabel:'Select backup destination',
+    });
+    if(picked.canceled||!picked.filePaths?.[0])return {canceled:true};
+    return backupCenter.create(picked.filePaths[0]);
+  });
+  ipcMain.handle('backup:pickRestore', async () => {
+    if (backupBusy) throw new Error('Backup Center is busy');
+    const chosen=await dialog.showOpenDialog(mainWindow,{
+      title:'Choose an ASI-Backup folder to VERIFY (no restore yet)',
+      properties:['openDirectory'],
+      buttonLabel:'Verify backup folder',
+    });
+    if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
+    return backupCenter.previewRestore(chosen.filePaths[0]);
+  });
+  ipcMain.handle('backup:restore', async (_event, token) => {
+    if (typeof token !== 'string' || !/^[a-f0-9]{48}$/.test(token))
+      throw new Error('Invalid restore approval token');
+    await backupIdleCheck();
+    return backupCenter.restore(token);
+  });
   ipcMain.handle('profiles:list', () => store.profiles.list());
   ipcMain.handle('profiles:create', async (_event, name) => {
     const busy=await profileBusyReason();
@@ -1381,6 +1432,7 @@ function registerIpc() {
   ipcMain.handle('app:stop', async (_e, pkg, opts = {}) => stopApp(pkg, opts));
 
   ipcMain.handle('app:uninstall', async (_e, pkg) => {
+    if (backupBusy) throw new Error('Backup or restore in progress');
     await installer.uninstall(pkg);
     return { ok: true };
   });
@@ -2568,6 +2620,25 @@ if (!gotLock) {
     setAumid(APP_AUMID);
     runtime = new Runtime(APP_ROOT);
     performanceMonitor = new PerformanceMonitor(runtime);
+    backupCenter = new BackupCenter({
+      registry:store.profiles,
+      dataDir:store.DATA_DIR,
+      getAvdHome:()=>runtime.provisioner.paths().avdHome,
+      assertIdle:async()=>{
+        // Called repeatedly while copying/staging to catch an external VM
+        // that started after the initial preflight.
+        const bad=installBusy||deploying||updateBusy||runtime.vmStarting
+          ||runtime.installing||runtime._ensurePromise||runtime.activeApps.length
+          ||currentAppPkg||(appWin&&appWin.isOpen)||runtime.vmRunning;
+        if(bad)throw new Error('Android runtime or install task became active during backup');
+        if(await runtime.client().isOnline().catch(()=>false))
+          throw new Error('ADB is online during backup');
+        const ports=await runtime.emulatorPorts();
+        if(ports.length)throw new Error('Android emulator port active during backup');
+      },
+      onBusy:busy=>{backupBusy=busy;store.backupLocked=busy;},
+      onProgress:ev=>send('backup:progress',ev),
+    });
     // 启动即留一行痕迹：出问题时用户把 app.log 发过来就能看到版本与数据目录
     appLog(`start v${app.getVersion()} data=${store.DATA_DIR} pid=${process.pid}`);
 

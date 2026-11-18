@@ -317,6 +317,7 @@ class Runtime {
   }
 
   async boot({ install = false, onLog = () => {} } = {}) {
+    if (store.backupLocked) throw new Error('Android cannot boot during backup/restore');
     const env = await this.provisioner.checkEnv();
     if (store.profiles.currentId() !== 'default' && (install || !env.emulator.ok || !env.sysimg.ok))
       return {ok:false,error:'Secondary profiles require the official Android Emulator with a supported system image; shared QEMU/ISO disks are disabled.'};
@@ -824,6 +825,7 @@ class Runtime {
   // ---------------- 安装系统到虚拟磁盘 ----------------
 
   async startInstaller({ onLog = () => {} } = {}) {
+    if (store.backupLocked) throw new Error('Installer disabled during backup/restore');
     if (store.profiles.currentId() !== 'default')
       throw new Error('Installing to a shared QEMU/ISO disk is disabled for secondary profiles.');
     const env = await this.provisioner.checkEnv();
@@ -979,6 +981,7 @@ class Runtime {
    * 避免两边各判断一次「没在线」后各自拉起一台模拟器（AVD 锁冲突 + 双倍内存）。
    */
   async ensure({ onLog = () => {} } = {}) {
+    if (store.backupLocked) throw new Error('Android cannot start during profile backup/restore');
     if (this._ensurePromise) return this._ensurePromise;
     const p = this._ensureInner({ onLog });
     this._ensurePromise = p;
