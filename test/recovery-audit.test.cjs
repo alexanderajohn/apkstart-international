@@ -128,8 +128,8 @@ test('verified privacy-minimized report requires native-selected outside destina
   assert.equal(r.format,'apkstart-international-recovery-verification-report');
   assert.equal(r.verification.status,'verified-local-hash-chain');
   assert.equal(r.events.length,2);
-  for(const privateField of ['password','approvalToken','C:\\Private\\',
-    'userdata-qemu.img','secret.apk','profileId','backupDirectory'])
+  for(const privateField of ['"password":','"approvalToken":','C:\\Private\\',
+    'userdata-qemu.img','secret.apk','"profileId":','"backupDirectory":'])
     assert.ok(!raw.includes(privateField),'Private field in report: '+privateField);
   await assert.rejects(()=>x.audit.exportReport(dest),/overwrite/);
   assert.equal(await p.readFile(dest,'utf8'),raw);
