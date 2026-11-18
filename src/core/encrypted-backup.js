@@ -249,6 +249,9 @@ class EncryptedBackupCenter extends BackupCenter {
           if(!present&&!fs.existsSync(target))continue;
           const stage=target+'.'+txn+'.stage',safety=target+'.'+txn+'.before-restore';
           if(fs.existsSync(stage)||fs.existsSync(safety))throw Error('Restore stage collision');
+          // Register BEFORE writing: even an auth failure mid-file must remove
+          // every partially decrypted staging file, never touching live data.
+          stages.push({c,target,stage,safety,present});
           if(present){
             await p.mkdir(path.dirname(stage),{recursive:true});
             if(DIRS.has(c)){
@@ -265,7 +268,6 @@ class EncryptedBackupCenter extends BackupCenter {
               this.progress('decrypt-stage',f.size,m.totalBytes);
             }
           }
-          stages.push({c,target,stage,safety,present});
         }
         await this.idle();
         for(const item of stages){

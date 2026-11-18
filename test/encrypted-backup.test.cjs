@@ -135,3 +135,15 @@ test('Windows smoke creates only ciphertext and refuses to execute a real restor
   assert.ok(main.includes("fs.existsSync(path.join(snapshot.path,'manifest.enc'))"));
   assert.ok(main.includes('no restore executed'));
 });
+
+test('Partial decrypted staging paths are tracked before any file decryption',()=>{
+  const core=fs.readFileSync(path.join(__dirname,'../src/core/encrypted-backup.js'),'utf8');
+  const begin=core.indexOf('async restore(token,password)');
+  const restore=core.slice(begin);
+  assert.ok(restore.indexOf('stages.push({c,target,stage,safety,present})') <
+    restore.indexOf('await decryptFile('),'Stage registered before decrypt can fail');
+  assert.ok(restore.includes('if(fs.existsSync(stage.stage))await p.rm(stage.stage'),
+    'All incomplete stage files removed on failure');
+  assert.ok(restore.includes('if(item.oldMoved&&fs.existsSync(item.safety))'),
+    'Existing original data restored after a failed commit');
+});
