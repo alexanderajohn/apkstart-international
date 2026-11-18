@@ -614,6 +614,7 @@ const MENU_ITEMS = [
   { key: 'shortcut', label: '创建桌面快捷方式' },
   { key: 'pin', label: '固定到顶部' },
   { key: 'keymap', label: '按键映射…' },
+  { key: 'performance', label: 'Smart Performance…' },
   { divider: true },
   { key: 'reveal', label: '打开 APK 所在位置' },
   { key: 'clear', label: '清除应用数据' },
@@ -668,6 +669,11 @@ async function handleMenu(act) {
     case 'shortcut': return createShortcut(pkg);
     case 'pin': return api.pin(pkg, !app.pinned).then(refreshApps);
     case 'keymap': return showKeymapPicker(pkg, app.label);
+    case 'performance': {
+      await openSettings();
+      await window.ASI_PERFORMANCE?.openFor(pkg);
+      return;
+    }
     case 'reveal': return api.revealApk(pkg);
     case 'clear': {
       const question = (window.ASI_I18N?.t('清除「{app}」的全部数据？此操作不可撤销。')

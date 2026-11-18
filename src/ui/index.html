@@ -366,6 +366,45 @@
 
       <div class="group" id="perfGroup">
         <div class="group-title">性能与资源占用</div>
+        <section id="smartPerformanceCenter" class="asi-perf" aria-labelledby="perfCenterTitle">
+          <div class="asi-perf-head">
+            <div>
+              <strong id="perfCenterTitle">Smart Performance Engine</strong>
+              <p id="perfSummary">On-demand local performance measurements · no telemetry uploads</p>
+            </div>
+            <div class="asi-perf-control">
+              <button class="btn primary sm" type="button" id="btnPerfStart">Start measuring</button>
+              <button class="btn ghost sm" type="button" id="btnPerfStop" disabled>Stop</button>
+            </div>
+          </div>
+          <div class="asi-perf-metrics" aria-live="polite">
+            <div class="asi-perf-stat"><span id="perfHostCpu">—</span><small id="perfHostCpuLabel">Host CPU</small></div>
+            <div class="asi-perf-stat"><span id="perfHostRam">—</span><small id="perfHostRamLabel">Host RAM</small></div>
+            <div class="asi-perf-stat"><span id="perfGuestCpu">—</span><small id="perfGuestCpuLabel">Emulator CPU</small></div>
+            <div class="asi-perf-stat"><span id="perfGuestRam">—</span><small id="perfGuestRamLabel">Emulator RAM</small></div>
+            <div class="asi-perf-stat"><span id="perfGuestFps">—</span><small id="perfGuestFpsLabel">Android frames/s*</small></div>
+            <div class="asi-perf-stat"><span id="perfGuestGpu">—</span><small id="perfGuestGpuLabel">GPU render mode</small></div>
+          </div>
+          <p class="asi-perf-note" id="perfMeterNote">Emulator CPU/RAM are shared across Android apps, not attributed to any single APK. GPU utilization is not measured. FPS is only available when Android gfxinfo returns recent frames.</p>
+          <div class="asi-perf-form">
+            <label for="perfAppSelect" id="perfAppLabel">App to optimize</label>
+            <select id="perfAppSelect"><option value="">No installed apps</option></select>
+            <label for="perfModeSelect" id="perfModeLabel">Per-app process preset</label>
+            <select id="perfModeSelect">
+              <option value="inherit">Use global mode</option>
+              <option value="save">Save resources</option>
+              <option value="balanced">Balanced</option>
+              <option value="smooth">Smooth / high process priority</option>
+            </select>
+          </div>
+          <div class="asi-perf-advice" id="perfAdvice" role="status">Measure twice for a recommendation. Settings are not changed automatically.</div>
+          <div class="asi-perf-control">
+            <button class="btn ghost sm" id="btnPerfSuggest" type="button" disabled>Choose suggested mode</button>
+            <button class="btn primary sm" id="btnPerfApply" type="button" disabled>Save per-app preset</button>
+          </div>
+          <p class="asi-perf-note" id="perfPrivacy">Sampling runs only while Performance Center is open and Start is enabled. No uploads, Android resets or automatic configuration changes.</p>
+        </section>
+
         <div class="field">
           <label>资源策略</label>
           <select id="setResourceMode">
@@ -835,5 +874,6 @@
 <script src="i18n/bridge.js"></script>
 <script src="smartcheck.js"></script>
 <script src="auto-repair.js"></script>
+<script src="performance.js"></script>
 </body>
 </html>
