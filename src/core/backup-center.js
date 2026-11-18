@@ -155,7 +155,10 @@ class BackupCenter{
       await this.idle();
       const l=this.layout(),parent=await p.realpath(folder);
       if(!(await safeStat(parent)).isDirectory())throw Error('Choose a backup destination directory');
-      if(within(parent,this.dataDir)||within(this.dataDir,parent))
+      // Compare canonical paths: Windows temp/AppData directories can be junctions
+      // or have aliases, so a text-only path comparison can miss self-backups.
+      const canonicalData=await p.realpath(this.dataDir);
+      if(within(parent,canonicalData)||within(canonicalData,parent))
         throw Error('Choose an external folder outside the ApkStart data directory');
       for(const target of Object.values(l.targets)){
         if(within(parent,target)||within(target,parent))
