@@ -81,6 +81,11 @@ function reportFrom(entries,last){
       'A compromised signing key, lost passphrase or missing external anchor limits or defeats trust.'
     ]};
 }
+async function readLimitedText(file){
+  const s=await statSafe(file);
+  if(s.size>4096)throw Error('Retired signing public key exceeds size limit');
+  return p.readFile(file,'utf8');
+}
 async function readLimited(file){
   const s=await statSafe(file);
   if(s.size>MAX_DOC)throw Error('Signed evidence file exceeds size cap');
@@ -207,8 +212,16 @@ class AuditSigning{
       const key=await this._identity();
       if(!key.exists)throw Error('Signing identity not found for active profile');
       const localKey=await p.readFile(key.publicFile,'utf8');
-      if(fingerprint(localKey)!==q.keyFingerprint)
-        throw Error('Evidence signed by a different local key; check trusted fingerprint');
+      if(fingerprint(localKey)!==q.keyFingerprint){
+        // Rotation keeps only previous PUBLIC keys. Imported evidence is still
+        // checked against the independently trusted historical fingerprint.
+        const retired=path.join(path.dirname(key.publicFile),'retired-signing-keys',q.keyFingerprint+'.pem');
+        let historicalKey;
+        try{historicalKey=await readLimitedText(retired);}
+        catch(_){throw Error('Evidence signed by a different local key; check trusted fingerprint');}
+        if(historicalKey!==e.publicKey||fingerprint(historicalKey)!==q.keyFingerprint)
+          throw Error('Evidence signed by a different local key; check trusted fingerprint');
+      }
       const {entries,last}=await this.audit._read();
       if(q.eventsCount>entries.length)throw Error('Local audit was truncated below external checkpoint');
       const historical=q.eventsCount===0?GENESIS:entries[q.eventsCount-1].hash;
