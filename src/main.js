@@ -16,6 +16,7 @@ const { RecoveryVault } = require('./core/recovery-vault');
 const { SafetyRetention } = require('./core/safety-retention');
 const { DisasterHealth } = require('./core/disaster-health');
 const { RestoreDrill } = require('./core/restore-drill');
+const { RecoveryAudit, causeCode } = require('./core/recovery-audit');
 const performance = require('./core/performance');
 const { validPackageName } = require('./core/pkgname');
 const { Installer } = require('./core/installer');
@@ -230,6 +231,7 @@ let recoveryVault = null;
 let safetyRetention = null;
 let disasterHealth = null;
 let restoreDrill = null;
+let recoveryAudit = null;
 let backupBusy = false;
 let backupActiveCount = 0;
 // 「哪些窗口算我们的」由 whenReady 里赋值（见 agentScope）。放模块级是因为
@@ -1299,6 +1301,48 @@ function registerIpc() {
     const ports=await runtime.emulatorPorts();
     if (ports.length) throw new Error('An Android emulator is still running. Stop it before proceeding');
   }
+  // Audit records contain strictly whitelisted metadata. Failures to write
+  // are surfaced as warnings but cannot turn a successful restore into a
+  // false failure or hide the original operation exception.
+  function evidenceDigest(text){
+    return require('node:crypto').createHash('sha256').update(String(text)).digest('hex');
+  }
+  async function audited(event,source,operation,details=()=>({})){
+    try{
+      const outcome=await operation();
+      const status=outcome?.canceled?'cancelled':'passed';
+      const fields={source,...details(outcome)};
+      let auditWarning=null;
+      try{await recoveryAudit.append(event,status,fields);}
+      catch(_){auditWarning='Recovery audit history could not be updated; verify the local audit log.';}
+      return auditWarning&&outcome&&typeof outcome==='object'
+        ?{...outcome,auditWarning}:outcome;
+    }catch(e){
+      try{await recoveryAudit.append(event,'failed',{source,reason:causeCode(e)});}
+      catch(_){}
+      throw e;
+    }
+  }
+  // History and reports are read-only unless the user requests an export.
+  // No renderer-provided path is accepted by the export endpoint.
+  ipcMain.handle('backup:auditSummary', async () => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    return recoveryAudit.summary();
+  });
+  ipcMain.handle('backup:auditExport', async () => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    const history=await recoveryAudit.summary();
+    if(history.integrity!=='verified')
+      throw Error('Audit history integrity failed; report export is blocked');
+    const chosen=await dialog.showSaveDialog(mainWindow,{
+      title:'Export privacy-minimized Recovery Verification Report',
+      defaultPath:'ApkStart-Recovery-Verification-'+new Date().toISOString().slice(0,10)+'.json',
+      buttonLabel:'Save verified JSON report',
+      filters:[{name:'JSON report',extensions:['json']}],
+    });
+    if(chosen.canceled||!chosen.filePath)return {canceled:true};
+    return recoveryAudit.exportReport(chosen.filePath);
+  });
   ipcMain.handle('backup:status', () => ({
     profileId:store.profiles.currentId(),busy:backupBusy,
     directoryFormat:true,encrypted:true,cipher:'AES-256-GCM',legacyRestoreSupported:true,
@@ -1313,7 +1357,8 @@ function registerIpc() {
       buttonLabel:'Select backup destination',
     });
     if(picked.canceled||!picked.filePaths?.[0])return {canceled:true};
-    return encryptedBackupCenter.create(picked.filePaths[0],password);
+    return audited('backup-create','external',()=>encryptedBackupCenter.create(picked.filePaths[0],password),
+      r=>({files:r.files,bytes:r.bytes}));
   });
   ipcMain.handle('backup:pickRestore', async (_e,password) => {
     if (backupBusy) throw new Error('Backup Center is busy');
@@ -1325,9 +1370,12 @@ function registerIpc() {
     if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
     const folder=chosen.filePaths[0];
     // Old, unencrypted v5 backups remain readable, but new exports are encrypted.
-    if(fs.existsSync(path.join(folder,'header.json')))
-      return encryptedBackupCenter.previewRestore(folder,password);
-    return {...await backupCenter.previewRestore(folder),encrypted:false,legacy:true};
+    const isEncrypted=fs.existsSync(path.join(folder,'header.json'));
+    return audited('restore-verify',isEncrypted?'encrypted':'legacy',async()=>{
+      if(isEncrypted)return encryptedBackupCenter.previewRestore(folder,password);
+      return {...await backupCenter.previewRestore(folder),encrypted:false,legacy:true};
+    },r=>({files:r.files,bytes:r.bytes,
+      evidenceId:isEncrypted?encryptedBackupCenter.pending?.fingerprint:null}));
   });
   ipcMain.handle('backup:pickMigration', async (_e,password) => {
     validatePassword(password);
@@ -1338,7 +1386,10 @@ function registerIpc() {
       properties:['openDirectory'],buttonLabel:'Inspect encrypted migration',
     });
     if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
-    return encryptedBackupCenter.previewMigration(chosen.filePaths[0],password);
+    return audited('restore-verify','migration',
+      ()=>encryptedBackupCenter.previewMigration(chosen.filePaths[0],password),
+      r=>({files:r.files,bytes:r.bytes,
+        evidenceId:encryptedBackupCenter.pending?.fingerprint}));
   });
   // Recovery Vault accepts only IDs discovered for the active profile.
   // The renderer cannot choose arbitrary files or a different profile target.
@@ -1352,7 +1403,9 @@ function registerIpc() {
     validatePassword(password);
     if(backupBusy)throw new Error('Backup Center is busy');
     await backupIdleCheck();
-    return recoveryVault.previewSealed(archiveId,password);
+    return audited('sealed-verify','sealed',()=>recoveryVault.previewSealed(archiveId,password),
+      r=>({files:r.files,bytes:r.bytes,
+        evidenceId:encryptedBackupCenter.pending?.fingerprint}));
   });
   ipcMain.handle('backup:sealedCreate', async (_event,request) => {
     const password=request?.password,pointId=request?.pointId;
@@ -1370,7 +1423,8 @@ function registerIpc() {
       detail:'Original local safety copies are plaintext and WILL NOT be deleted automatically. A lost vault password cannot be recovered. Android must remain stopped.',
     });
     if(approval.response!==1)return {canceled:true};
-    return recoveryVault.sealPoint(pointId,password);
+    return audited('vault-seal','local',()=>recoveryVault.sealPoint(pointId,password),
+      r=>({files:r.files,bytes:r.bytes}));
   });
   // Retention is advisory only. No timers, background pruning or deletion
   // endpoints accepting raw filesystem paths are exposed to the renderer.
@@ -1382,7 +1436,9 @@ function registerIpc() {
     if(backupBusy)throw Error('Backup Center is busy');
     await backupIdleCheck();
     validatePassword(request?.password);
-    return restoreDrill.preview('sealed',request?.archiveId,request.password);
+    return audited('readiness-verify','sealed',
+      ()=>restoreDrill.preview('sealed',request?.archiveId,request.password),
+      r=>({files:r.files,bytes:r.bytes,evidenceId:restoreDrill.pending?.fingerprint}));
   });
   ipcMain.handle('backup:drillExternalPreview', async (_event,password) => {
     if(backupBusy)throw Error('Backup Center is busy');
@@ -1394,7 +1450,9 @@ function registerIpc() {
       buttonLabel:'Inspect encrypted backup for recovery drill',
     });
     if(picked.canceled||!picked.filePaths?.[0])return {canceled:true};
-    return restoreDrill.preview('external',picked.filePaths[0],password);
+    return audited('readiness-verify','external',
+      ()=>restoreDrill.preview('external',picked.filePaths[0],password),
+      r=>({files:r.files,bytes:r.bytes,evidenceId:restoreDrill.pending?.fingerprint}));
   });
   ipcMain.handle('backup:drillCancel',(_event,token)=>({
     canceled:restoreDrill.cancel(token),
@@ -1418,7 +1476,10 @@ function registerIpc() {
       restoreDrill.cancel(request.token);
       return {canceled:true};
     }
-    return restoreDrill.run(request.token,request.password);
+    const evidenceId=restoreDrill.pending?.fingerprint;
+    return audited('restore-drill','synthetic',
+      ()=>restoreDrill.run(request.token,request.password),
+      r=>({files:r.filesVerified,bytes:r.bytesVerified,evidenceId,synthetic:true,bootTested:false}));
   });
   ipcMain.handle('backup:healthReport', async () => {
     if(backupBusy)throw Error('Backup Center is busy');
@@ -1429,7 +1490,9 @@ function registerIpc() {
     if(backupBusy)throw Error('Backup Center is busy');
     await backupIdleCheck();
     validatePassword(request?.password);
-    return disasterHealth.verifyArchive(request?.archiveId,request.password);
+    return audited('health-verify','sealed',
+      ()=>disasterHealth.verifyArchive(request?.archiveId,request.password),
+      r=>({files:r.files,bytes:r.bytes,evidenceId:evidenceDigest(r.archiveId)}));
   });
   ipcMain.handle('backup:rescuePreview', async (_e,id) => {
     if(backupBusy)throw Error('Backup Center is busy');
@@ -1458,7 +1521,7 @@ function registerIpc() {
       disasterHealth.cancelRescue(token);
       return {canceled:true};
     }
-    return disasterHealth.applyRescue(token);
+    return audited('rescue','local',()=>disasterHealth.applyRescue(token));
   });
   ipcMain.handle('backup:retentionReport', async (_e,days) => {
     if(backupBusy)throw new Error('Backup Center is busy');
@@ -1495,7 +1558,8 @@ function registerIpc() {
       safetyRetention.cancel(token);
       return {canceled:true};
     }
-    return safetyRetention.apply(token,request.password);
+    return audited('cleanup','sealed',()=>safetyRetention.apply(token,request.password),
+      r=>({files:r.files,bytes:r.estimatedReclaimedBytes,evidenceId:evidenceDigest(r.archiveId)}));
   });
   ipcMain.handle('backup:recoveryList', async () => {
     if(backupBusy)throw new Error('Backup Center is busy');
@@ -1523,7 +1587,8 @@ function registerIpc() {
       detail:'Current data will be preserved in .before-recovery copies. The existing recovery point is kept. Android must remain stopped. A restart is required.',
     });
     if(approval.response!==1)return {canceled:true};
-    return recoveryVault.apply(token);
+    return audited('recovery','local',()=>recoveryVault.apply(token),
+      r=>({files:r.files,bytes:r.bytes}));
   });
   ipcMain.handle('backup:restore', async (_event, request) => {
     const token=typeof request==='string'?request:request?.token;
@@ -1547,8 +1612,12 @@ function registerIpc() {
       detail:'Android must be stopped. Current APK data and Android userdata are renamed to .before-restore safety copies, not deleted. A restart is required.',
     });
     if(approval.response!==1)return {canceled:true};
-    if(encrypted)return encryptedBackupCenter.restore(token,password);
-    return backupCenter.restore(token);
+    const evidenceId=encrypted?encryptedBackupCenter.pending?.fingerprint:null;
+    const event=migrating?'migration':'restore';
+    const source=migrating?'migration':encrypted?'encrypted':'legacy';
+    return audited(event,source,()=>encrypted
+      ?encryptedBackupCenter.restore(token,password):backupCenter.restore(token),
+      r=>({files:r.files,bytes:r.bytes,evidenceId}));
   });
   ipcMain.handle('profiles:list', () => store.profiles.list());
   ipcMain.handle('profiles:create', async (_event, name) => {
@@ -2888,6 +2957,9 @@ if (!gotLock) {
     safetyRetention = new SafetyRetention({vault:recoveryVault,encryptedBackupCenter});
     disasterHealth = new DisasterHealth({vault:recoveryVault,encryptedBackupCenter});
     restoreDrill = new RestoreDrill({vault:recoveryVault,encryptedBackupCenter});
+    recoveryAudit = new RecoveryAudit({
+      dataDir:store.DATA_DIR,getProfileId:()=>store.profiles.currentId(),
+    });
     // 启动即留一行痕迹：出问题时用户把 app.log 发过来就能看到版本与数据目录
     appLog(`start v${app.getVersion()} data=${store.DATA_DIR} pid=${process.pid}`);
 
