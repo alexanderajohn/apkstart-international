@@ -136,11 +136,34 @@ jobs:
             asi-profiles-smoke.png
             asi-backup-smoke.png
             asi-recovery-smoke.png
+            asi-sealed-smoke.png
           retention-days: 3
           if-no-files-found: ignore
 , '-recovery.png'
           if (!(Test-Path $recoveryShot)) { throw 'Recovery Vault screenshot was not saved' }
           Copy-Item $recoveryShot (Join-Path $PWD 'asi-recovery-smoke.png') -Force
+          $sealedShot = $shot -replace '\.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ApkStart-International-Windows-dev-preview
+          path: dist/ApkStart-International-win64-portable/
+          retention-days: 3
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ApkStart-International-smoke-screenshot
+          path: |
+            asi-preview-smoke.png
+            asi-auto-repair-smoke.png
+            asi-smart-performance-smoke.png
+            asi-profiles-smoke.png
+            asi-backup-smoke.png
+          retention-days: 3
+          if-no-files-found: ignore
+, '-sealed.png'
+          if (!(Test-Path $sealedShot)) { throw 'Encrypted Safety Vault screenshot was not saved' }
+          Copy-Item $sealedShot (Join-Path $PWD 'asi-sealed-smoke.png') -Force
       - uses: actions/upload-artifact@v4
         with:
           name: ApkStart-International-Windows-dev-preview
