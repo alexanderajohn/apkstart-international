@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/international-foundation]
   pull_request:
   workflow_dispatch:
 
@@ -62,7 +62,7 @@ jobs:
 
   preview:
     name: Build Windows developer preview (no Android runtime)
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/feature/international-foundation'
     needs: test
     runs-on: windows-latest
     timeout-minutes: 20
