@@ -42,6 +42,9 @@ jobs:
       - name: Run internationalization and fork-safety tests
         run: npm run test:international
 
+      - name: Check manual live-emulator harness without touching Android
+        run: npm run test:runtime:live -- --help
+
       - name: Verify generated locale bundles are committed
         shell: pwsh
         run: |
