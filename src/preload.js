@@ -82,6 +82,8 @@ contextBridge.exposeInMainWorld('apkstart', {
   importDisk: () => invoke('provision:importDisk'),
 
   selfCheck: () => invoke('doctor:selfCheck'),
+  autoRepairPlan: () => invoke('doctor:repairPlan'),
+  autoRepairApply: (action) => invoke('doctor:applySafeRepair', action),
   clearLocks: () => invoke('app:clearLocks'),
   removeSelf: () => invoke('app:removeSelf'),
   setSharedDir: (dir) => invoke('settings:setSharedDir', dir),

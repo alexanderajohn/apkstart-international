@@ -1618,6 +1618,58 @@ function registerIpc() {
    * 系统问题自动校验：启动前/运行中自动检查常见导致「装不上、起不来」的根因，
    * 并给出可操作的修复建议（在首页横幅 + 设置面板里展示，按问题一键修复）。
    */
+  // Auto-Repair 2.0: read-only evidence collection. No user data, raw logs,
+  // personal file paths or ADB credentials are sent back to the renderer.
+  async function currentAutoRepairSnapshot() {
+    const { buildRepairPlan } = require('./core/auto-repair');
+    const env = await runtime.provisioner.checkEnv().catch(() => ({}));
+    const running = !!runtime.vmRunning;
+    let adbState = '';
+    if (running && env.adb?.ok) {
+      adbState = await runtime.client().deviceState().catch(() => '');
+    }
+    let failure = null;
+    let diagnosis = null;
+    let logLines = [];
+    if (!running) {
+      failure = runtime.emulator.lastFailure ? runtime.emulator.lastFailure() : null;
+      diagnosis = runtime.emulator.lastDiagnosis || (failure && failure.diagnosis) || null;
+      logLines = runtime.emulator.recentLog ? runtime.emulator.recentLog(200) : [];
+      if ((!logLines || !logLines.length) && runtime.emulator.tailLogFile) {
+        logLines = runtime.emulator.tailLogFile(200);
+      }
+    }
+    const plan = buildRepairPlan({
+      env, vmRunning: running, adbState, failure, diagnosis, logLines,
+      settings: store.getSettings(),
+    });
+    return { plan, env };
+  }
+
+  ipcMain.handle('doctor:repairPlan', async () => {
+    const snap = await currentAutoRepairSnapshot();
+    return snap.plan;
+  });
+
+  // Explicit user-initiated allowlisted repair only. Recompute the plan at
+  // execution time to prevent stale/replayed or arbitrary renderer actions.
+  ipcMain.handle('doctor:applySafeRepair', async (_e, action) => {
+    const { applySafeRepair } = require('./core/auto-repair');
+    if (typeof action !== 'string' || action.length > 40) {
+      throw new Error('Invalid repair request');
+    }
+    const snap = await currentAutoRepairSnapshot();
+    const port = Number(process.env.ANDROID_ADB_SERVER_PORT || runtime.emulator.adbPort || 5044);
+    return applySafeRepair(action, {
+      plan: snap.plan,
+      settings: store.getSettings(),
+      saveSettings: (patch) => store.saveSettings(patch),
+      runtime,
+      emulatorVersion: snap.env.emulator?.version || '',
+      adbPort: port,
+    });
+  });
+
   ipcMain.handle('doctor:selfCheck', async () => {
     const doctor = require('./core/doctor');
     const issues = [];
