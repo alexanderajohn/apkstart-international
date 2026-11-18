@@ -638,6 +638,54 @@ async function trustAction(action){
   }catch(e){show(L.error+String(e?.message||e),true);}
   finally{lock(false);}
 }
+async function hardenTrust(action){
+  if(busy)return;
+  const L=locale();
+  let value=null;
+  if(action==='signedVerify'||action==='rotationVerify'){
+    value=window.prompt('Enter the independently verified 64-character signing fingerprint');
+    if(value===null)return;
+    value=value.trim().toLowerCase();
+    if(!/^[0-9a-f]{64}$/.test(value)){show('Trusted fingerprint required.',true);return;}
+  }else{
+    value=$('backupPassword').value;
+    if(!validPassword(value)){show(L.signingPassword,true);return;}
+  }
+  lock(true);show(L.working);
+  try{
+    const job=action==='signedExport'?api.trustSignedExport(value):
+      action==='signedVerify'?api.trustSignedVerify(value):
+      action==='rotationExport'?api.trustRotationCheckpoint(value):
+      api.trustRotationVerify(value);
+    clearPasswords();value='';
+    const result=await job;
+    if(result?.canceled){show(L.canceled);return;}
+    $('backupSigningResult').textContent=JSON.stringify(result,null,2);
+    show('Trust validation/export complete. Independently check the fingerprint.');
+  }catch(e){show(L.error+String(e?.message||e),true);}
+  finally{value='';clearPasswords();lock(false);}
+}
+async function quarantineInactiveKey(){
+  if(busy)return;
+  const fingerprint=window.prompt('Paste the exact INACTIVE key slot fingerprint (64 hex characters). Verify an external backup first:');
+  if(fingerprint===null)return;
+  const id=fingerprint.trim().toLowerCase();
+  if(!/^[0-9a-f]{64}$/.test(id)){show('Invalid key fingerprint.',true);return;}
+  lock(true);show(locale().working);
+  try{
+    const preview=await api.keyQuarantinePreview(id);
+    $('backupSigningResult').textContent=JSON.stringify(preview,null,2);
+    // Both a typed consent and a native OS confirmation are needed.
+    if(window.prompt('Review the candidate above and type QUARANTINE KEY to MOVE, not delete:')!=='QUARANTINE KEY'){
+      show(locale().canceled);return;
+    }
+    const result=await api.keyQuarantineConfirm(preview.token,id,'QUARANTINE KEY');
+    if(result?.canceled){show(locale().canceled);return;}
+    $('backupSigningResult').textContent=JSON.stringify(result,null,2);
+    show('Inactive encrypted key moved to quarantine. No key was deleted.');
+  }catch(e){show(locale().error+String(e?.message||e),true);}
+  finally{lock(false);}
+}
 function renderAudit(result){
   const L=locale();
   if(!result||result.integrity!=='verified'){
@@ -1115,6 +1163,11 @@ function init(){
   $('btnBackupTrustVerify').addEventListener('click',()=>trustAction('verify'));
   $('btnBackupTrustHistory').addEventListener('click',()=>trustAction('history'));
   $('btnBackupTrustInventory').addEventListener('click',()=>trustAction('inventory'));
+  $('btnBackupTrustSignedExport').addEventListener('click',()=>hardenTrust('signedExport'));
+  $('btnBackupTrustSignedVerify').addEventListener('click',()=>hardenTrust('signedVerify'));
+  $('btnBackupTrustRotationCheckpoint').addEventListener('click',()=>hardenTrust('rotationExport'));
+  $('btnBackupTrustRotationVerify').addEventListener('click',()=>hardenTrust('rotationVerify'));
+  $('btnBackupKeyQuarantine').addEventListener('click',quarantineInactiveKey);
   $('btnBackupDrillCancel').addEventListener('click',()=>{
     resetDrill();show(locale().canceled);
   });
