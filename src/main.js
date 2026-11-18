@@ -3422,6 +3422,45 @@ if (!gotLock) {
                 throw new Error('Safety retention smoke unexpectedly removed test data');
               console.log('[smoke] Safety retention advisory and verified cleanup preview only; no deletion executed');
               await snap(out.replace(/\.png$/i,'-retention.png'));
+              // Feature #11: detect simulated interrupted cleanup/restore.
+              // Authenticate an existing sealed archive, render the rescue
+              // preview only. NEVER execute applyRescue in Windows smoke.
+              const healthPointTag=require('node:crypto').randomBytes(10).toString('hex');
+              const healthTxnTag=require('node:crypto').randomBytes(10).toString('hex');
+              const healthQuarantine=smokeData+'.asi-'+healthPointTag+
+                '.before-restore.asi-'+healthTxnTag+'.cleanup-pending';
+              fs.writeFileSync(healthQuarantine,'{"synthetic":"cleanup interrupted"}\n',{flag:'wx'});
+              const healthStage=smokeData+'.asi-'+require('node:crypto').randomBytes(10).toString('hex')+'.stage';
+              fs.writeFileSync(healthStage,'SYNTHETIC_INCOMPLETE_STAGE',{flag:'wx'});
+              const healthPartial=path.join(await recoveryVault.sealedFolder(),
+                'ASI-Sealed-'+new Date().toISOString().slice(0,10)+'-'+
+                require('node:crypto').randomBytes(6).toString('hex')+'.partial');
+              fs.mkdirSync(healthPartial);
+              const healthReport=await disasterHealth.report();
+              const healthVerified=await disasterHealth.verifyArchive(sealedEntry.id,smokeKey);
+              const healthEntry=healthReport.quarantine.find(q=>q.rescuable);
+              if(!healthEntry||healthReport.stages.length<1||healthReport.partialArchives.length<1
+                 ||!healthVerified.authenticated||healthReport.archivesAuthenticated)
+                throw new Error('Disaster health check failed to diagnose synthetic interruptions');
+              const rescuePreview=await disasterHealth.previewRescue(healthEntry.id);
+              const healthShown=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  const pane=document.getElementById('backupHealthPanel');pane.hidden=false;" +
+                "  window.ASI_BACKUP.renderHealthReport("+JSON.stringify(healthReport)+");" +
+                "  window.ASI_BACKUP.renderRescuePreview("+JSON.stringify(rescuePreview)+");" +
+                "  pane.scrollIntoView({block:'center'});" +
+                "  return {summary:document.getElementById('backupHealthSummary').textContent," +
+                "    rescue:!document.getElementById('backupRescuePreviewPanel').hidden," +
+                "    enabled:!document.getElementById('btnBackupRescueApply').disabled};" +
+                "})()"
+              );
+              if(!healthShown?.summary||!healthShown.rescue||!healthShown.enabled)
+                throw new Error('Disaster health UI smoke did not render a manual rescue preview');
+              if(!fs.existsSync(healthQuarantine)||!fs.existsSync(healthStage)
+                 ||!fs.existsSync(healthPartial)||!fs.existsSync(sealed.path))
+                throw new Error('Disaster health smoke unexpectedly changed synthetic files');
+              console.log('[smoke] Disaster health and encrypted integrity check passed; no rescue, deletion or restore executed');
+              await snap(out.replace(/\.png$/i,'-health.png'));
             }
             if (process.argv.includes('--perf')) {
               // 拍一张「性能与资源占用」区（设置页里控件最多的一块）
