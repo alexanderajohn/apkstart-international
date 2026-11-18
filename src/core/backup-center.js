@@ -320,4 +320,4 @@ class BackupCenter{
     });
   }
 }
-module.exports={BackupCenter,FORMAT,VERSION,checkManifest,validRelative,within,freeBytes};
+module.exports={BackupCenter,FORMAT,VERSION,PARTS,DIRS,MAX_FILES,MAX_BYTES,checkManifest,validRelative,within,freeBytes,safe,safeStat,walk,shaFile,checkSpace};
