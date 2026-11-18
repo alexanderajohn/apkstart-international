@@ -19,6 +19,7 @@ const { RestoreDrill } = require('./core/restore-drill');
 const { RecoveryAudit, causeCode } = require('./core/recovery-audit');
 const { AuditSigning } = require('./core/audit-signing');
 const { SigningKeyManagement } = require('./core/signing-key-management');
+const { TrustLifecycle } = require('./core/trust-lifecycle');
 const performance = require('./core/performance');
 const { validPackageName } = require('./core/pkgname');
 const { Installer } = require('./core/installer');
@@ -1425,6 +1426,37 @@ function registerIpc() {
     });
     if(approval.response!==1)return {canceled:true};
     return new SigningKeyManagement({signing:auditSigning}).rotate(request.oldPassword,request.newPassword);
+  });
+  // Pass 16: no renderer-provided paths. All files chosen by native dialogs.
+  ipcMain.handle('backup:trustExport',async ()=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    const chosen=await dialog.showSaveDialog(mainWindow,{
+      title:'Export public-only trust bundle',defaultPath:'ApkStart-Public-Trust-Bundle.json',
+      filters:[{name:'Trust bundle JSON',extensions:['json']}]});
+    if(chosen.canceled||!chosen.filePath)return {canceled:true};
+    return new TrustLifecycle({signing:auditSigning}).exportBundle(chosen.filePath);
+  });
+  ipcMain.handle('backup:trustVerifyOffline',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    if(typeof request?.pin!=='string'||!/^[0-9a-f]{64}$/.test(request.pin))
+      throw Error('Independent trusted fingerprint is required');
+    const bundle=await dialog.showOpenDialog(mainWindow,{
+      title:'Choose public trust bundle',properties:['openFile'],
+      filters:[{name:'JSON',extensions:['json']}]});
+    if(bundle.canceled||!bundle.filePaths?.[0])return {canceled:true};
+    const evidence=await dialog.showOpenDialog(mainWindow,{
+      title:'Choose signed evidence',properties:['openFile'],
+      filters:[{name:'JSON',extensions:['json']}]});
+    if(evidence.canceled||!evidence.filePaths?.[0])return {canceled:true};
+    return new TrustLifecycle({signing:auditSigning}).verifyFiles(bundle.filePaths[0],evidence.filePaths[0],request.pin);
+  });
+  ipcMain.handle('backup:trustInventory',async ()=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    return new TrustLifecycle({signing:auditSigning}).inventory();
+  });
+  ipcMain.handle('backup:trustHistory',async ()=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    return new TrustLifecycle({signing:auditSigning}).rotationHistory();
   });
   ipcMain.handle('backup:auditSummary', async () => {
     if(backupBusy)throw Error('Backup Center is busy');
