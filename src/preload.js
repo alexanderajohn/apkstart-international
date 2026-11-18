@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('apkstart', {
   backupStatus: () => invoke('backup:status'),
   backupCreate: (password) => invoke('backup:create', password),
   backupPickRestore: (password) => invoke('backup:pickRestore', password),
+  backupPickMigration: (password) => invoke('backup:pickMigration', password),
   backupRestore: (token, password = '') => invoke('backup:restore', {token,password}),
   listApps: () => invoke('apps:list'),
   pickApk: () => invoke('apk:pick'),
