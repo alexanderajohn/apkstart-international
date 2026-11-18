@@ -10,6 +10,7 @@
 const fs=require('node:fs'),p=fs.promises,path=require('node:path'),crypto=require('node:crypto');
 const {BackupCenter,FORMAT,VERSION,PARTS,DIRS,MAX_FILES,MAX_BYTES,
   checkManifest,checkSpace,walk,safe,safeStat,shaFile}=require('./backup-center');
+const {validatePassword,localVaultPath}=require('./encrypted-backup');
 
 const pointId=/^(restore|recovery):([a-f0-9]{20})$/;
 const suffix=/^\.asi-([a-f0-9]{20})\.(before-restore|before-recovery)$/;
@@ -40,6 +41,88 @@ async function inspectSource(source,c){
   return {files,directories,bytes};
 }
 class RecoveryVault extends BackupCenter{
+  constructor(options){
+    super(options);
+    this.encryptedBackup=options.encryptedBackupCenter||null;
+  }
+  async sealedFolder(layout=this.layout(),create=false){
+    const root=path.resolve(localVaultPath(this.dataDir,layout.id));
+    if(!fs.existsSync(root)){
+      if(!create)return null;
+      const data=await p.realpath(this.dataDir);
+      if(data!==path.resolve(this.dataDir))
+        throw Error('Refusing to create Safety Vault through a redirected data folder');
+      const parent=path.dirname(root);
+      await p.mkdir(parent,{recursive:true,mode:0o700});
+      if(await p.realpath(parent)!==path.resolve(parent))
+        throw Error('Safety Vault parent is a junction');
+      await p.mkdir(root,{mode:0o700});
+    }
+    if(!(await safeStat(root)).isDirectory()||await p.realpath(root)!==root)
+      throw Error('Safety Vault folder is a junction or invalid directory');
+    return root;
+  }
+  async findSealed(layout=this.layout()){
+    const root=await this.sealedFolder(layout);
+    if(!root)return [];
+    const result=[];
+    for(const name of (await p.readdir(root)).sort()){
+      if(!/^ASI-Sealed-\d{4}-\d{2}-\d{2}-[a-f0-9]{12}$/.test(name))continue;
+      const full=path.join(root,name);
+      if(!(await safeStat(full)).isDirectory())throw Error('Invalid Safety Vault archive entry');
+      result.push({id:'sealed:'+name,path:full,createdAt:name.slice(11,21)});
+    }
+    return result.reverse();
+  }
+  async listSealed(){
+    return this.exclusive(async()=>{
+      await this.idle();
+      const layout=this.layout(),archives=await this.findSealed(layout);
+      return {profileId:layout.id,archives:archives.map(x=>({
+        id:x.id,createdAt:x.createdAt,encrypted:true
+      }))};
+    });
+  }
+  async sealPoint(pointIdValue,password){
+    validatePassword(password);
+    if(!this.encryptedBackup)throw Error('Safety Vault encryption is not configured');
+    return this.exclusive(async()=>{
+      await this.idle();
+      if(typeof pointIdValue!=='string'||!pointId.test(pointIdValue))
+        throw Error('Invalid Recovery Vault point ID');
+      const layout=this.layout();
+      const point=(await this.findPoints(layout)).find(p=>p.id===pointIdValue);
+      if(!point)throw Error('Recovery point no longer exists');
+      const checked=await this.inspectPoint(layout,point);
+      const root=await this.sealedFolder(layout,true);
+      const result=await this.encryptedBackup.createSafetyPoint(root,password,{
+        id:layout.id,avdName:layout.avdName,targets:point.roots
+      },checked.manifest,point.id);
+      // Existing local plaintext files must remain until the user chooses
+      // how to handle them. Do not silently delete sensitive safety copies.
+      const current=(await this.findPoints(layout)).find(p=>p.id===pointIdValue);
+      const changed=!current
+        ||(await this.inspectPoint(layout,current)).fingerprint!==checked.fingerprint;
+      return {...result,sealed:true,pointId:pointIdValue,sourcePreserved:true,
+        plaintextStillExists:true,sourceChangedDuringExport:changed};
+    });
+  }
+  async previewSealed(archiveId,password){
+    validatePassword(password);
+    if(!this.encryptedBackup)throw Error('Safety Vault encryption is not configured');
+    return this.exclusive(async()=>{
+      await this.idle();
+      if(typeof archiveId!=='string'||!/^sealed:ASI-Sealed-\d{4}-\d{2}-\d{2}-[a-f0-9]{12}$/.test(archiveId))
+        throw Error('Invalid encrypted Safety Vault archive ID');
+      const archive=(await this.findSealed()).find(p=>p.id===archiveId);
+      if(!archive)throw Error('Sealed recovery point no longer exists');
+      // This reuses the existing authenticated encrypted-restore engine and
+      // one-time token; restoring also retains the current live data.
+      const result=await this.encryptedBackup.previewRestore(archive.path,password);
+      return {...result,sealed:true,archiveId,encrypted:true,warning:
+        'Authenticated encrypted local safety point. Restore requires RESTORE and native confirmation. Existing live data is preserved as before-restore copies.'};
+    });
+  }
   async findPoints(layout=this.layout()){
     const groups=new Map();
     for(const c of PARTS){
