@@ -3508,6 +3508,43 @@ if (!gotLock) {
                 throw new Error('Disaster health smoke unexpectedly changed synthetic files');
               console.log('[smoke] Disaster health and encrypted integrity check passed; no rescue, deletion or restore executed');
               await snap(out.replace(/\.png$/i,'-health.png'));
+              // Feature #12: an authenticated, isolated restore rehearsal
+              // using only synthetic temporary content (never user backup
+              // plaintext or live Android userdata). Only test fixtures used.
+              const drillBefore=fs.readFileSync(smokeData,'utf8');
+              const drillReadiness=await restoreDrill.preview('sealed',sealedEntry.id,smokeKey);
+              if(!drillReadiness.authenticated||drillReadiness.guestBootTested
+                ||drillReadiness.privatePlaintextWritten)
+                throw new Error('Restore readiness did not fail closed');
+              const drillPreviewShown=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  document.getElementById('backupDrillPanel').hidden=false;" +
+                "  window.ASI_BACKUP.renderDrillPreview("+JSON.stringify(drillReadiness)+");" +
+                "  document.getElementById('backupDrillPanel').scrollIntoView({block:'center'});" +
+                "  return {visible:!document.getElementById('backupDrillPreviewPanel').hidden," +
+                "    enabled:!document.getElementById('btnBackupDrillRun').disabled};" +
+                "})()"
+              );
+              if(!drillPreviewShown?.visible||!drillPreviewShown?.enabled)
+                throw new Error('Recovery Readiness preview UI did not render');
+              await snap(out.replace(/\.png$/i,'-drill-readiness.png'));
+              const syntheticDrill=await restoreDrill.run(drillReadiness.token,smokeKey);
+              if(!syntheticDrill.ok||!syntheticDrill.syntheticSandboxCleaned
+                ||syntheticDrill.liveProfileModified||syntheticDrill.privatePlaintextWritten
+                ||syntheticDrill.guestBootTested)
+                throw new Error('Isolated synthetic restore drill failed');
+              const drillComplete=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  window.ASI_BACKUP.renderDrillResult("+JSON.stringify(syntheticDrill)+");" +
+                "  return {summary:document.getElementById('backupDrillSummary').textContent," +
+                "    noOpenPreview:document.getElementById('backupDrillPreviewPanel').hidden};" +
+                "})()"
+              );
+              if(!drillComplete?.summary||!drillComplete?.noOpenPreview
+                 ||fs.readFileSync(smokeData,'utf8')!==drillBefore||!fs.existsSync(sealed.path))
+                throw new Error('Safe restore drill changed synthetic live data or UI state');
+              console.log('[smoke] Restore Readiness & synthetic rollback drill passed; no Android files restored');
+              await snap(out.replace(/\.png$/i,'-drill.png'));
             }
             if (process.argv.includes('--perf')) {
               // 拍一张「性能与资源占用」区（设置页里控件最多的一块）
