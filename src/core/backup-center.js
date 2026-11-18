@@ -135,7 +135,7 @@ class BackupCenter{
     const components=[],directories=[],files=[];
     for(const c of PARTS){
       const src=layout.targets[c];
-      if(!fs.existsSync(src))continue;
+      if(!src||!fs.existsSync(src))continue;
       const st=await safeStat(src);
       if(st.isDirectory()!==DIRS.has(c))throw Error('Unexpected component type: '+c);
       components.push(c);
