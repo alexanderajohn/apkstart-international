@@ -15,6 +15,14 @@ const WORDS={
     verify:'Verifying data',backup:'Backing up',stage:'Staging recovery',complete:'Backup successful',
     previewNote:'RESTORE requires confirmation. The currently installed data is saved as .before-restore safety copies (not deleted). Restart ApkStart after a successful restore. Ensure enough space on all destination drives.',
     restore:'Restore after confirmation',cancel:'Cancel preview',migrate:'Import encrypted profile from another Windows PC',
+    recoveryFind:'Find local recovery points',recoveryChoose:'Saved recovery points',recoveryInspect:'Verify selected recovery point',
+    recoveryNone:'No local safety copies found in this profile.',recoveryAvailable:'Local recovery points found: ',
+    recoveryTitle:'Recovery Vault — verified local safety copy',recoveryButton:'Recover after confirmation',
+    recoveryNote:'Local safety copies are NOT encrypted or signed. SHA-256 guards against changes after preview, not provenance. RECOVER + native confirmation required. Current and source copies are preserved.',
+    recoveryAsk:'Type RECOVER to restore this safety copy. Current Android data will be saved separately.',
+    recoveryConfirm:'Recover this safety copy into the active Android profile? Existing data will be preserved. Android must be stopped.',
+    recovered:'Recovery complete. The source safety copy and previous active data were preserved. Restart ApkStart.',
+    recoveryRestoreType:'Before restore',recoveryRecoveryType:'Before recovery',
     ask:'Type RESTORE to confirm replacing the active Android profile data. The original data will remain as safety copies. This cannot be undone automatically.',
     confirm:'Restore verified snapshot now? Current apps and userdata will be moved to safety copies. Android must remain stopped.',
     restored:'Restore successful! Existing data was preserved in safety-copy paths. Restart ApkStart before launching Android.',
@@ -36,6 +44,14 @@ const WORDS={
     verify:'Đang xác minh',backup:'Đang sao lưu',stage:'Đang tạo bản khôi phục',complete:'Đã sao lưu',
     previewNote:'Khôi phục cần xác nhận. Dữ liệu hiện tại sẽ được giữ nguyên thành bản .before-restore (không xóa). Khởi động lại ApkStart sau khi khôi phục; đảm bảo ổ đĩa còn đủ chỗ.',
     restore:'Xác nhận khôi phục',cancel:'Hủy chọn',migrate:'Nhập profile mã hóa từ máy Windows khác',
+    recoveryFind:'Tìm điểm khôi phục cục bộ',recoveryChoose:'Điểm khôi phục đã lưu',recoveryInspect:'Kiểm tra điểm khôi phục đã chọn',
+    recoveryNone:'Profile này chưa có bản an toàn cục bộ.',recoveryAvailable:'Số điểm khôi phục tìm thấy: ',
+    recoveryTitle:'Recovery Vault — bản dữ liệu cũ đã kiểm tra',recoveryButton:'Phục hồi sau khi xác nhận',
+    recoveryNote:'Bản an toàn cục bộ KHÔNG mã hóa hoặc ký số. SHA-256 chỉ phát hiện thay đổi sau khi xem trước. Cần nhập RECOVER và xác nhận Windows. Dữ liệu cũ và bản nguồn đều được giữ lại.',
+    recoveryAsk:'Nhập RECOVER để phục hồi dữ liệu của profile đang dùng. Dữ liệu hiện tại sẽ được giữ riêng.',
+    recoveryConfirm:'Phục hồi điểm đã chọn vào profile đang dùng? Dữ liệu hiện tại sẽ được giữ lại. Phải dừng Android.',
+    recovered:'Phục hồi thành công! Giữ nguyên bản an toàn nguồn và đã bảo vệ dữ liệu hiện tại. Hãy khởi động lại ApkStart.',
+    recoveryRestoreType:'Trước khôi phục',recoveryRecoveryType:'Trước phục hồi',
     ask:'Nhập RESTORE để xác nhận thay thế dữ liệu Android của profile đang dùng. Dữ liệu cũ được giữ lại làm bản an toàn. Không có chức năng tự hoàn tác.',
     confirm:'Khôi phục bản sao đã xác minh ngay? Ứng dụng và dữ liệu cũ sẽ được đổi tên thành bản an toàn. Android phải đang tắt.',
     restored:'Khôi phục thành công! Đã giữ dữ liệu cũ thành bản an toàn. Hãy khởi động lại ApkStart trước khi mở Android.',
@@ -55,6 +71,14 @@ const WORDS={
     verify:'校验中',backup:'备份中',stage:'准备恢复',complete:'备份成功',
     previewNote:'恢复前必须确认。原数据将保存在 .before-restore 安全副本中，不自动删除。恢复后需要重启软件。',
     restore:'确认恢复',cancel:'取消预览',migrate:'从其他 Windows 电脑导入加密环境',
+    recoveryFind:'查找本地恢复点',recoveryChoose:'已保存的恢复点',recoveryInspect:'验证所选恢复点',
+    recoveryNone:'此环境没有本地安全副本。',recoveryAvailable:'找到恢复点：',
+    recoveryTitle:'恢复保险库 — 已校验本地安全副本',recoveryButton:'确认后恢复',
+    recoveryNote:'本地安全副本未加密、未签名。SHA-256 只能检测预览后更改，不能证明来源。必须输入 RECOVER 并通过原生系统确认。原副本和当前数据都会保留。',
+    recoveryAsk:'输入 RECOVER 恢复所选安全副本，当前 Android 数据会另存。',
+    recoveryConfirm:'将安全副本恢复到当前 Android 环境？当前数据会保留。请先关闭 Android。',
+    recovered:'恢复成功！原安全副本与恢复前数据已保留，请重启 ApkStart。',
+    recoveryRestoreType:'恢复前',recoveryRecoveryType:'回滚前',
     ask:'输入 RESTORE 确认替换当前 Android 环境数据。原数据保留为安全副本，无法自动撤销。',
     confirm:'现在恢复这个校验过的备份吗？必须先停止 Android。',
     restored:'恢复成功，原数据已保留，请重启 ApkStart。',preserved:'原数据保存于：',
@@ -73,6 +97,9 @@ function lock(on){
   $('btnBackupCreate').disabled=on;
   $('btnBackupPick').disabled=on;
   $('btnBackupMigrate').disabled=on;
+  $('btnBackupRecoveryFind').disabled=on;
+  $('btnBackupRecoveryInspect').disabled=on||$('backupRecoveryChoices').hidden;
+  $('backupRecoverySelect').disabled=on;
   $('btnBackupRestore').disabled=on||!preview;
   $('backupPassword').disabled=on;
   $('backupPasswordConfirm').disabled=on;
@@ -90,11 +117,14 @@ function render(){
   $('btnBackupCreate').textContent=L.create;
   $('btnBackupPick').textContent=L.inspect;
   $('btnBackupMigrate').textContent=L.migrate||'Import encrypted profile from another Windows PC';
-  $('btnBackupRestore').textContent=L.restore;
+  $('btnBackupRecoveryFind').textContent=L.recoveryFind;
+  $('backupRecoverySelectLabel').textContent=L.recoveryChoose;
+  $('btnBackupRecoveryInspect').textContent=L.recoveryInspect;
+  $('btnBackupRestore').textContent=preview?.recovery?L.recoveryButton:L.restore;
   $('btnBackupCancel').textContent=L.cancel;
   $('btnBackupRestart').textContent=L.restart;
-  $('backupPreviewTitle').textContent=preview?.encrypted?L.encryptedVerified:L.verified;
-  $('backupRestoreNotice').textContent=L.previewNote;
+  $('backupPreviewTitle').textContent=preview?.recovery?L.recoveryTitle:preview?.encrypted?L.encryptedVerified:L.verified;
+  $('backupRestoreNotice').textContent=preview?.recovery?L.recoveryNote:L.previewNote;
   api.backupStatus().then(s=>{
     const display=window.ASI_PROFILES?.isSecondary?.()?s.profileId:'Default';
     $('backupProfileCaption').textContent=L.profile+display+' | '+(s.encrypted?L.encrypted:L.notEncrypted);
@@ -105,15 +135,17 @@ function setPreview(result){
   preview=result;
   const L=locale();
   $('backupPreview').hidden=false;
-  $('backupPreviewTitle').textContent=result.encrypted?L.encryptedVerified:L.verified;
+  $('backupPreviewTitle').textContent=result.recovery?L.recoveryTitle:result.encrypted?L.encryptedVerified:L.verified;
+  $('btnBackupRestore').textContent=result.recovery?L.recoveryButton:L.restore;
+  $('backupRestoreNotice').textContent=result.recovery?L.recoveryNote:L.previewNote;
   $('backupPreviewDetails').textContent=
     L.current+result.profileId+'\n'+L.date+result.createdAt+'\n'+
     L.files+result.files+'\n'+L.bytes+fmt(result.bytes)+'\n'+
     L.parts+(result.components||[]).join(', ')+'\n'+
     (result.space||[]).map(x=>'Free: '+fmt(x.availableBytes)+' / needed '+fmt(x.requiredBytes)).join('\n')+'\n'+
-    (result.encrypted?L.encrypted:L.legacyWarning)+
+    (result.recovery?L.recoveryNote:result.encrypted?L.encrypted:L.legacyWarning)+
     (result.migration?'\nSource: '+result.sourceProfileId+' → Target: '+result.profileId+'\nAVD compatibility verified: '+JSON.stringify(result.compatibility):'');
-  show(result.encrypted?L.encryptedVerified:L.legacyWarning);
+  show(result.recovery?L.recoveryTitle:result.encrypted?L.encryptedVerified:L.legacyWarning);
   lock(false);
 }
 function clearPasswords(){
@@ -169,29 +201,62 @@ async function migrate(){
   }catch(e){show(L.error+String(e?.message||e),true);}
   finally{secret='';clearPasswords();lock(false);}
 }
+async function findRecovery(){
+  if(busy)return;
+  const L=locale();lock(true);show(L.working);
+  preview=null;$('backupPreview').hidden=true;
+  $('backupRecoveryChoices').hidden=true;
+  try{
+    const listing=await api.recoveryList(),points=listing.points||[];
+    const select=$('backupRecoverySelect');
+    select.replaceChildren();
+    if(!points.length){show(L.recoveryNone);return;}
+    for(const point of points){
+      const option=document.createElement('option');
+      option.value=point.id;
+      option.textContent=(point.id.startsWith('restore:')?L.recoveryRestoreType:L.recoveryRecoveryType)+
+        ' · '+point.updatedAt+' · '+point.components.join(', ');
+      select.appendChild(option);
+    }
+    $('backupRecoveryChoices').hidden=false;
+    show(L.recoveryAvailable+points.length);
+  }catch(e){show(L.error+String(e?.message||e),true);}
+  finally{lock(false);}
+}
+async function inspectRecovery(){
+  if(busy||$('backupRecoveryChoices').hidden)return;
+  const L=locale();lock(true);show(L.working);
+  preview=null;$('backupPreview').hidden=true;
+  try{setPreview(await api.recoveryPreview($('backupRecoverySelect').value));}
+  catch(e){show(L.error+String(e?.message||e),true);}
+  finally{lock(false);}
+}
 async function restore(){
   if(busy||!preview)return;
   const L=locale(),encrypted=!!preview.encrypted;
   let secret=$('backupPassword').value;
   if(encrypted&&!validPassword(secret)){show(L.passTooShort,true);return;}
   // A typed approval deliberately separates preview from destructive commit.
-  if(preview.migration){
+  if(preview.recovery){
+    if(window.prompt(L.recoveryAsk)!=='RECOVER')return;
+    if(!window.confirm(L.recoveryConfirm))return;
+  }else if(preview.migration){
     if(window.prompt('Type MIGRATE to import this encrypted backup into the selected profile. Existing data is preserved.')!=='MIGRATE')return;
     if(!window.confirm('Import this authenticated profile backup? Android must be stopped; destination data will be kept in .before-restore safety copies.'))return;
   }else{
     if(window.prompt(L.ask)!=='RESTORE')return;
     if(!window.confirm(L.confirm))return;
   }
-  const token=preview.token;
+  const token=preview.token,previewRecovery=!!preview.recovery;
   preview=null;$('backupPreview').hidden=true;
   lock(true);show(L.working);
   try{
-    const request=api.backupRestore(token,secret);
+    const request=previewRecovery?api.recoveryApply(token,'RECOVER'):api.backupRestore(token,secret);
     clearPasswords();secret='';
     const result=await request;
     if(result?.canceled){show(L.canceled);return;}
     if(result?.ok){
-      show(L.restored+'\n'+L.preserved+(result.preserved||[]).join('\n'));
+      show((result.recovery?L.recovered:L.restored)+'\n'+L.preserved+(result.preserved||[]).join('\n'));
       $('btnBackupRestart').hidden=false;
     }
   }catch(e){show(L.error+String(e?.message||e),true);}
@@ -204,6 +269,8 @@ function init(){
   $('btnBackupCreate').addEventListener('click',startBackup);
   $('btnBackupPick').addEventListener('click',inspect);
   $('btnBackupMigrate').addEventListener('click',migrate);
+  $('btnBackupRecoveryFind').addEventListener('click',findRecovery);
+  $('btnBackupRecoveryInspect').addEventListener('click',inspectRecovery);
   $('btnBackupRestore').addEventListener('click',restore);
   $('btnBackupCancel').addEventListener('click',()=>{preview=null;$('backupPreview').hidden=true;show(locale().ready);lock(false);});
   $('btnBackupRestart').addEventListener('click',()=>api.restartApp());
