@@ -118,8 +118,8 @@ test('Windows CI starts verified snapshot UI but never runs restore against live
   const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
   const ci=fs.readFileSync(path.join(root,'.github/workflows/ci.yml'),'utf8');
   assert.ok(main.includes("process.argv.includes('--backup')"));
-  assert.ok(main.includes('const snapshot=await backupCenter.create(exportRoot)'));
-  assert.ok(main.includes('const inspected=await backupCenter.previewRestore(snapshot.path)'));
+  assert.ok(main.includes('const snapshot=await encryptedBackupCenter.create(exportRoot,smokeKey)'));
+  assert.ok(main.includes('const inspected=await encryptedBackupCenter.previewRestore(snapshot.path,smokeKey)'));
   assert.ok(main.includes('no restore executed'));
   assert.ok(ci.includes("'--backup'"));
   assert.ok(ci.includes('asi-backup-smoke.png'));

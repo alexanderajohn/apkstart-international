@@ -1,3 +1,12 @@
+## Unreleased — Encrypted Backup & Recovery
+
+- Export authenticated, encrypted-by-default Android profile snapshots with scrypt-derived AES-256-GCM keys and per-file random 96-bit nonces.
+- Encrypt the sensitive backup manifest, including relative paths, file hashes and Android profile identity; only minimal KDF/cipher header metadata is public.
+- Restore only after successful password authentication, file hash verification, profile identity checks, capacity preflight and explicit user + native OS approval.
+- Keep legacy unencrypted v5 backup import; never generate new plaintext backup directories from the UI.
+- Preserve active userdata as .before-restore copies and recover from failed staging/renames where possible.
+- Test encryption round trips, wrong passwords, tampering, cross-profile refusal, runtime safety and Windows UI smoke.
+
 ## Unreleased — Backup & Restore Center
 
 - Offline per-profile directory snapshots with SHA-256 manifest and source-path allowlisting.

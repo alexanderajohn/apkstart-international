@@ -3156,8 +3156,14 @@ if (!gotLock) {
               const smokeData=path.join(store.DATA_DIR,'apps.json');
               if (!fs.existsSync(smokeData)) fs.writeFileSync(smokeData,'{"apps":[]}\n');
               const exportRoot=fs.mkdtempSync(path.join(require('os').tmpdir(),'asi-backup-ci-'));
-              const snapshot=await backupCenter.create(exportRoot);
-              const inspected=await backupCenter.previewRestore(snapshot.path);
+              // Synthetic test-only random password, never a user credential.
+              const smokeKey=require('node:crypto').randomBytes(32).toString('hex');
+              const snapshot=await encryptedBackupCenter.create(exportRoot,smokeKey);
+              const inspected=await encryptedBackupCenter.previewRestore(snapshot.path,smokeKey);
+              if(!snapshot.encrypted ||
+                 fs.existsSync(path.join(snapshot.path,'manifest.json')) ||
+                 !fs.existsSync(path.join(snapshot.path,'manifest.enc')))
+                throw new Error('Encrypted backup smoke emitted an unencrypted manifest');
               if (!inspected || inspected.profileId !== 'default' || !inspected.token ||
                   !Array.isArray(inspected.components)) {
                 throw new Error('Backup Center manifest verification failed in Windows smoke test');
@@ -3176,7 +3182,7 @@ if (!gotLock) {
               );
               if(!result || !result.shown || !result.restoreEnabled || !result.restartHidden)
                 throw new Error('Backup Center preview UI did not render');
-              console.log('[smoke] Backup snapshot verified and preview shown; no restore executed');
+              console.log('[smoke] AES-256-GCM backup authenticated and preview shown; no restore executed');
               await snap(out.replace(/\.png$/i,'-backup.png'));
             }
             if (process.argv.includes('--perf')) {

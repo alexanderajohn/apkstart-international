@@ -50,3 +50,10 @@
 - [ ] Exercise multi-GB Android 14 emulator userdata/snapshots backup + restore on actual Windows hardware (Default and secondary profile).
 - [ ] Validate restores across disks, disk-full and interrupted copy scenarios with real-world AVD files.
 - [ ] Add backup encryption, optional ZIP packaging and reliable cross-machine profile-ID migration before stable release.
+
+- [x] Use AES-256-GCM with scrypt and authenticated encrypted manifest for new Backup & Restore Center snapshots.
+- [x] Require a password and repeat confirmation to create; re-enter to inspect and recover; no password persistence.
+- [x] Keep legacy v5 snapshot import while marking it unencrypted.
+- [ ] Independent cryptographic/security review of encrypted backup format, nonce handling and failure cleanup.
+- [ ] Real Windows Android Emulator restore, interruption/rollback and multi-gigabyte AVD performance testing.
+- [ ] Offer password rotation/export recovery strategy and encrypted cloud backup only after separately reviewed authorization and threat model.

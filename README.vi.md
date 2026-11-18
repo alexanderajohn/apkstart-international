@@ -63,3 +63,9 @@ Mo **Backup & Restore Center** ngay duoi thanh Android Profiles. Phan mem sao lu
 Moi file duoc kiem tra SHA-256; truoc khoi phuc se kiem tra dung luong con trong va buoc anh nhap `RESTORE`. Du lieu cu duoc giu lai duoi ten `.before-restore`, khong tu dong xoa. Khoi dong lai ApkStart sau khi khoi phuc.
 
 **Luu y bao mat:** Thu muc sao luu **KHONG MA HOA**, co the chua thong tin dang nhap va du lieu ca nhan. Nen luu tren o dia da ma hoa; tuyet doi khong cong khai. Khong upload len server. Chi ho tro AVD cua Android Emulator, khong sao luu QEMU/ISO va runtime binary. Xem [tai lieu ky thuat](docs/BACKUP_RESTORE.md).
+
+## Encrypted Backup & Recovery — sao lưu mã hóa bằng mật khẩu
+
+Bản sao lưu mới được mã hóa mặc định bằng **AES-256-GCM**, khóa dẫn xuất bằng **scrypt** với salt ngẫu nhiên. Mỗi file có nonce riêng; danh sách tệp, tên ứng dụng và mã băm nằm trong manifest đã mã hóa. Dữ liệu **không tải lên server**, mật khẩu **không lưu vào cài đặt**. Backup vẫn là **thư mục** chứa các tệp mã hóa, không phải ZIP.
+
+Khi tạo backup, anh nhập mật khẩu và xác nhận. Khi kiểm tra hoặc khôi phục, nhập lại mật khẩu. Nếu sai mật khẩu hoặc dữ liệu bị sửa, chương trình từ chối khôi phục trước khi ghi đè. Khôi phục còn yêu cầu gõ `RESTORE` và đồng ý ở hộp thoại hệ điều hành; bản dữ liệu cũ được giữ dưới dạng `.before-restore`. Backup cũ chưa mã hóa vẫn có thể kiểm tra và khôi phục nhưng được cảnh báo riêng. **Quên mật khẩu là không thể giải mã lại backup.** Thử với Android Emulator thật trước khi dùng cho dữ liệu quan trọng.

@@ -102,3 +102,36 @@ test('Password limits, idle runtime and recursive backup paths fail closed',()=>
   x.setRunning(true);
   await assert.rejects(()=>x.svc.previewRestore(b.path,PASSWORD),/Android must be stopped/);
 }));
+
+test('Backup IPC never exports new plaintext backups and retains native restore consent',()=>{
+  const root=path.join(__dirname,'..');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  const preload=fs.readFileSync(path.join(root,'src/preload.js'),'utf8');
+  const ui=fs.readFileSync(path.join(root,'src/ui/backup-ui.js'),'utf8');
+  const html=fs.readFileSync(path.join(root,'src/ui/index.html'),'utf8');
+  assert.ok(main.includes('return encryptedBackupCenter.create(picked.filePaths[0],password)'));
+  assert.ok(main.includes('encryptedBackupCenter.previewRestore(folder,password)'));
+  assert.ok(main.includes('if(encrypted)return encryptedBackupCenter.restore(token,password)'));
+  assert.ok(main.includes('return backupCenter.restore(token)'), 'Legacy archives must remain readable');
+  assert.ok(main.includes("title:'Confirm Android profile restore'"));
+  assert.ok(main.includes('if(approval.response!==1)return {canceled:true}'));
+  assert.ok(preload.includes('backupCreate: (password)'));
+  assert.ok(preload.includes('backupRestore: (token, password'));
+  assert.ok(ui.includes('api.backupCreate(secret)'));
+  assert.ok(ui.includes('api.backupPickRestore(secret)'));
+  assert.ok(ui.includes('api.backupRestore(token,secret)'));
+  assert.ok(ui.includes('clearPasswords()'));
+  assert.ok(ui.includes("window.prompt(L.ask)!=='RESTORE'"));
+  assert.ok(ui.includes('window.confirm(L.confirm)'));
+  assert.ok(!ui.includes('localStorage')&&!ui.includes('innerHTML'));
+  assert.ok(html.includes('id="backupPassword"'));
+  assert.ok(html.includes('id="backupPasswordConfirm"'));
+});
+test('Windows smoke creates only ciphertext and refuses to execute a real restore',()=>{
+  const root=path.join(__dirname,'..');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  assert.ok(main.includes("process.argv.includes('--backup')"));
+  assert.ok(main.includes("fs.existsSync(path.join(snapshot.path,'manifest.json'))"));
+  assert.ok(main.includes("fs.existsSync(path.join(snapshot.path,'manifest.enc'))"));
+  assert.ok(main.includes('no restore executed'));
+});
