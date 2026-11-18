@@ -124,6 +124,9 @@ jobs:
           $sealedShot = $shot -replace '\.png$', '-sealed.png'
           if (!(Test-Path $sealedShot)) { throw 'Encrypted Safety Vault screenshot was not saved' }
           Copy-Item $sealedShot (Join-Path $PWD 'asi-sealed-smoke.png') -Force
+          $retentionShot = $shot -replace '\.png$', '-retention.png'
+          if (!(Test-Path $retentionShot)) { throw 'Safety Retention screenshot was not saved' }
+          Copy-Item $retentionShot (Join-Path $PWD 'asi-retention-smoke.png' ) -Force
       - uses: actions/upload-artifact@v4
         with:
           name: ApkStart-International-Windows-dev-preview
@@ -142,5 +145,6 @@ jobs:
             asi-backup-smoke.png
             asi-recovery-smoke.png
             asi-sealed-smoke.png
+            asi-retention-smoke.png
           retention-days: 3
           if-no-files-found: ignore
