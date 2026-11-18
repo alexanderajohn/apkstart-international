@@ -149,6 +149,27 @@
           </div>
         </div>
       </div>
+      <div class="asi-backup-actions">
+        <button class="btn ghost sm" type="button" id="btnBackupDrillToggle" aria-expanded="false" aria-controls="backupDrillPanel">Recovery Readiness &amp; Restore Drill</button>
+      </div>
+      <div id="backupDrillPanel" class="asi-backup-preview" hidden>
+        <strong id="backupDrillTitle">Recovery Readiness &amp; Restore Drill</strong>
+        <p id="backupDrillNotice">Authenticate the encrypted backup, inspect disk space, and rehearse stage/rollback with synthetic files only. No Android guest boot, live data modifications or backup plaintext on disk.</p>
+        <div class="asi-backup-actions">
+          <button class="btn ghost sm" type="button" id="btnBackupDrillSealed">Inspect selected encrypted Safety Vault archive</button>
+          <button class="btn ghost sm" type="button" id="btnBackupDrillExternal">Choose external encrypted backup for readiness</button>
+        </div>
+        <div id="backupDrillSummary" class="asi-backup-progress" role="status" aria-live="polite">Choose a source and enter its password to perform a full integrity check.</div>
+        <div id="backupDrillPreviewPanel" class="asi-backup-preview" hidden>
+          <strong id="backupDrillPreviewTitle">Authenticated recovery-readiness preview</strong>
+          <div id="backupDrillPreviewDetails" class="asi-backup-progress"></div>
+          <p id="backupDrillPreviewNotice">Type DRILL and confirm again to rehearse using synthetic files. Live Android data and backup contents are not written into temporary storage.</p>
+          <div class="asi-backup-actions">
+            <button class="btn primary sm" id="btnBackupDrillRun" type="button">Run isolated synthetic restore drill</button>
+            <button class="btn ghost sm" id="btnBackupDrillCancel" type="button">Cancel drill preview</button>
+          </div>
+        </div>
+      </div>
       <div id="backupProgress" class="asi-backup-progress" role="status" aria-live="polite">Ready. Choose an external folder for a backup.</div>
       <div id="backupPreview" class="asi-backup-preview" hidden>
         <strong id="backupPreviewTitle">Verified snapshot</strong>
