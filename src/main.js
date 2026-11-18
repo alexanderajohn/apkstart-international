@@ -3617,6 +3617,51 @@ if (!gotLock) {
                 throw new Error('Safe restore drill changed synthetic live data or UI state');
               console.log('[smoke] Restore Readiness & synthetic rollback drill passed; no Android files restored');
               await snap(out.replace(/\.png$/i,'-drill.png'));
+              // Feature #13: synthetic privacy-minimized audit chain & JSON
+              // report. Existing profile and sealed source remain untouched.
+              const auditEvidence=require('node:crypto').createHash('sha256')
+                .update(sealedEntry.id).digest('hex');
+              await recoveryAudit.append('readiness-verify','passed',{
+                source:'sealed',files:drillReadiness.files,bytes:drillReadiness.bytes,
+                evidenceId:auditEvidence,bootTested:false
+              });
+              await recoveryAudit.append('restore-drill','passed',{
+                source:'synthetic',files:syntheticDrill.filesVerified,
+                bytes:syntheticDrill.bytesVerified,evidenceId:auditEvidence,
+                synthetic:true,bootTested:false
+              });
+              const auditSnapshot=await recoveryAudit.summary();
+              if(auditSnapshot.integrity!=='verified'||auditSnapshot.eventsCount<2
+                ||auditSnapshot.totals.passed<2)
+                throw new Error('Recovery audit chain failed synthetic fixture verification');
+              const auditFilePath=path.join(require('node:os').tmpdir(),
+                'asi-audit-smoke-'+require('node:crypto').randomBytes(10).toString('hex')+'.json');
+              try{
+                const exported=await recoveryAudit.exportReport(auditFilePath);
+                const raw=fs.readFileSync(auditFilePath,'utf8');
+                if(!exported.ok||raw.includes(smokeKey)
+                   ||raw.includes(smokeData)
+                   ||raw.includes(drillReadiness.token)
+                   ||!JSON.parse(raw).verification)
+                  throw new Error('Recovery verification report leaked private fixture data');
+              }finally{
+                if(fs.existsSync(auditFilePath))fs.unlinkSync(auditFilePath);
+              }
+              const auditShown=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  const pane=document.getElementById('backupAuditPanel');pane.hidden=false;" +
+                "  window.ASI_BACKUP.renderAudit("+JSON.stringify(auditSnapshot)+");" +
+                "  pane.scrollIntoView({block:'center'});" +
+                "  return {summary:document.getElementById('backupAuditSummary').textContent," +
+                "    history:document.getElementById('backupAuditEvents').textContent," +
+                "    exportButton:!!document.getElementById('btnBackupAuditExport')};" +
+                "})()"
+              );
+              if(!auditShown?.summary.includes('2 events')||!auditShown?.history
+                 ||!auditShown?.exportButton||!fs.existsSync(sealed.path))
+                throw new Error('Recovery Audit Trail UI smoke did not render verified history');
+              console.log('[smoke] Sanitized audit chain and JSON export verified with synthetic evidence only');
+              await snap(out.replace(/\.png$/i,'-audit.png'));
             }
             if (process.argv.includes('--perf')) {
               // 拍一张「性能与资源占用」区（设置页里控件最多的一块）
