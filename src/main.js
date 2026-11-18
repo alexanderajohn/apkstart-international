@@ -1320,12 +1320,24 @@ function registerIpc() {
       return encryptedBackupCenter.previewRestore(folder,password);
     return {...await backupCenter.previewRestore(folder),encrypted:false,legacy:true};
   });
+  ipcMain.handle('backup:pickMigration', async (_e,password) => {
+    validatePassword(password);
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    const chosen=await dialog.showOpenDialog(mainWindow,{
+      title:'Choose an encrypted profile backup for portable migration',
+      properties:['openDirectory'],buttonLabel:'Inspect encrypted migration',
+    });
+    if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
+    return encryptedBackupCenter.previewMigration(chosen.filePaths[0],password);
+  });
   ipcMain.handle('backup:restore', async (_event, request) => {
     const token=typeof request==='string'?request:request?.token;
     const password=typeof request==='object'?request?.password:'';
     if (typeof token !== 'string' || !/^[a-f0-9]{48}$/.test(token))
       throw new Error('Invalid restore approval token');
     const encrypted=encryptedBackupCenter?.pending?.token===token;
+    const migrating=encrypted&&encryptedBackupCenter.pending.migration;
     if(!encrypted && backupCenter?.pending?.token!==token)
       throw new Error('No verified restore preview. Inspect the backup again.');
     if(encrypted)validatePassword(password);
@@ -1334,10 +1346,10 @@ function registerIpc() {
     // Default action is Cancel; the main process never silently overwrites data.
     const approval=await dialog.showMessageBox(mainWindow,{
       type:'warning',
-      buttons:['Cancel','Restore verified profile'],
+      buttons:['Cancel',migrating?'Import verified migration':'Restore verified profile'],
       defaultId:0,cancelId:0,noLink:true,
-      title:'Confirm Android profile restore',
-      message:'Replace the selected Android profile with the verified backup?',
+      title:migrating?'Confirm portable profile migration':'Confirm Android profile restore',
+      message:migrating?'Import this encrypted profile into the active Android profile?':'Replace the selected Android profile with the verified backup?',
       detail:'Android must be stopped. Current APK data and Android userdata are renamed to .before-restore safety copies, not deleted. A restart is required.',
     });
     if(approval.response!==1)return {canceled:true};
