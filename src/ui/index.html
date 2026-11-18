@@ -53,6 +53,16 @@
     <button type="button" id="btnCreateProfile" class="btn ghost sm">+ New profile</button>
     <p id="profilesNotice" role="status" aria-live="polite">Profiles keep APKs and Android app data separate. Switching requires Android to be stopped and restarts ApkStart.</p>
   </section>
+  <section id="runtimeReadinessCenter" class="asi-backup" aria-labelledby="runtimeReadinessTitle">
+    <div class="asi-backup-top">
+      <div class="asi-backup-headline">
+        <strong id="runtimeReadinessTitle">Live Android Readiness</strong>
+        <span id="runtimeReadinessNote">Read-only: checks the running, owned Android emulator and current Profile. No APK installation or data changes.</span>
+      </div>
+      <button id="btnRuntimeReadiness" class="btn ghost sm" type="button">Check running Android</button>
+    </div>
+    <div id="runtimeReadinessDetails" class="asi-backup-progress" role="status" aria-live="polite" hidden></div>
+  </section>
   <section id="backupCenter" class="asi-backup" aria-labelledby="backupCenterTitle">
     <div class="asi-backup-top">
       <div class="asi-backup-headline">
