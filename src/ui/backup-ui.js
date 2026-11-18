@@ -612,6 +612,32 @@ async function manageSigningKey(action){
   }catch(e){show(L.error+String(e?.message||e),true);}
   finally{first='';second='';clearPasswords();lock(false);}
 }
+async function trustAction(action){
+  if(busy)return;
+  const L=locale();
+  let pin=null;
+  if(action==='verify'){
+    pin=window.prompt('Enter the independently verified 64-character SHA-256 signer fingerprint (not from this bundle):');
+    if(pin===null)return;
+    pin=pin.trim().toLowerCase();
+    if(!/^[0-9a-f]{64}$/.test(pin)){show('A trusted 64-character fingerprint is required.',true);return;}
+  }
+  lock(true);show(L.working);
+  try{
+    const result=action==='export'?await api.trustExport():
+      action==='verify'?await api.trustVerifyOffline(pin):
+      action==='history'?await api.trustHistory():await api.trustInventory();
+    if(result?.canceled){show(L.canceled);return;}
+    const view=action==='inventory'?
+      JSON.stringify({activeFingerprint:result.activeFingerprint,candidates:result.candidates},null,2):
+      action==='history'?JSON.stringify(result.entries,null,2):
+      action==='verify'?'Signature verified with independent pin: '+result.signerFingerprint:
+      'Public trust bundle exported. Active fingerprint: '+result.activeFingerprint;
+    $('backupSigningResult').textContent=view+'\n'+(result.warning||'');
+    show(action==='verify'?'Offline signature verification passed.':'Trust lifecycle operation completed.');
+  }catch(e){show(L.error+String(e?.message||e),true);}
+  finally{lock(false);}
+}
 function renderAudit(result){
   const L=locale();
   if(!result||result.integrity!=='verified'){
@@ -1085,6 +1111,10 @@ function init(){
   $('btnBackupSigningKeyExport').addEventListener('click',()=>manageSigningKey('export'));
   $('btnBackupSigningKeyImport').addEventListener('click',()=>manageSigningKey('import'));
   $('btnBackupSigningKeyRotate').addEventListener('click',()=>manageSigningKey('rotate'));
+  $('btnBackupTrustExport').addEventListener('click',()=>trustAction('export'));
+  $('btnBackupTrustVerify').addEventListener('click',()=>trustAction('verify'));
+  $('btnBackupTrustHistory').addEventListener('click',()=>trustAction('history'));
+  $('btnBackupTrustInventory').addEventListener('click',()=>trustAction('inventory'));
   $('btnBackupDrillCancel').addEventListener('click',()=>{
     resetDrill();show(locale().canceled);
   });
