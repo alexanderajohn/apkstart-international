@@ -49,3 +49,9 @@ Vào **Cài đặt → Môi trường Android → Auto-Repair 2.0 → Kiểm tra
 ## Smart Performance Engine — đo hiệu năng và tối ưu theo APK
 
 Vào **Settings → Performance & Resource Usage → Smart Performance Engine → Bắt đầu đo**. Màn hình đo CPU/RAM Windows, CPU/RAM tiến trình emulator khi có, chế độ render GPU và ước lượng FPS bằng Android `dumpsys gfxinfo` khi APK đang chạy. Không có số liệu sẽ báo N/A, không bịa FPS/GPU. Máy ảo Android dùng chung tài nguyên; số đo emulator **không phải CPU/RAM riêng của từng APK**. Chọn cấu hình cho mỗi APK (`inherit/save/balanced/smooth`) để áp dụng mức ưu tiên tiến trình ở **lần mở APK kế tiếp**, không đổi RAM/số nhân VM, không tự chỉnh cấu hình. Dữ liệu đo chỉ dùng trong phiên hiện tại và không được gửi ra máy chủ.
+
+## Android Profiles — môi trường Android độc lập
+
+Trên màn hình chính có thanh **Android Profiles** để tạo môi trường như Công việc / Giải trí / Thử nghiệm. Mỗi profile phụ có danh sách APK, cache, AVD, ứng dụng và dữ liệu Android riêng. Profile **Mặc định** giữ nguyên vị trí dữ liệu cũ, không di chuyển hay xóa gì. Thành phần Android Emulator và ảnh hệ thống được dùng chung để tiết kiệm dung lượng.
+
+Chỉ chạy **một profile tại một thời điểm**. Trước khi chuyển, anh cần dừng runtime trong Settings và đóng ứng dụng; nếu còn máy ảo mở, hệ thống từ chối chuyển để tránh gắn nhầm dữ liệu. Chuyển xong ApkStart tự khởi động lại. Shortcut của profile phụ tạm thời không tạo để tránh mở sai Android. Chưa hỗ trợ nhân bản/xóa profile hay chuyển dữ liệu giữa chúng. Xem [tài liệu Android Profiles](docs/ANDROID_PROFILES.md).

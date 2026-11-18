@@ -84,3 +84,13 @@ Open **Settings → Performance & Resource Usage → Smart Performance Engine** 
 The Android emulator is a **shared VM**. VM CPU/RAM are never attributed to a single APK. Choose a per-app scheduling preset (`inherit`, `save`, `balanced`, `smooth`) with explicit approval; changes take effect **on the next app launch**. RAM, vCPU, and render resolution remain global VM settings. `smooth` raises process priority and can reduce host responsiveness. The rules suggest a preset using measured pressure, but **never apply it automatically**. No data resets, installer changes, network telemetry, or third-party services.
 
 See [Performance technical notes](docs/SMART_PERFORMANCE.md).
+
+## Android Profiles (developer preview)
+
+Create **Work / Games / Testing** environments from the new Android Profiles bar above the app library. Profiles are named and can be switched deliberately. **Existing Default profile data is never migrated, copied or deleted**: it continues using its original `apps.json`, APK/icon folders and Android AVD path. Each additional profile has a separate app catalog, APK/icon cache, AVD name and Android userdata/snapshot directory. Emulator binaries and official system images remain shared to avoid redundant multi-gigabyte downloads.
+
+**Only one profile may run at a time.** Stop Android using Settings → Runtime → Stop Runtime, close app windows and finish installs before switching. If any emulator port is still live, switching fails closed; the app never kills unrelated QEMU/Android Studio processes to force it. A successful switch restarts ApkStart rather than hot-swapping disk paths while Android is running.
+
+Secondary-profile desktop shortcuts are deliberately disabled in this preview: unqualified legacy Windows shortcuts continue to refer to Default, never to whatever profile happens to be active. Profile deletion, cloning, and cross-profile app-data migration are **not implemented**. General UI/runtime settings stay shared, while APK data and guest userdata are isolated.
+
+See [Android Profiles technical and safety notes](docs/ANDROID_PROFILES.md).

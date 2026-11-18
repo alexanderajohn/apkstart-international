@@ -1,3 +1,11 @@
+## Unreleased — Android Profiles (isolated guests)
+
+- Preserve Default's existing AVD and app library without migration or deletion.
+- Add unique per-profile Android AVD names/guest userdata directories and APK/icon/catalog files; keep Android SDK binaries shared.
+- Add EN/VI/ZH create/list/switch interface and restart-only, explicit-switch IPC with runtime-busy checks.
+- Prevent cross-profile adoption of already-running emulators and disable unqualified desktop shortcuts for secondary profiles.
+- Add data-isolation regression tests and Windows UI smoke coverage; real Android runtime switching remains a manual release gate.
+
 ## Unreleased — Smart Performance Engine
 
 - Add opt-in local host CPU/RAM sampling and private-runtime emulator CPU/working-set metrics (when available).

@@ -37,3 +37,9 @@
 - [ ] Calibrate CPU/RAM readings on real Windows 10/11 hardware with a running Google Android Emulator.
 - [ ] Validate Android gfxinfo FPS estimator against a separately measured benchmark; FPS unavailable on unsupported apps is expected.
 - [ ] Confirm multi-app priority behavior and hardware GPU telemetry before promoting performance claims.
+
+- [x] Preserve default AVD/userdata/catalog paths while isolating additional Android profiles.
+- [x] Require runtime to be stopped before switching; reject foreign emulator adoption and unqualified shortcut routing.
+- [ ] Test installing the same APK in two profiles on real Windows Android Emulator, including restart/persistence.
+- [ ] Verify shutdown, snapshot restoration, profile switching, and Windows shortcut behavior with real APK data.
+- [ ] Implement profile-qualified shortcuts and robust per-profile backup/restore before enabling deletion or cloning.
