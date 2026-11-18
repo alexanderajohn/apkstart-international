@@ -168,6 +168,17 @@
           <div class="steps" id="setupSteps"></div>
         </div>
         <div id="envCheck" class="env-check" hidden></div>
+        <section class="asi-ar" id="autoRepairSection" aria-labelledby="autoRepairTitle">
+          <div class="asi-ar-bar">
+            <div class="asi-ar-heading">
+              <strong id="autoRepairTitle">Auto-Repair 2.0</strong>
+              <p id="autoRepairCaption">Read-only diagnosis · repairs require your approval</p>
+            </div>
+            <button type="button" class="btn ghost sm" id="btnAutoRepairScan">Diagnose now</button>
+          </div>
+          <div class="asi-ar-result" id="autoRepairResults" aria-live="polite"></div>
+        </section>
+
 
         <div class="setup-guide" id="setupGuide" hidden>
           <h2>安装 Android 到虚拟磁盘</h2>
@@ -823,5 +834,6 @@
 <script src="i18n/translator.js"></script>
 <script src="i18n/bridge.js"></script>
 <script src="smartcheck.js"></script>
+<script src="auto-repair.js"></script>
 </body>
 </html>

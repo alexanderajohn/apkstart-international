@@ -96,3 +96,28 @@ test('Source never contains destructive repair commands or unsafe elevation oper
     assert.ok(!code.split('\n').some(line=>!line.trim().startsWith('//')&&line.includes(command)), command);
   }
 });
+
+
+test('Backend repair handlers recompute the plan and restrict actions to an allowlist', () => {
+  const main=fs.readFileSync(path.join(__dirname,'../src/main.js'),'utf8');
+  const preload=fs.readFileSync(path.join(__dirname,'../src/preload.js'),'utf8');
+  assert.ok(main.includes("ipcMain.handle('doctor:repairPlan'"));
+  assert.ok(main.includes("ipcMain.handle('doctor:applySafeRepair'"));
+  assert.ok(main.includes('const snap = await currentAutoRepairSnapshot();'));
+  assert.ok(preload.includes("autoRepairPlan: () => invoke('doctor:repairPlan')"));
+  assert.ok(preload.includes("autoRepairApply: (action) => invoke('doctor:applySafeRepair', action)"));
+});
+test('Settings panel exposes diagnostics before repair and warns of consent', () => {
+  const html=fs.readFileSync(path.join(__dirname,'../src/ui/index.html'),'utf8');
+  const ui=fs.readFileSync(path.join(__dirname,'../src/ui/auto-repair.js'),'utf8');
+  for(const id of ['btnAutoRepairScan','autoRepairResults','autoRepairSection']) {
+    assert.ok(html.includes('id="'+id+'"'),id);
+  }
+  assert.ok(html.includes('<script src="auto-repair.js"></script>'));
+  assert.ok(ui.includes('window.confirm(L.confirm)'),'Manual explicit consent required');
+  assert.ok(ui.includes('window.confirm(L.confirmAll)'),'Batch approval required');
+  assert.ok(ui.includes("a==='gpu-software'||a==='snapshot-disable'"),'Batch excludes ADB restart');
+  assert.ok(ui.includes('textContent'),'Never interpolate untrusted logs into innerHTML');
+  assert.ok(!ui.includes('innerHTML'),'No HTML interpolation of untrusted logs');
+  assert.ok(ui.includes("'zh-CN':")&&ui.includes('vi:')&&ui.includes('en:'),'Three supported UI languages');
+});
