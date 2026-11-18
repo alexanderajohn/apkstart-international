@@ -7,8 +7,12 @@
  * Read-only default; installs only with explicit disposable-profile opt-in.
  * A synthetic ZIP/APK created by unit tests is NOT a signed installable APK.
  */
-const path=require('node:path'),fs=require('node:fs'),crypto=require('node:crypto');
-const {execFile}=require('node:child_process');
+const path=require('node:path'),fs=require('node:fs');
+const { AdbClient } = require('../../src/core/adb');
+const { prepareInstall } = require('../../src/core/apk-install-guard');
+const { withApprovedCopy } = require('../../src/core/install-staging');
+const { installSession } = require('../../src/core/install-session');
+const { packagePresent, verifyCanary, launchAndObserve } = require('./guest-evidence.cjs');
 const {inspectRuntime,expectedAvd}=require('../../src/core/runtime-readiness');
 const PROFILE=/^p_[0-9a-f]{16}$/,PKG=/^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*){2,}$/;
 const HELP='Usage: node scripts/asi/live-runtime-smoke.cjs [--readiness|--install-launch|--verify-existing|--assert-absent]. Set ASI_E2E_ADB_PATH (absolute adb.exe), ASI_E2E_SERIAL (emulator-5554), ASI_E2E_PROFILE_ID. Optional install: ASI_E2E_APK_PATH, ASI_E2E_PACKAGE, ASI_E2E_DISPOSABLE_ACK=I_CREATED_DISPOSABLE_PROFILE.';
@@ -29,21 +33,12 @@ async function run(){
  // Explicit operator assertion + live AVD-name equality; never claim to
  // establish process ownership from serial alone on an external host.
  if(process.env.ASI_E2E_AVD_NAME!==expected)throw Error('Expected AVD name does not match selected Profile');
- const env={...process.env,ANDROID_ADB_SERVER_PORT:'5044'};
- function exec(args,timeout=15000,withSerial=true){
-   return new Promise((resolve,reject)=>{
-    execFile(adb,[...(withSerial?['-s',serial]:[]),...args],{
-      env,timeout,windowsHide:true,maxBuffer:1024*1024,encoding:'utf8'
-    },(err,stdout)=>err?reject(Error('ADB command failed')):resolve({stdout:String(stdout||'')}));
-   });
- }
- const client={serial,
-   exec:(a,{timeout}={})=>exec(a,timeout||15000),
-   async deviceState(){
-     const {stdout}=await exec(['devices'],15000,false);
-     const row=stdout.split(/\r?\n/).map(s=>s.trim()).find(s=>s.startsWith(serial+'\t'));
-     return row?row.split(/\s+/)[1]:'no-device';
-   }};
+ process.env.ANDROID_ADB_SERVER_PORT='5044';
+ const client = new AdbClient({adbPath:adb,serial});
+ const check = async () => {
+   const r = await inspectRuntime({client, profileId, serial, owned:true, running:true});
+   if (r.status !== 'ready') throw Error('Runtime identity or readiness changed');
+ };
  // Operator-declared, not automatically verified. inspectRuntime separately
  // verifies the AVD identity via read-only 'adb emu avd name'.
  const report=await inspectRuntime({client,profileId,serial,owned:true,running:true});
@@ -55,42 +50,38 @@ async function run(){
  if(mode==='--readiness'){emit(result);return;}
  const pkg=requireEnv('ASI_E2E_PACKAGE');
  if(!PKG.test(pkg)||pkg.length>180)throw Error('Invalid test package name');
- const packagePath=async()=>{
-  try{return (await exec(['shell','pm','path',pkg],15000)).stdout.trim();}
-  catch(_){return '';}
- };
- if(mode==='--assert-absent'){
-  result.packagePresent=/^package:/m.test(await packagePath());
-  result.ok=!result.packagePresent;
-  emit(result);if(!result.ok)process.exitCode=3;return;
- }
- if(mode==='--verify-existing'){
-  result.packagePresent=/^package:/m.test(await packagePath());
-  result.ok=result.packagePresent;
-  emit(result);if(!result.ok)process.exitCode=3;return;
+ if(mode==='--assert-absent' || mode==='--verify-existing'){
+   const present = await packagePresent(client,pkg);
+   result.packagePresent = present;
+   result.ok = mode==='--assert-absent' ? !present : present;
+   if (present && mode==='--verify-existing' && process.env.ASI_E2E_CANARY_SHA256)
+     result.privateDataVerified = await verifyCanary(client,pkg,process.env.ASI_E2E_CANARY_SHA256);
+   emit(result); if(!result.ok)process.exitCode=3; return;
  }
  // Install+launch is NEVER run for Default, and never without exact consent.
  if(!PROFILE.test(profileId)||process.env.ASI_E2E_DISPOSABLE_ACK!=='I_CREATED_DISPOSABLE_PROFILE')
   throw Error('Install/launch requires a disposable secondary profile and explicit opt-in');
- if(/^package:/m.test(await packagePath()))
+ if(await packagePresent(client,pkg))
   throw Error('Refusing to install over an existing package; use another disposable test APK');
  const apk=requireEnv('ASI_E2E_APK_PATH'),stat=fs.statSync(apk);
  if(!path.isAbsolute(apk)||!stat.isFile()||stat.size<1024||stat.size>200*1024*1024||!apk.toLowerCase().endsWith('.apk'))
   throw Error('Supply a signed installable test APK smaller than 200 MB');
- const {parseApk}=require('../../src/core/apk');
- const metadata=parseApk(apk);
- if(metadata.package!==pkg)throw Error('APK manifest package does not match expected disposable test package');
- if(Number(metadata.minSdk)>34)throw Error('APK requires a newer Android version than this runtime');
- const fd=fs.openSync(apk,'r'),magic=Buffer.alloc(4);
- try{fs.readSync(fd,magic,0,4,0);}finally{fs.closeSync(fd);}
- if(magic.toString('hex')!=='504b0304')throw Error('Test APK is not a ZIP package');
- result.apkSha256=crypto.createHash('sha256').update(fs.readFileSync(apk)).digest('hex');
- await exec(['install',apk],240000);
- result.packagePresent=/^package:/m.test(await packagePath());
- if(!result.packagePresent)throw Error('adb install returned success but package manager cannot find test package');
- const launched=(await exec(['shell','monkey','-p',pkg,'-c','android.intent.category.LAUNCHER','1'],60000)).stdout;
- if(!/Events injected:\s*1/.test(launched))throw Error('Android launcher did not report one injected event');
- result.launchEventIssued=true;
+ const preview = await prepareInstall(apk,profileId);
+ if(preview.package!==pkg)throw Error('Test APK package differs from the expected identity');
+ result.apkSha256=preview.sha256;
+ await withApprovedCopy(preview,profileId,staged=>installSession(client,[staged],{
+   pkg,replace:false,grant:false,checkGuest:check
+ }));
+ await check();
+ result.packagePresent=await packagePresent(client,pkg);
+ if(!result.packagePresent)throw Error('Android package manager cannot find the committed package');
+ await launchAndObserve(client,pkg,check);
+ await check();
+ await client.exec(['shell','am','force-stop','--user','0',pkg]);
+ await launchAndObserve(client,pkg,check);
+ result.launchesObserved=2;
+ if(process.env.ASI_E2E_CANARY_SHA256)
+   result.privateDataVerified=await verifyCanary(client,pkg,process.env.ASI_E2E_CANARY_SHA256);
  result.ok=true;
  result.warning='Inspect app window manually. The test APK remains installed; it was not uninstalled or cleared.';
  emit(result);

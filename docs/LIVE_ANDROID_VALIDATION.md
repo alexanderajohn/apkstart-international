@@ -63,3 +63,23 @@ The harness does not itself switch profiles, reboot an Android guest or replace 
 Before a stable release, provide actual Windows 10/11 results for: installing and launching signed APKs, Android permissions, restart/persistence, two-profile data isolation, multi-GB backup/restore, cold and quick-boot recovery, antivirus/NTFS file locks, and emulator compatibility across GPU/CPU/Hyper-V configurations. These remain **unverified** until run on real hardware.
 
 This preview is independent from RoutineMiku/ApkStart and must remain on the Draft PR until release-blocking checks pass.
+
+## Pass 22 hardware evidence sheet
+
+**Hardware Validation Pending.** Save the harness JSON for each cell, together with the application commit and APK digest. Install mode exercises the same reviewed-copy and Android package-session code as the desktop app. It observes the app process after launch, explicitly stops this disposable app, relaunches and observes it again. Also install and launch through the normal Windows UI in a second disposable Profile to validate the complete desktop flow.
+
+| Scenario | Procedure and required evidence |
+| --- | --- |
+| Windows / CPU / GPU / hypervisor | Record OS build, CPU, adapter, driver version, Hyper-V/WHPX state and emulator version. Run once with hardware acceleration and once with software rendering on supported Intel/AMD hardware. |
+| Fresh signed APK | Run readiness and install-launch. Record permission prompt and the effect of denying or granting it in the test app. Keep other apps and personal Profiles closed. |
+| Persistence | Use a debuggable, signed test app that writes a known canary to its own files/asi-canary. Set ASI_E2E_CANARY_SHA256 to its expected digest. Run verify-existing before shutdown, after a cold boot, and again after a Quick Boot. Capture the emulator log identifying the boot mode. |
+| Isolation | In a different empty secondary Profile run assert-absent; return to the first and run verify-existing with the digest. A transport error fails the check. |
+| Windows window lifecycle | Inspect and record app contents on first launch, close and relaunch, fullscreen, minimize and restore. The harness observes a guest PID. Visual correctness requires this separate check. |
+
+PowerShell example for a repeatable cold-boot observation (after selecting that boot mode in the app):
+
+```powershell
+$env:ASI_E2E_CANARY_SHA256 = (Get-FileHash .\expected-canary.bin -Algorithm SHA256).Hash.ToLowerInvariant()
+node scripts/asi/live-runtime-smoke.cjs --verify-existing > cold-boot.json
+if ($LASTEXITCODE -ne 0) { throw 'Cold-boot validation failed' }
+```

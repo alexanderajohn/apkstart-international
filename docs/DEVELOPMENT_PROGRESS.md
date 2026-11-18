@@ -20,3 +20,9 @@ Run `npm test`, `npm run test:international`, and `npm run test:runtime:live -- 
 | 21 | Implementation | This revision | Pending | Pending | Physical two-Profile reboot, orphan shutdown and NTFS locking |
 
 Runtime reuse verifies the saved Profile, ADB serial, AVD name and guest kernel boot UUID. A process restart can adopt the same recorded guest. An unknown running guest or AVD lock blocks startup. Stop no longer kills PIDs selected by a listening port or from another emulator's lock. Profile switching reserves the transition across asynchronous checks and relaunch. Legacy sessions created before ownership records require closing the emulator once. Network repair ends after a non-destructive cold boot. Explicit reset requires a separate native confirmation. Ownership records assume trustworthy local storage and a trustworthy Android runtime.
+
+| Pass | Status | Commit | Windows CI | Preview | Remaining work |
+| --- | --- | --- | --- | --- | --- |
+| 22 | Runnable live harness; Hardware Validation Pending | This revision | Pending | Pending | All physical Windows matrix cells, permission prompt and UI observations |
+
+The harness tests install, launch, close and relaunch in a disposable Android Profile. Optional app-private digest checks distinguish persistence from package presence. Cold/Quick Boot and GPU/CPU/Hyper-V evidence instructions are in LIVE_ANDROID_VALIDATION.md. Run `npm run test:runtime:live -- --help`; the Linux builder has no AVD or physical Windows host.
