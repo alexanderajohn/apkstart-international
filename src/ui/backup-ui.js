@@ -14,7 +14,7 @@ const WORDS={
     current:'Profile: ',files:'Files: ',bytes:'Data size: ',parts:'Includes: ',date:'Created: ',
     verify:'Verifying data',backup:'Backing up',stage:'Staging recovery',complete:'Backup successful',
     previewNote:'RESTORE requires confirmation. The currently installed data is saved as .before-restore safety copies (not deleted). Restart ApkStart after a successful restore. Ensure enough space on all destination drives.',
-    restore:'Restore after confirmation',cancel:'Cancel preview',
+    restore:'Restore after confirmation',cancel:'Cancel preview',migrate:'Import encrypted profile from another Windows PC',
     ask:'Type RESTORE to confirm replacing the active Android profile data. The original data will remain as safety copies. This cannot be undone automatically.',
     confirm:'Restore verified snapshot now? Current apps and userdata will be moved to safety copies. Android must remain stopped.',
     restored:'Restore successful! Existing data was preserved in safety-copy paths. Restart ApkStart before launching Android.',
@@ -35,7 +35,7 @@ const WORDS={
     current:'Profile: ',files:'Số file: ',bytes:'Dung lượng: ',parts:'Thành phần: ',date:'Tạo lúc: ',
     verify:'Đang xác minh',backup:'Đang sao lưu',stage:'Đang tạo bản khôi phục',complete:'Đã sao lưu',
     previewNote:'Khôi phục cần xác nhận. Dữ liệu hiện tại sẽ được giữ nguyên thành bản .before-restore (không xóa). Khởi động lại ApkStart sau khi khôi phục; đảm bảo ổ đĩa còn đủ chỗ.',
-    restore:'Xác nhận khôi phục',cancel:'Hủy chọn',
+    restore:'Xác nhận khôi phục',cancel:'Hủy chọn',migrate:'Nhập profile mã hóa từ máy Windows khác',
     ask:'Nhập RESTORE để xác nhận thay thế dữ liệu Android của profile đang dùng. Dữ liệu cũ được giữ lại làm bản an toàn. Không có chức năng tự hoàn tác.',
     confirm:'Khôi phục bản sao đã xác minh ngay? Ứng dụng và dữ liệu cũ sẽ được đổi tên thành bản an toàn. Android phải đang tắt.',
     restored:'Khôi phục thành công! Đã giữ dữ liệu cũ thành bản an toàn. Hãy khởi động lại ApkStart trước khi mở Android.',
@@ -54,7 +54,7 @@ const WORDS={
     current:'环境：',files:'文件：',bytes:'大小：',parts:'组件：',date:'创建：',
     verify:'校验中',backup:'备份中',stage:'准备恢复',complete:'备份成功',
     previewNote:'恢复前必须确认。原数据将保存在 .before-restore 安全副本中，不自动删除。恢复后需要重启软件。',
-    restore:'确认恢复',cancel:'取消预览',
+    restore:'确认恢复',cancel:'取消预览',migrate:'从其他 Windows 电脑导入加密环境',
     ask:'输入 RESTORE 确认替换当前 Android 环境数据。原数据保留为安全副本，无法自动撤销。',
     confirm:'现在恢复这个校验过的备份吗？必须先停止 Android。',
     restored:'恢复成功，原数据已保留，请重启 ApkStart。',preserved:'原数据保存于：',
@@ -72,6 +72,7 @@ function lock(on){
   busy=on;
   $('btnBackupCreate').disabled=on;
   $('btnBackupPick').disabled=on;
+  $('btnBackupMigrate').disabled=on;
   $('btnBackupRestore').disabled=on||!preview;
   $('backupPassword').disabled=on;
   $('backupPasswordConfirm').disabled=on;
@@ -88,6 +89,7 @@ function render(){
   $('backupPasswordHint').textContent=L.passwordHint;
   $('btnBackupCreate').textContent=L.create;
   $('btnBackupPick').textContent=L.inspect;
+  $('btnBackupMigrate').textContent=L.migrate||'Import encrypted profile from another Windows PC';
   $('btnBackupRestore').textContent=L.restore;
   $('btnBackupCancel').textContent=L.cancel;
   $('btnBackupRestart').textContent=L.restart;
@@ -109,7 +111,8 @@ function setPreview(result){
     L.files+result.files+'\n'+L.bytes+fmt(result.bytes)+'\n'+
     L.parts+(result.components||[]).join(', ')+'\n'+
     (result.space||[]).map(x=>'Free: '+fmt(x.availableBytes)+' / needed '+fmt(x.requiredBytes)).join('\n')+'\n'+
-    (result.encrypted?L.encrypted:L.legacyWarning);
+    (result.encrypted?L.encrypted:L.legacyWarning)+
+    (result.migration?'\nSource: '+result.sourceProfileId+' → Target: '+result.profileId+'\nAVD compatibility verified: '+JSON.stringify(result.compatibility):'');
   show(result.encrypted?L.encryptedVerified:L.legacyWarning);
   lock(false);
 }
@@ -152,14 +155,28 @@ async function inspect(){
   }catch(e){show(L.error+String(e?.message||e),true);}
   finally{secret='';clearPasswords();lock(false);}
 }
+async function migrate(){
+  if(busy)return;
+  const L=locale();lock(true);show(L.working);
+  let secret=$('backupPassword').value;
+  preview=null;$('backupPreview').hidden=true;
+  if(!validPassword(secret)){show(L.passTooShort,true);lock(false);return;}
+  try{
+    const request=api.backupPickMigration(secret);
+    clearPasswords();secret='';
+    const r=await request;
+    if(r?.canceled)show(L.canceled);else setPreview(r);
+  }catch(e){show(L.error+String(e?.message||e),true);}
+  finally{secret='';clearPasswords();lock(false);}
+}
 async function restore(){
   if(busy||!preview)return;
   const L=locale(),encrypted=!!preview.encrypted;
   let secret=$('backupPassword').value;
   if(encrypted&&!validPassword(secret)){show(L.passTooShort,true);return;}
   // A typed approval deliberately separates preview from destructive commit.
-  if(window.prompt(L.ask)!=='RESTORE')return;
-  if(!window.confirm(L.confirm))return;
+  if(window.prompt(preview.migration?'Type MIGRATE to import this encrypted backup into the selected profile. Existing data is preserved.':L.ask)!==(preview.migration?'MIGRATE':'RESTORE'))return;
+  if(!window.confirm(preview.migration?'Import this authenticated profile backup? Android must be stopped; destination data will be kept in .before-restore safety copies.':L.confirm))return;
   const token=preview.token;
   preview=null;$('backupPreview').hidden=true;
   lock(true);show(L.working);
@@ -181,6 +198,7 @@ function init(){
   $('btnBackupToggle').addEventListener('click',()=>{$('backupContent').hidden=!$('backupContent').hidden;render();});
   $('btnBackupCreate').addEventListener('click',startBackup);
   $('btnBackupPick').addEventListener('click',inspect);
+  $('btnBackupMigrate').addEventListener('click',migrate);
   $('btnBackupRestore').addEventListener('click',restore);
   $('btnBackupCancel').addEventListener('click',()=>{preview=null;$('backupPreview').hidden=true;show(locale().ready);lock(false);});
   $('btnBackupRestart').addEventListener('click',()=>api.restartApp());
