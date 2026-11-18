@@ -394,18 +394,9 @@ class AdbClient {
   }
 
   async isOnline() {
-    try {
-      const { stdout } = await this.exec(['get-state'], { timeout: 8000 });
-      return stdout.trim() === 'device';
-    } catch (_) {
-      // get-state 在未指定 serial 时不可用，退化用 devices 列表
-      try {
-        const { stdout } = await this.exec(['devices'], { withSerial: false, timeout: 8000 });
-        return stdout.split('\n').some((l) => l.startsWith(this.serial) && l.includes('device'));
-      } catch (_) {
-        return false;
-      }
-    }
+    // get-state may report "device" for an UNAUTHORIZED ADB guest.
+    // Only the exact serial's state from adb devices is authoritative.
+    return (await this.deviceState()) === 'device';
   }
 
   /**
