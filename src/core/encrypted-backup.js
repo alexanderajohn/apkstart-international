@@ -128,6 +128,17 @@ function requireCompatible(source,target){
       throw Error('Incompatible Android AVD '+k+': use matching SDK, ABI, architecture and system image');
   }
 }
+function localVaultPath(dataDir,profileId){
+  if(profileId!=='default'&&!/^p_[a-f0-9]{16}$/.test(profileId))
+    throw Error('Invalid local safety vault profile ID');
+  return path.join(dataDir,'safety-vault',profileId);
+}
+async function approvedLocalVault(parent,dataDir,profileId){
+  const expected=path.resolve(localVaultPath(dataDir,profileId));
+  if(path.resolve(parent)!==expected)return false;
+  // Refuse a junction/symlink redirecting encrypted output to an unknown disk.
+  return await p.realpath(expected)===expected;
+}
 function sourcePath(l,rel){
   const [component,...tail]=rel.split('/');
   return rel==='apps.json'?l.targets['apps.json']:path.join(l.targets[component],...tail);
@@ -135,21 +146,50 @@ function sourcePath(l,rel){
 class EncryptedBackupCenter extends BackupCenter {
   // Never keep a password or derived key in class properties or a pending token.
   async create(folder,password){
+    return this._create(folder,password);
+  }
+  // Only RecoveryVault uses this internal method with a preverified point
+  // layout. The IPC backup:create endpoint never accepts source paths.
+  async createSafetyPoint(folder,password,layout,expectedManifest,pointId){
+    const live=this.layout();
+    if(layout.id!==live.id||layout.avdName!==live.avdName
+      ||typeof pointId!=='string'||!/^(restore|recovery):[a-f0-9]{20}$/.test(pointId))
+      throw Error('Invalid safety-point export identity');
+    checkManifest(expectedManifest);
+    if(expectedManifest.profileId!==live.id||expectedManifest.avdName!==live.avdName)
+      throw Error('Safety-point profile identity mismatch');
+    return this._create(folder,password,{layout,expectedManifest,pointId});
+  }
+  async _create(folder,password,options=null){
     validatePassword(password);
     return this.exclusive(async()=>{
       await this.idle();
-      const layout=this.layout(),parent=await p.realpath(folder);
+      const live=this.layout(),layout=options?.layout||live;
+      const parent=await p.realpath(folder);
       if(!(await safeStat(parent)).isDirectory())throw Error('Choose a backup destination folder');
       const data=await p.realpath(this.dataDir);
-      if(within(parent,data)||within(data,parent))
+      if(options){
+        if(!await approvedLocalVault(parent,this.dataDir,live.id))
+          throw Error('Safety Vault destination must be the exact local profile vault');
+      }else if(within(parent,data)||within(data,parent)){
         throw Error('Choose an external folder outside ApkStart profile data');
-      for(const dest of Object.values(layout.targets))
+      }
+      for(const dest of [...Object.values(live.targets),...Object.values(layout.targets)].filter(Boolean))
         if(within(parent,dest)||within(dest,parent))
-          throw Error('Encrypted backup destination overlaps live profile data');
+          throw Error('Encrypted backup destination overlaps profile data');
       const inv=await this.inventory(layout);
+      if(options){
+        const prior=options.expectedManifest;
+        if(JSON.stringify(inv.components)!==JSON.stringify(prior.components)
+          ||JSON.stringify(inv.directories)!==JSON.stringify(prior.directories)
+          ||inv.totalBytes!==prior.totalBytes
+          ||inv.files.length!==prior.files.length
+          ||inv.files.some((f,i)=>f.path!==prior.files[i].path||f.size!==prior.files[i].size))
+          throw Error('Safety-point inventory changed before encryption');
+      }
       if(!inv.components.length)throw Error('Nothing to back up');
       checkSpace(parent,inv.totalBytes+MANIFEST_LIMIT);
-      const dir='ASI-Encrypted-'+new Date().toISOString().slice(0,10)+'-'+id(6);
+      const dir=(options?'ASI-Sealed-':'ASI-Encrypted-')+new Date().toISOString().slice(0,10)+'-'+id(6);
       const temp=path.join(parent,dir+'.partial'),dest=path.join(parent,dir);
       await p.mkdir(temp,{recursive:false});
       let key;
@@ -164,14 +204,17 @@ class EncryptedBackupCenter extends BackupCenter {
           await safeStat(src);
           const blob=id(16),target=path.join(temp,'payload',blob+'.bin');
           const result=await encryptFile(src,target,key,blob);
-          if(result.size!==entry.size)throw Error('Source changed during encryption');
+          if(result.size!==entry.size
+            ||(options&&result.sha256!==options.expectedManifest.files[records.length].sha256))
+            throw Error('Source changed during encryption');
           records.push({path:entry.path,...result});
           done+=result.size;this.progress('encrypt',done,inv.totalBytes);
         }
         const manifest={format:FORMAT,version:VERSION,profileId:layout.id,avdName:layout.avdName,
           createdAt:new Date().toISOString(),components:inv.components,directories:inv.directories,
           files:records,totalBytes:inv.totalBytes,
-          avdCompatibility:await avdCompatibility(layout.targets.avd)};
+          avdCompatibility:layout.targets.avd?await avdCompatibility(layout.targets.avd):null,
+          ...(options?{safetyPointId:options.pointId}:{} )};
         checkEncryptedManifest(manifest);
         const manifestRaw=Buffer.from(JSON.stringify(manifest),'utf8');
         if(manifestRaw.length>MANIFEST_LIMIT)throw Error('Encrypted manifest exceeds allowed size');
@@ -198,7 +241,10 @@ class EncryptedBackupCenter extends BackupCenter {
     if(!(await safeStat(folder)).isDirectory())throw Error('Select a backup directory');
     if(requireIdentity){
       const data=await p.realpath(this.dataDir);
-      if(within(folder,data)||within(data,folder))
+      const localRoot=path.dirname(folder);
+      const local=path.resolve(localRoot)===path.resolve(localVaultPath(this.dataDir,layout.id))
+        &&await approvedLocalVault(localRoot,this.dataDir,layout.id);
+      if((within(folder,data)||within(data,folder))&&!local)
         throw Error('Encrypted backup overlaps ApkStart profile data');
       for(const dest of Object.values(layout.targets))
         if(within(folder,dest)||within(dest,folder))throw Error('Encrypted backup overlaps live profile data');
@@ -372,4 +418,4 @@ class EncryptedBackupCenter extends BackupCenter {
     });
   }
 }
-module.exports={EncryptedBackupCenter,ENC_FORMAT,ENC_VERSION,validatePassword,checkHeader,checkEncryptedManifest,parseAvdConfig,requireCompatible};
+module.exports={EncryptedBackupCenter,ENC_FORMAT,ENC_VERSION,validatePassword,checkHeader,checkEncryptedManifest,parseAvdConfig,requireCompatible,localVaultPath};
