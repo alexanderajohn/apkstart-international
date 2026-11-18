@@ -3154,10 +3154,11 @@ if (!gotLock) {
                 "  const title=document.getElementById('backupPreviewTitle').textContent;" +
                 "  const details=document.getElementById('backupPreviewDetails').textContent;" +
                 "  return {shown:!preview.hidden,hasData:details.includes('SHA')||details.includes('Files:')," +
-                "    title,restoreEnabled:!document.getElementById('btnBackupRestore').disabled};" +
+                "    title,restoreEnabled:!document.getElementById('btnBackupRestore').disabled," +
+                "    restartHidden:getComputedStyle(document.getElementById('btnBackupRestart')).display==='none'};" +
                 "})()"
               );
-              if(!result || !result.shown || !result.restoreEnabled)
+              if(!result || !result.shown || !result.restoreEnabled || !result.restartHidden)
                 throw new Error('Backup Center preview UI did not render');
               console.log('[smoke] Backup snapshot verified and preview shown; no restore executed');
               await snap(out.replace(/\.png$/i,'-backup.png'));

@@ -946,4 +946,5 @@ kbd {
 .asi-backup-preview p{font-size:11px;line-height:1.65;margin:0;color:var(--muted)}
 #backupPreviewDetails{font-size:11.5px;line-height:1.7;overflow-wrap:anywhere;white-space:pre-line}
 #btnBackupRestart{align-self:flex-start}
+.asi-backup #btnBackupRestart[hidden]{display:none !important}
 @media(max-width:580px){.asi-backup-top{flex-direction:column;align-items:flex-start}.asi-backup-actions>*{flex:1;min-width:155px}}

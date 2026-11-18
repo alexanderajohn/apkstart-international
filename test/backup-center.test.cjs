@@ -132,3 +132,12 @@ test('Final restore action requires a native main-process confirmation',()=>{
   assert.ok(main.includes("if(approval.response!==1)return {canceled:true}"));
   assert.ok(main.includes('return backupCenter.restore(token)'));
 });
+
+test('Restart only appears after actual restoration, never in read-only preview',()=>{
+  const root=path.join(__dirname,'..');
+  const css=fs.readFileSync(path.join(root,'src/ui/style.css'),'utf8');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  assert.ok(css.includes('#btnBackupRestart[hidden]{display:none !important}'));
+  assert.ok(main.includes('restartHidden:getComputedStyle'));
+  assert.ok(main.includes('!result.restartHidden'));
+});
