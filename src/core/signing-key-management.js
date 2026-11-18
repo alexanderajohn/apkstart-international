@@ -158,7 +158,10 @@ class SigningKeyManagement{
       // Retain the old public key only. A crash here can temporarily leave an
       // old encrypted private key: remove it on next explicit management call.
       let cleanupWarning=null;
-      try{await p.unlink(f.privateFile);}
+      try{
+        if(this.hooks.beforeCleanup)await this.hooks.beforeCleanup(); // simulate abrupt termination after pointer commit
+        await p.unlink(f.privateFile);
+      }
       catch(_){cleanupWarning='Old encrypted private key cleanup failed; manually remove the inactive private PEM after verifying the new key and retaining an external backup.';}
       return {ok:true,oldFingerprint,newFingerprint,committed:true,
         warning:cleanupWarning||'New key activated atomically. Preserve external fingerprints. Rotation does not revoke prior signatures.'};
