@@ -94,6 +94,31 @@
         <select id="backupSealedSelect" aria-label="Choose encrypted safety archive"></select>
         <button class="btn ghost sm" type="button" id="btnBackupSealedOpen">Authenticate and preview sealed point</button>
       </div>
+      <div class="asi-backup-actions">
+        <button id="btnBackupRetentionToggle" class="btn ghost sm" type="button" aria-expanded="false" aria-controls="backupRetentionPanel">Retention &amp; Cleanup tools</button>
+      </div>
+      <div id="backupRetentionPanel" class="asi-backup-preview" hidden>
+        <strong id="backupRetentionTitle">Safety Vault Retention &amp; Cleanup</strong>
+        <div class="asi-backup-notice" id="backupRetentionNotice">Retention is advisory; no automatic deletion. Cleanup requires an authenticated encrypted archive and two explicit approvals. Secure erasure is not possible here.</div>
+        <div class="asi-backup-actions">
+          <label id="backupRetentionDaysLabel" for="backupRetentionDays">Flag recovery points older than (days)</label>
+          <input id="backupRetentionDays" type="number" min="1" max="3650" step="1" value="30" aria-label="Retention age in days" />
+          <button id="btnBackupRetentionReport" type="button" class="btn ghost sm">Inspect storage usage</button>
+        </div>
+        <div id="backupRetentionSummary" class="asi-backup-progress" role="status" aria-live="polite">Read-only inventory; no cleanup is scheduled.</div>
+        <div class="asi-backup-actions">
+          <button id="btnBackupCleanupPreview" type="button" class="btn ghost sm">Verify selected plaintext point against selected encrypted archive</button>
+        </div>
+        <div id="backupCleanupPreviewPanel" class="asi-backup-preview" hidden>
+          <strong id="backupCleanupTitle">Authenticated plaintext cleanup preview</strong>
+          <div id="backupCleanupDetails"></div>
+          <p id="backupCleanupNotice">This permanently deletes the plaintext safety point, NOT the encrypted archive or active data. Deletion is not secure erase and cannot be undone without the password.</p>
+          <div class="asi-backup-actions">
+            <button id="btnBackupCleanupApply" class="btn primary sm" type="button">Delete plaintext after confirmation</button>
+            <button id="btnBackupCleanupCancel" class="btn ghost sm" type="button">Cancel cleanup preview</button>
+          </div>
+        </div>
+      </div>
       <div id="backupProgress" class="asi-backup-progress" role="status" aria-live="polite">Ready. Choose an external folder for a backup.</div>
       <div id="backupPreview" class="asi-backup-preview" hidden>
         <strong id="backupPreviewTitle">Verified snapshot</strong>
