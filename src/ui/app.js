@@ -529,6 +529,9 @@ async function installFiles(paths) {
         t.update({ title: pr.meta ? `正在安装 ${pr.meta.label}` : `正在安装 ${name}`, body: pr.message, progress: pct });
       });
       const r = await api.installApk(p);
+      if(r?.canceled||r?.ok===false){
+        t.dismiss();installToast=null;break;
+      }
       t.update({ title: `${r.app.label} 已安装`, body: r.app.shortcutPath ? '桌面快捷方式已创建，双击即可直接打开。'
         : (window.ASI_PROFILES?.isSecondary?.() ? '二级环境不创建桌面快捷方式，请从 ApkStart 的应用列表打开。' : '可在应用卡片右键创建桌面快捷方式。'), progress: 100, type: 'ok' });
       t.el.querySelector('.spinner')?.remove();
