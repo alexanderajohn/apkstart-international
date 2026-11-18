@@ -84,6 +84,15 @@
         <label for="backupRecoverySelect" id="backupRecoverySelectLabel">Saved profile recovery points</label>
         <select id="backupRecoverySelect" aria-label="Choose local recovery point"></select>
         <button class="btn ghost sm" type="button" id="btnBackupRecoveryInspect">Verify selected recovery point</button>
+        <button class="btn ghost sm" type="button" id="btnBackupSealPoint">Encrypt selected safety point</button>
+      </div>
+      <div class="asi-backup-actions">
+        <button class="btn ghost sm" type="button" id="btnBackupSealedList">Find encrypted Safety Vault archives</button>
+      </div>
+      <div id="backupSealedChoices" hidden>
+        <label id="backupSealedLabel" for="backupSealedSelect">Encrypted Safety Vault archives</label>
+        <select id="backupSealedSelect" aria-label="Choose encrypted safety archive"></select>
+        <button class="btn ghost sm" type="button" id="btnBackupSealedOpen">Authenticate and preview sealed point</button>
       </div>
       <div id="backupProgress" class="asi-backup-progress" role="status" aria-live="polite">Ready. Choose an external folder for a backup.</div>
       <div id="backupPreview" class="asi-backup-preview" hidden>
