@@ -12,6 +12,7 @@ const { Runtime } = require('./core/engine');
 const { PerformanceMonitor } = require('./core/performance-monitor');
 const { BackupCenter } = require('./core/backup-center');
 const { EncryptedBackupCenter, validatePassword } = require('./core/encrypted-backup');
+const { RecoveryVault } = require('./core/recovery-vault');
 const performance = require('./core/performance');
 const { validPackageName } = require('./core/pkgname');
 const { Installer } = require('./core/installer');
@@ -222,6 +223,7 @@ let runtime = null;
 let performanceMonitor = null;
 let backupCenter = null;
 let encryptedBackupCenter = null;
+let recoveryVault = null;
 let backupBusy = false;
 // 「哪些窗口算我们的」由 whenReady 里赋值（见 agentScope）。放模块级是因为
 // runLaunch / 预热定时器都早于那段代码定义，闭包里的 const 在它们的作用域外看不到。
@@ -1330,6 +1332,36 @@ function registerIpc() {
     });
     if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
     return encryptedBackupCenter.previewMigration(chosen.filePaths[0],password);
+  });
+  // Recovery Vault accepts only IDs discovered for the active profile.
+  // The renderer cannot choose arbitrary files or a different profile target.
+  ipcMain.handle('backup:recoveryList', async () => {
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    return recoveryVault.list();
+  });
+  ipcMain.handle('backup:recoveryPreview', async (_e,pointId) => {
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    return recoveryVault.preview(pointId);
+  });
+  ipcMain.handle('backup:recoveryApply', async (_e,request) => {
+    const token=request?.token;
+    if(typeof token!=='string'||!/^[a-f0-9]{48}$/.test(token)
+      ||request?.ack!=='RECOVER'||recoveryVault?.pending?.token!==token)
+      throw new Error('Verified recovery preview and typed RECOVER approval required');
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',
+      buttons:['Cancel','Recover profile data'],
+      defaultId:0,cancelId:0,noLink:true,
+      title:'Confirm Recovery Vault rollback',
+      message:'Recover this selected safety point into the active Android profile?',
+      detail:'Current data will be preserved in .before-recovery copies. The existing recovery point is kept. Android must remain stopped. A restart is required.',
+    });
+    if(approval.response!==1)return {canceled:true};
+    return recoveryVault.apply(token);
   });
   ipcMain.handle('backup:restore', async (_event, request) => {
     const token=typeof request==='string'?request:request?.token;
@@ -2684,6 +2716,7 @@ if (!gotLock) {
     };
     backupCenter = new BackupCenter(backupOptions);
     encryptedBackupCenter = new EncryptedBackupCenter(backupOptions);
+    recoveryVault = new RecoveryVault(backupOptions);
     // 启动即留一行痕迹：出问题时用户把 app.log 发过来就能看到版本与数据目录
     appLog(`start v${app.getVersion()} data=${store.DATA_DIR} pid=${process.pid}`);
 
