@@ -20,6 +20,8 @@ const { RecoveryAudit, causeCode } = require('./core/recovery-audit');
 const { AuditSigning } = require('./core/audit-signing');
 const { SigningKeyManagement } = require('./core/signing-key-management');
 const { TrustLifecycle } = require('./core/trust-lifecycle');
+const { signedExport,verifySignedFile,exportRotationCheckpoint,verifyCheckpointFile } = require('./core/trust-hardening');
+const { SafeKeyQuarantine } = require('./core/safe-key-quarantine');
 const performance = require('./core/performance');
 const { validPackageName } = require('./core/pkgname');
 const { Installer } = require('./core/installer');
@@ -1457,6 +1459,56 @@ function registerIpc() {
   ipcMain.handle('backup:trustHistory',async ()=>{
     if(backupBusy)throw Error('Backup Center is busy');
     return new TrustLifecycle({signing:auditSigning}).rotationHistory();
+  });
+  const keyQuarantine=new SafeKeyQuarantine({signing:auditSigning});
+  ipcMain.handle('backup:trustSignedExport',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    validatePassword(request?.password);
+    const dest=await dialog.showSaveDialog(mainWindow,{title:'Export signed public trust bundle',
+      defaultPath:'ApkStart-Signed-Trust-Bundle.json',filters:[{name:'Signed JSON',extensions:['json']}]});
+    if(dest.canceled||!dest.filePath)return {canceled:true};
+    return signedExport(new TrustLifecycle({signing:auditSigning}),dest.filePath,request.password);
+  });
+  ipcMain.handle('backup:trustSignedVerify',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    if(typeof request?.pin!=='string'||!/^[0-9a-f]{64}$/.test(request.pin))
+      throw Error('Independent trusted fingerprint required');
+    const chosen=await dialog.showOpenDialog(mainWindow,{title:'Verify signed trust bundle',
+      properties:['openFile'],filters:[{name:'JSON',extensions:['json']}]});
+    if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
+    return verifySignedFile(chosen.filePaths[0],request.pin);
+  });
+  ipcMain.handle('backup:trustRotationCheckpoint',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    validatePassword(request?.password);
+    const dest=await dialog.showSaveDialog(mainWindow,{title:'Export signed rotation checkpoint',
+      defaultPath:'ApkStart-Rotation-Checkpoint.json',filters:[{name:'Signed JSON',extensions:['json']}]});
+    if(dest.canceled||!dest.filePath)return {canceled:true};
+    return exportRotationCheckpoint(new TrustLifecycle({signing:auditSigning}),dest.filePath,request.password);
+  });
+  ipcMain.handle('backup:trustRotationVerify',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    if(typeof request?.pin!=='string'||!/^[0-9a-f]{64}$/.test(request.pin))
+      throw Error('Independent trusted fingerprint required');
+    const chosen=await dialog.showOpenDialog(mainWindow,{title:'Verify external signed rotation checkpoint',
+      properties:['openFile'],filters:[{name:'JSON',extensions:['json']}]});
+    if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
+    return verifyCheckpointFile(chosen.filePaths[0],request.pin,new TrustLifecycle({signing:auditSigning}));
+  });
+  ipcMain.handle('backup:keyQuarantinePreview',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    return keyQuarantine.preview(request?.fingerprint);
+  });
+  ipcMain.handle('backup:keyQuarantineConfirm',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    if(request?.ack!=='QUARANTINE KEY')throw Error('Explicit quarantine acknowledgment required');
+    const yes=await dialog.showMessageBox(mainWindow,{type:'warning',
+      buttons:['Cancel','Move inactive key to quarantine'],defaultId:0,cancelId:0,noLink:true,
+      title:'Quarantine inactive encrypted signing key',
+      message:'Move this verified INACTIVE signing slot into quarantine?',
+      detail:'The action is not deletion. Confirm external recovery copies and the fingerprint; do not quarantine an active key.'});
+    if(yes.response!==1)return {canceled:true};
+    return keyQuarantine.quarantine(request);
   });
   ipcMain.handle('backup:auditSummary', async () => {
     if(backupBusy)throw Error('Backup Center is busy');
