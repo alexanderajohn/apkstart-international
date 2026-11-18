@@ -13,6 +13,7 @@ const { PerformanceMonitor } = require('./core/performance-monitor');
 const { BackupCenter } = require('./core/backup-center');
 const { EncryptedBackupCenter, validatePassword } = require('./core/encrypted-backup');
 const { RecoveryVault } = require('./core/recovery-vault');
+const { SafetyRetention } = require('./core/safety-retention');
 const performance = require('./core/performance');
 const { validPackageName } = require('./core/pkgname');
 const { Installer } = require('./core/installer');
@@ -224,6 +225,7 @@ let performanceMonitor = null;
 let backupCenter = null;
 let encryptedBackupCenter = null;
 let recoveryVault = null;
+let safetyRetention = null;
 let backupBusy = false;
 let backupActiveCount = 0;
 // 「哪些窗口算我们的」由 whenReady 里赋值（见 agentScope）。放模块级是因为
@@ -1365,6 +1367,45 @@ function registerIpc() {
     });
     if(approval.response!==1)return {canceled:true};
     return recoveryVault.sealPoint(pointId,password);
+  });
+  // Retention is advisory only. No timers, background pruning or deletion
+  // endpoints accepting raw filesystem paths are exposed to the renderer.
+  ipcMain.handle('backup:retentionReport', async (_e,days) => {
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    return safetyRetention.report(days===undefined?30:days);
+  });
+  ipcMain.handle('backup:cleanupPreview', async (_e,request) => {
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    validatePassword(request?.password);
+    return safetyRetention.preview(request?.pointId,request?.archiveId,request.password);
+  });
+  ipcMain.handle('backup:cleanupCancel', (_e,token) => ({
+    canceled:safetyRetention.cancel(token),
+  }));
+  ipcMain.handle('backup:cleanupApply', async (_e,request) => {
+    const token=request?.token;
+    validatePassword(request?.password);
+    if(typeof token!=='string'||!/^[a-f0-9]{48}$/.test(token)
+      ||request?.ack!=='DELETE PLAINTEXT'
+      ||safetyRetention?.pending?.token!==token)
+      throw new Error('Cleanup requires verified point, typed DELETE PLAINTEXT and one-time token');
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',
+      buttons:['Cancel','Delete verified plaintext copies'],
+      defaultId:0,cancelId:0,noLink:true,
+      title:'Confirm irreversible plaintext cleanup',
+      message:'Permanently remove this selected local plaintext recovery point?',
+      detail:'An AES-256-GCM encrypted copy has been verified, but it requires the password to recover. This deletion is irreversible and is NOT secure erase. Existing active Android profile data and the encrypted copy will be preserved. Power loss can leave cleanup fragments.',
+    });
+    if(approval.response!==1){
+      safetyRetention.cancel(token);
+      return {canceled:true};
+    }
+    return safetyRetention.apply(token,request.password);
   });
   ipcMain.handle('backup:recoveryList', async () => {
     if(backupBusy)throw new Error('Backup Center is busy');
@@ -2754,6 +2795,7 @@ if (!gotLock) {
     backupCenter = new BackupCenter(backupOptions);
     encryptedBackupCenter = new EncryptedBackupCenter(backupOptions);
     recoveryVault = new RecoveryVault({...backupOptions,encryptedBackupCenter});
+    safetyRetention = new SafetyRetention({vault:recoveryVault,encryptedBackupCenter});
     // 启动即留一行痕迹：出问题时用户把 app.log 发过来就能看到版本与数据目录
     appLog(`start v${app.getVersion()} data=${store.DATA_DIR} pid=${process.pid}`);
 
