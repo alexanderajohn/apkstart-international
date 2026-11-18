@@ -101,6 +101,22 @@ class TrustLifecycle{
     const bundle=JSON.parse(await safeRead(bundleFile)),evidence=JSON.parse(await safeRead(evidenceFile,9*1024*1024));
     return verifyOffline(bundle,evidence,pin);
   }
+  async rotationHistory(){
+    return this.audit._enqueue(async()=>{
+      const f=await this._folder(),file=path.join(f.folder,'rotation-history.jsonl');
+      if(!fs.existsSync(file))return {entries:[],warning:'No local rotation history. Fingerprints require independent verification.'};
+      const raw=await safeRead(file,256*1024),lines=raw.trim().split('\\n');
+      if(lines.length>500)throw Error('Rotation history too large');
+      const entries=lines.map(line=>{
+        const e=JSON.parse(line);
+        if(e.version!==1||!HEX.test(e.oldFingerprint)||!HEX.test(e.newFingerprint)||
+           e.transition!=='active-pointer-switched'||Number.isNaN(Date.parse(e.at)))
+          throw Error('Invalid local rotation history');
+        return {at:e.at,oldFingerprint:e.oldFingerprint,newFingerprint:e.newFingerprint};
+      });
+      return {entries,warning:'Local history is informational, not signed or externally anchored. Compare against trusted fingerprints.'};
+    });
+  }
   async inventory(){
     return this.audit._enqueue(async()=>{
       const f=await this._folder(),slots=path.join(f.folder,'signing-key-slots');
