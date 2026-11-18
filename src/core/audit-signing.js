@@ -155,7 +155,10 @@ class AuditSigning{
       ||crypto.createPublicKey(privateKey).export({format:'pem',type:'spki'})!==pub)
       throw Error('Public and private signing keys do not match');
     const signed={payload,publicKey:pub,signature:crypto.sign(null,payloadBytes(payload),privateKey).toString('base64')};
-    verifyEnvelope(signed);
+    // _sign returns the signed envelope only. Report envelopes must be
+    // verified after the report payload is attached in _export.
+    if(!crypto.verify(null,payloadBytes(payload),pub,Buffer.from(signed.signature,'base64')))
+      throw Error('Signature self-check failed');
     return signed;
   }
   async _export(destination,password,kind){
@@ -170,6 +173,7 @@ class AuditSigning{
         keyFingerprint:'',reportDigest};
       const evidence=await this._sign(q,password);
       const doc=report?{...evidence,report}:evidence;
+      verifyEnvelope(doc);
       const bytes=JSON.stringify(doc,null,2)+'\n';
       if(Buffer.byteLength(bytes)>MAX_DOC)throw Error('Signed export exceeds size cap');
       const fd=await p.open(dest,'wx',0o600);
