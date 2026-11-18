@@ -67,7 +67,8 @@ test('quarantine demands preview, typed approval, unchanged slot and single-use 
  await p.writeFile(path.join(oldLegacy,'public.pem'),originalPublic);
  const guard=new SafeKeyQuarantine({signing:x.signing});
  await assert.rejects(()=>guard.quarantine({token:'x',fingerprint:first.oldFingerprint,ack:'QUARANTINE KEY'}),/expired or mismatched/);
- await assert.rejects(()=>guard.preview((await x.signing.status()).fingerprint),/Active signing key/);
+ const activeFingerprint=(await x.signing.status()).fingerprint;
+ await assert.rejects(()=>guard.preview(activeFingerprint),/Active signing key/);
  const preview=await guard.preview(first.oldFingerprint);
  await assert.rejects(()=>guard.quarantine({token:preview.token,fingerprint:first.oldFingerprint,ack:'wrong'}),/expired or mismatched/);
  assert.equal(fs.existsSync(oldLegacy),true);
