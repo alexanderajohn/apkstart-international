@@ -195,10 +195,15 @@ class RecoveryAudit {
         throw Error('Choose a JSON report destination');
       const full=path.resolve(destination);
       const data=await p.realpath(this.dataDir);
-      const relative=path.relative(data,full);
+      // Windows runner directories can have multiple case/alias spellings.
+      // Canonicalize both the app data root and export parent before enforcing
+      // containment; do not allow a redirected folder to bypass this boundary.
+      const canonicalParent=await p.realpath(path.dirname(full));
+      const canonicalFull=path.join(canonicalParent,path.basename(full));
+      const relative=path.relative(data,canonicalFull);
       if(relative===''||(!relative.startsWith('..'+path.sep)&&relative!=='..'&&!path.isAbsolute(relative)))
         throw Error('Audit reports must be saved outside application data');
-      if(fs.existsSync(full))throw Error('Export refuses to overwrite an existing report');
+      if(fs.existsSync(canonicalFull))throw Error('Export refuses to overwrite an existing report');
       // Read and verify inside the same lock as appends; fail closed on damage.
       const {entries,last}=await this._read();
       const totals={passed:0,failed:0,cancelled:0};
@@ -218,9 +223,9 @@ class RecoveryAudit {
         ]
       };
       const encoded=JSON.stringify(report,null,2)+'\n';
-      const handle=await p.open(full,'wx',0o600);
+      const handle=await p.open(canonicalFull,'wx',0o600);
       try{await handle.writeFile(encoded,'utf8');await handle.sync();}
-      catch(e){await handle.close();await p.rm(full,{force:true});throw e;}
+      catch(e){await handle.close();await p.rm(canonicalFull,{force:true});throw e;}
       await handle.close();
       return {ok:true,events:entries.length,bytes:Buffer.byteLength(encoded),
         reportFormat:report.format};
