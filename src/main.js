@@ -11,6 +11,7 @@ const store = require('./core/store');
 const { Runtime } = require('./core/engine');
 const { PerformanceMonitor } = require('./core/performance-monitor');
 const { BackupCenter } = require('./core/backup-center');
+const { EncryptedBackupCenter, validatePassword } = require('./core/encrypted-backup');
 const performance = require('./core/performance');
 const { validPackageName } = require('./core/pkgname');
 const { Installer } = require('./core/installer');
@@ -220,6 +221,7 @@ let tray = null;
 let runtime = null;
 let performanceMonitor = null;
 let backupCenter = null;
+let encryptedBackupCenter = null;
 let backupBusy = false;
 // 「哪些窗口算我们的」由 whenReady 里赋值（见 agentScope）。放模块级是因为
 // runLaunch / 预热定时器都早于那段代码定义，闭包里的 const 在它们的作用域外看不到。
@@ -1290,9 +1292,10 @@ function registerIpc() {
   }
   ipcMain.handle('backup:status', () => ({
     profileId:store.profiles.currentId(),busy:backupBusy,
-    directoryFormat:true,encrypted:false,
+    directoryFormat:true,encrypted:true,cipher:'AES-256-GCM',legacyRestoreSupported:true,
   }));
-  ipcMain.handle('backup:create', async () => {
+  ipcMain.handle('backup:create', async (_e,password) => {
+    validatePassword(password); // Never write passwords to logs, settings or disk.
     if (backupBusy) throw new Error('Backup Center is busy');
     await backupIdleCheck();
     const picked=await dialog.showOpenDialog(mainWindow,{
@@ -1301,9 +1304,9 @@ function registerIpc() {
       buttonLabel:'Select backup destination',
     });
     if(picked.canceled||!picked.filePaths?.[0])return {canceled:true};
-    return backupCenter.create(picked.filePaths[0]);
+    return encryptedBackupCenter.create(picked.filePaths[0],password);
   });
-  ipcMain.handle('backup:pickRestore', async () => {
+  ipcMain.handle('backup:pickRestore', async (_e,password) => {
     if (backupBusy) throw new Error('Backup Center is busy');
     const chosen=await dialog.showOpenDialog(mainWindow,{
       title:'Choose an ASI-Backup folder to VERIFY (no restore yet)',
@@ -1311,11 +1314,21 @@ function registerIpc() {
       buttonLabel:'Verify backup folder',
     });
     if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
-    return backupCenter.previewRestore(chosen.filePaths[0]);
+    const folder=chosen.filePaths[0];
+    // Old, unencrypted v5 backups remain readable, but new exports are encrypted.
+    if(fs.existsSync(path.join(folder,'header.json')))
+      return encryptedBackupCenter.previewRestore(folder,password);
+    return {...await backupCenter.previewRestore(folder),encrypted:false,legacy:true};
   });
-  ipcMain.handle('backup:restore', async (_event, token) => {
+  ipcMain.handle('backup:restore', async (_event, request) => {
+    const token=typeof request==='string'?request:request?.token;
+    const password=typeof request==='object'?request?.password:'';
     if (typeof token !== 'string' || !/^[a-f0-9]{48}$/.test(token))
       throw new Error('Invalid restore approval token');
+    const encrypted=encryptedBackupCenter?.pending?.token===token;
+    if(!encrypted && backupCenter?.pending?.token!==token)
+      throw new Error('No verified restore preview. Inspect the backup again.');
+    if(encrypted)validatePassword(password);
     await backupIdleCheck();
     // Native dialog protects against renderer/UI mistakes or bypassed prompt.
     // Default action is Cancel; the main process never silently overwrites data.
@@ -1328,6 +1341,7 @@ function registerIpc() {
       detail:'Android must be stopped. Current APK data and Android userdata are renamed to .before-restore safety copies, not deleted. A restart is required.',
     });
     if(approval.response!==1)return {canceled:true};
+    if(encrypted)return encryptedBackupCenter.restore(token,password);
     return backupCenter.restore(token);
   });
   ipcMain.handle('profiles:list', () => store.profiles.list());
@@ -2632,7 +2646,7 @@ if (!gotLock) {
     runtime = new Runtime(APP_ROOT);
     performanceMonitor = new PerformanceMonitor(runtime);
     let backupPortLastChecked=0;
-    backupCenter = new BackupCenter({
+    const backupOptions = {
       registry:store.profiles,
       dataDir:store.DATA_DIR,
       getAvdHome:()=>runtime.provisioner.paths().avdHome,
@@ -2655,7 +2669,9 @@ if (!gotLock) {
       },
       onBusy:busy=>{backupBusy=busy;store.backupLocked=busy;},
       onProgress:ev=>send('backup:progress',ev),
-    });
+    };
+    backupCenter = new BackupCenter(backupOptions);
+    encryptedBackupCenter = new EncryptedBackupCenter(backupOptions);
     // 启动即留一行痕迹：出问题时用户把 app.log 发过来就能看到版本与数据目录
     appLog(`start v${app.getVersion()} data=${store.DATA_DIR} pid=${process.pid}`);
 
