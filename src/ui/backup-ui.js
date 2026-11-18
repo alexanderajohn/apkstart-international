@@ -61,6 +61,20 @@ const WORDS={
     healthRescueDone:'Remaining fragments moved back into safety copies. This may still be a partial recovery.',
     healthRescueNone:'No orphaned cleanup fragments available for rescue.',
     healthNoArchive:'Choose a listed encrypted archive before verifying it.',
+    drillToggle:'Recovery Readiness & Restore Drill',drillTitle:'Recovery Readiness & Restore Drill',
+    drillNotice:'Full encrypted authentication and target-drive space preflight; then a staged restore/rollback using only synthetic temporary files. No plaintext backup data written, no Android boot or live-profile modifications.',
+    drillSealed:'Inspect selected encrypted Safety Vault archive',drillExternal:'Choose external encrypted backup for readiness',
+    drillEmpty:'Select a backup and enter the password for a full integrity/readiness check.',
+    drillSelect:'Find and select an encrypted Safety Vault archive first, or choose an external backup.',
+    drillPreviewTitle:'Authenticated recovery-readiness preview',
+    drillPreviewNotice:'Re-enter password, type DRILL and confirm. Simulated temporary staging tests generic OS rename operations only, not real AVD boot.',
+    drillRun:'Run isolated synthetic restore drill',drillCancel:'Cancel drill preview',
+    drillAsk:'Type DRILL to rehearse a staged restore/rollback with synthetic files only. Your real Android profile will not be modified.',
+    drillConfirm:'Run the isolated synthetic drill? Every encrypted file will be authenticated again, and only synthetic data will be used for temporary file operations.',
+    drillVerified:'Encrypted backup authenticated. Restore drill available.',
+    drillDone:'Synthetic restore-and-rollback drill passed. Android guest boot and live restore were NOT tested.',
+    drillWarning:'This DOES NOT prove an Android emulator will boot. Physical Windows and Android AVD recovery still need separate testing.',
+
 
 
 
@@ -131,6 +145,20 @@ const WORDS={
     healthRescueDone:'Đã đưa những mảnh còn lại về bản an toàn. Có thể vẫn thiếu file đã xóa.',
     healthRescueNone:'Không có phần dữ liệu dọn dẹp bị gián đoạn có thể RESCUE.',
     healthNoArchive:'Chọn bản mã hóa trước khi xác thực.',
+    drillToggle:'Kiểm tra sẵn sàng & diễn tập khôi phục',drillTitle:'Recovery Readiness & Restore Drill',
+    drillNotice:'Xác thực tất cả file mã hóa, kiểm tra ổ đĩa và diễn tập khôi phục/hoàn tác bằng file giả lập. Không ghi plaintext thật ra ổ, không mở Android, không sửa profile đang dùng.',
+    drillSealed:'Kiểm tra bản Safety Vault mã hóa đã chọn',drillExternal:'Chọn backup mã hóa bên ngoài để kiểm tra',
+    drillEmpty:'Chọn backup và nhập mật khẩu để xác thực khả năng khôi phục.',
+    drillSelect:'Hãy tìm và chọn bản Safety Vault mã hóa, hoặc chọn backup bên ngoài.',
+    drillPreviewTitle:'Xem trước kiểm tra khôi phục đã xác thực',
+    drillPreviewNotice:'Nhập lại mật khẩu, gõ DRILL và xác nhận. Chỉ diễn tập đổi tên trên ổ tạm, không thử Android khởi động thật.',
+    drillRun:'Diễn tập khôi phục bằng dữ liệu giả lập',drillCancel:'Hủy xem trước',
+    drillAsk:'Nhập DRILL để diễn tập staging/rollback bằng file giả lập. Không thay đổi Android Profile thật.',
+    drillConfirm:'Tiến hành diễn tập riêng biệt? Tất cả file mã hóa được xác thực lại, thao tác đĩa chỉ dùng dữ liệu giả lập.',
+    drillVerified:'Backup mã hóa đã xác thực. Có thể diễn tập.',
+    drillDone:'Diễn tập staging/rollback thành công. CHƯA thử khởi động Android hoặc khôi phục userdata thật.',
+    drillWarning:'Diễn tập KHÔNG bảo đảm AVD khởi động. Vẫn phải kiểm thử khôi phục thực tế trên Windows.',
+
 
 
 
@@ -199,6 +227,20 @@ const WORDS={
     healthRescueDone:'残留文件已返回安全副本位置，但可能缺少已删除部分。',
     healthRescueNone:'没有可恢复的清理中断残留文件。',
     healthNoArchive:'先选择一个加密存档。',
+    drillToggle:'恢复就绪检查与还原演练',drillTitle:'恢复就绪检查与还原演练',
+    drillNotice:'验证所有加密文件及磁盘空间，再仅使用合成临时数据模拟阶段还原与回滚。不写入真实备份明文，不启动 Android，不修改运行中的环境。',
+    drillSealed:'检查选定的加密安全存档',drillExternal:'选择外部加密备份以检查就绪性',
+    drillEmpty:'选择加密备份并输入密码进行完整验证。',
+    drillSelect:'先查找并选择加密安全存档，或选择外部备份。',
+    drillPreviewTitle:'已认证的恢复就绪预览',
+    drillPreviewNotice:'再次输入密码，输入 DRILL 并确认。仅在临时盘模拟重命名，不检验真实 Android 启动。',
+    drillRun:'运行隔离式合成还原演练',drillCancel:'取消演练预览',
+    drillAsk:'输入 DRILL 以合成数据进行阶段还原与回滚演练，不修改真实 Android 环境。',
+    drillConfirm:'运行隔离式演练？所有加密文件将重新认证，临时文件仅包含合成数据。',
+    drillVerified:'加密备份验证通过，可执行演练。',
+    drillDone:'合成阶段还原与回滚演练通过；未测试 Android 系统启动及真实恢复。',
+    drillWarning:'此演练不能保证 AVD 能启动，仍需在实际 Windows 机器测试。',
+
 
 
 
@@ -213,7 +255,7 @@ const WORDS={
 };
 const fmt=(n)=>n>=1024**3?(n/1024**3).toFixed(2)+' GB':n>=1024**2?(n/1024**2).toFixed(1)+' MB':n>=1024?(n/1024).toFixed(1)+' KB':String(n)+' B';
 const locale=()=>{const lang=window.ASI_I18N?.getLanguage?.()||navigator.language||'en';return /^vi/i.test(lang)?WORDS.vi:/^zh/i.test(lang)?WORDS['zh-CN']:WORDS.en;};
-let preview=null,cleanupPreview=null,healthRescuePreview=null,busy=false;
+let preview=null,cleanupPreview=null,healthRescuePreview=null,drillPreview=null,busy=false;
 function show(msg,error=false){$('backupProgress').textContent=msg;$('backupProgress').style.color=error?'#c0392b':'';}
 function lock(on){
   busy=on;
@@ -238,6 +280,11 @@ function lock(on){
   $('btnBackupRescuePreview').disabled=on||!$('backupHealthQuarantineSelect').value;
   $('btnBackupRescueApply').disabled=on||!healthRescuePreview;
   $('btnBackupRescueCancel').disabled=on||!healthRescuePreview;
+  $('btnBackupDrillToggle').disabled=on;
+  $('btnBackupDrillSealed').disabled=on;
+  $('btnBackupDrillExternal').disabled=on;
+  $('btnBackupDrillRun').disabled=on||!drillPreview;
+  $('btnBackupDrillCancel').disabled=on||!drillPreview;
   $('backupSealedSelect').disabled=on;
   $('btnBackupRecoveryInspect').disabled=on||$('backupRecoveryChoices').hidden;
   $('backupRecoverySelect').disabled=on;
@@ -290,6 +337,16 @@ function render(){
   $('backupRescueNotice').textContent=L.healthRescueNotice;
   $('btnBackupRescueApply').textContent=L.healthRescueApply;
   $('btnBackupRescueCancel').textContent=L.healthRescueCancel;
+  $('btnBackupDrillToggle').textContent=L.drillToggle;
+  $('btnBackupDrillToggle').setAttribute('aria-expanded',String(!$('backupDrillPanel').hidden));
+  $('backupDrillTitle').textContent=L.drillTitle;
+  $('backupDrillNotice').textContent=L.drillNotice;
+  $('btnBackupDrillSealed').textContent=L.drillSealed;
+  $('btnBackupDrillExternal').textContent=L.drillExternal;
+  $('backupDrillPreviewTitle').textContent=L.drillPreviewTitle;
+  $('backupDrillPreviewNotice').textContent=L.drillPreviewNotice;
+  $('btnBackupDrillRun').textContent=L.drillRun;
+  $('btnBackupDrillCancel').textContent=L.drillCancel;
   $('btnBackupRestore').textContent=preview?.recovery?L.recoveryButton:L.restore;
   $('btnBackupCancel').textContent=L.cancel;
   $('btnBackupRestart').textContent=L.restart;
@@ -368,6 +425,85 @@ async function migrate(){
     clearPasswords();secret='';
     const r=await request;
     if(r?.canceled)show(L.canceled);else setPreview(r);
+  }catch(e){show(L.error+String(e?.message||e),true);}
+  finally{secret='';clearPasswords();lock(false);}
+}
+function resetDrill(){
+  const token=drillPreview?.token;
+  drillPreview=null;$('backupDrillPreviewPanel').hidden=true;
+  if(token)api.drillCancel(token).catch(()=>{});
+  lock(false);
+}
+function renderDrillPreview(result){
+  if(!result?.token)return;
+  drillPreview=result;
+  $('backupDrillPreviewPanel').hidden=false;
+  const L=locale();
+  const lines=[
+    L.drillVerified,
+    L.current+result.profileId,
+    L.files+result.files,
+    L.bytes+fmt(result.bytes),
+    L.parts+result.components.join(', '),
+    L.date+result.createdAt,
+    'Backup age: '+result.ageDays+' days',
+    ...(result.diskSpace||[]).map(d=>'Target volume free '+fmt(d.availableBytes)+' / required '+fmt(d.requiredBytes)),
+    ...(result.warnings||[]),
+    'Preview expires at: '+result.expiresAt
+  ];
+  $('backupDrillPreviewDetails').textContent=lines.join('\n');
+  $('backupDrillSummary').textContent=L.drillVerified+' '+L.drillWarning;
+  lock(false);
+}
+function renderDrillResult(result){
+  if(!result?.ok||!result.drill)return;
+  const L=locale();
+  drillPreview=null;$('backupDrillPreviewPanel').hidden=true;
+  $('backupDrillSummary').textContent=[
+    L.drillDone,
+    L.files+result.filesVerified,
+    L.bytes+fmt(result.bytesVerified),
+    L.parts+result.syntheticStages.join(', '),
+    L.drillWarning
+  ].join('\n');
+  lock(false);
+}
+async function previewDrill(kind){
+  if(busy)return;
+  const L=locale();
+  if(kind==='sealed'&&($('backupSealedChoices').hidden||!$('backupSealedSelect').value)){
+    show(L.drillSelect,true);return;
+  }
+  let secret=$('backupPassword').value;
+  if(!validPassword(secret)){show(L.passTooShort,true);return;}
+  resetDrill();lock(true);show(L.working);
+  try{
+    const request=kind==='sealed'
+      ?api.drillSealedPreview($('backupSealedSelect').value,secret)
+      :api.drillExternalPreview(secret);
+    clearPasswords();secret='';
+    const result=await request;
+    if(result?.canceled){show(L.canceled);return;}
+    renderDrillPreview(result);show(L.drillVerified);
+  }catch(e){show(L.error+String(e?.message||e),true);}
+  finally{secret='';clearPasswords();lock(false);}
+}
+async function runDrill(){
+  if(busy||!drillPreview)return;
+  const L=locale();
+  let secret=$('backupPassword').value;
+  if(!validPassword(secret)){show(L.passTooShort,true);return;}
+  if(window.prompt(L.drillAsk)!=='DRILL')return;
+  if(!window.confirm(L.drillConfirm))return;
+  const token=drillPreview.token;
+  drillPreview=null;$('backupDrillPreviewPanel').hidden=true;
+  lock(true);show(L.working);
+  try{
+    const request=api.drillRun(token,secret,'DRILL');
+    clearPasswords();secret='';
+    const result=await request;
+    if(result?.canceled){show(L.canceled);return;}
+    if(result?.ok){renderDrillResult(result);show(L.drillDone);}
   }catch(e){show(L.error+String(e?.message||e),true);}
   finally{secret='';clearPasswords();lock(false);}
 }
@@ -693,6 +829,15 @@ function init(){
     $('backupHealthPanel').hidden=!$('backupHealthPanel').hidden;render();
   });
   $('btnBackupHealthRun').addEventListener('click',runHealth);
+  $('btnBackupDrillToggle').addEventListener('click',()=>{
+    $('backupDrillPanel').hidden=!$('backupDrillPanel').hidden;render();
+  });
+  $('btnBackupDrillSealed').addEventListener('click',()=>previewDrill('sealed'));
+  $('btnBackupDrillExternal').addEventListener('click',()=>previewDrill('external'));
+  $('btnBackupDrillRun').addEventListener('click',runDrill);
+  $('btnBackupDrillCancel').addEventListener('click',()=>{
+    resetDrill();show(locale().canceled);
+  });
   $('btnBackupHealthVerify').addEventListener('click',verifyHealthArchive);
   $('btnBackupRescuePreview').addEventListener('click',previewHealthRescue);
   $('btnBackupRescueApply').addEventListener('click',applyHealthRescue);
@@ -708,6 +853,7 @@ function init(){
   });
   $('backupRecoverySelect').addEventListener('change',resetCleanup);
   $('backupSealedSelect').addEventListener('change',resetCleanup);
+  $('backupSealedSelect').addEventListener('change',resetDrill);
   $('btnBackupRestore').addEventListener('click',restore);
   $('btnBackupCancel').addEventListener('click',()=>{preview=null;$('backupPreview').hidden=true;show(locale().ready);lock(false);});
   $('btnBackupRestart').addEventListener('click',()=>api.restartApp());
@@ -719,7 +865,7 @@ function init(){
   show(locale().ready);
 }
 window.ASI_BACKUP={renderPreview:setPreview,renderRetention,
-  renderCleanupPreview,renderHealthReport,renderRescuePreview,open:()=>{
+  renderCleanupPreview,renderHealthReport,renderRescuePreview,renderDrillPreview,renderDrillResult,open:()=>{
   $('backupContent').hidden=false;render();$('backupCenter').scrollIntoView({block:'center'});
 }};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
