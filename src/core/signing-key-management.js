@@ -108,31 +108,59 @@ class SigningKeyManagement{
       if(!f.exists)throw Error('No signing key to rotate');
       const [oldPrivate,oldPublic]=await Promise.all([safeFile(f.privateFile),safeFile(f.publicFile)]);
       keyPair(oldPrivate,oldPublic,oldPassword);
-      const oldFingerprint=fingerprint(oldPublic),folder=path.dirname(f.privateFile);
+      const oldFingerprint=fingerprint(oldPublic),folder=f.folder;
       const archiveDir=path.join(folder,'retired-signing-keys');
+      const archive=path.join(archiveDir,oldFingerprint+'.pem');
+      // A previous successful rotation may already have archived this key.
+      // Refuse to silently replace any inconsistent historical public key.
       await p.mkdir(archiveDir,{recursive:true,mode:0o700});
-      const oldArchive=path.join(archiveDir,oldFingerprint+'.pem');
-      if(fs.existsSync(oldArchive))throw Error('Signing key was already retired');
-      const kp=crypto.generateKeyPairSync('ed25519',{publicKeyEncoding:{format:'pem',type:'spki'},privateKeyEncoding:{format:'pem',type:'pkcs8',cipher:'aes-256-cbc',passphrase:newPassword}});
+      if(fs.existsSync(archive)){
+        if(await safeFile(archive)!==oldPublic)throw Error('Retired public key conflicts with active identity');
+      }else{
+        const h=await p.open(archive,'wx',0o600);
+        try{await h.writeFile(oldPublic);await h.sync();}finally{await h.close();}
+      }
+      const kp=crypto.generateKeyPairSync('ed25519',{
+        publicKeyEncoding:{format:'pem',type:'spki'},
+        privateKeyEncoding:{format:'pem',type:'pkcs8',cipher:'aes-256-cbc',passphrase:newPassword}
+      });
       const newFingerprint=fingerprint(kp.publicKey);
-      // Archive only the old PUBLIC key. Never retain decrypted or retired private keys.
-      // Stage new keys beside originals; a failed rename is restored from in-memory copies.
-      const suffix=crypto.randomBytes(8).toString('hex');
-      const tmpPrivate=f.privateFile+'.'+suffix+'.new',tmpPublic=f.publicFile+'.'+suffix+'.new';
-      await p.writeFile(tmpPrivate,kp.privateKey,{flag:'wx',mode:0o600});
+      const slots=path.join(folder,'signing-key-slots');
+      await p.mkdir(slots,{recursive:true,mode:0o700});
+      const slot=path.join(slots,newFingerprint);
+      await p.mkdir(slot,{recursive:false,mode:0o700});
+      const writeSynced=async(file,contents)=>{
+        const h=await p.open(file,'wx',0o600);
+        try{await h.writeFile(contents);await h.sync();}finally{await h.close();}
+      };
+      const pointer=path.join(folder,'active-key.json');
+      const temp=path.join(folder,'.active-key-'+crypto.randomBytes(12).toString('hex')+'.tmp');
+      let committed=false;
       try{
-        await p.writeFile(tmpPublic,kp.publicKey,{flag:'wx',mode:0o600});
-        await p.writeFile(oldArchive,oldPublic,{flag:'wx',mode:0o600});
-        try{
-          await p.rename(tmpPrivate,f.privateFile);
-          await p.rename(tmpPublic,f.publicFile);
-        }catch(e){
-          await p.writeFile(f.privateFile,oldPrivate,{mode:0o600});
-          await p.writeFile(f.publicFile,oldPublic,{mode:0o600});
-          throw e;
+        await writeSynced(path.join(slot,'private.pem'),kp.privateKey);
+        await writeSynced(path.join(slot,'public.pem'),kp.publicKey);
+        // Reject inconsistent staging, with new password, before pointer switch.
+        keyPair(await safeFile(path.join(slot,'private.pem')),
+          await safeFile(path.join(slot,'public.pem')),newPassword);
+        await writeSynced(temp,JSON.stringify({version:1,fingerprint:newFingerprint})+'\n');
+        // This is the ONLY active-identity commit point. If this rename fails,
+        // old legacy files or the previous active pointer remain authoritative.
+        await p.rename(temp,pointer);
+        committed=true;
+      }finally{
+        await p.rm(temp,{force:true}).catch(()=>{});
+        if(!committed){
+          await p.rm(slot,{recursive:true,force:true}).catch(()=>{});
         }
-      }finally{await p.rm(tmpPrivate,{force:true});await p.rm(tmpPublic,{force:true});}
-      return {ok:true,oldFingerprint,newFingerprint,warning:'Older evidence remains verifiable with the archived public key; preserve independent fingerprints. Rotation does not revoke previously compromised signatures.'};
+      }
+      // AFTER the atomic commit, avoid throwing: active identity is already new.
+      // Retain the old public key only. A crash here can temporarily leave an
+      // old encrypted private key: remove it on next explicit management call.
+      let cleanupWarning=null;
+      try{await p.unlink(f.privateFile);}
+      catch(_){cleanupWarning='Old encrypted private key cleanup failed; manually remove the inactive private PEM after verifying the new key and retaining an external backup.';}
+      return {ok:true,oldFingerprint,newFingerprint,committed:true,
+        warning:cleanupWarning||'New key activated atomically. Preserve external fingerprints. Rotation does not revoke prior signatures.'};
     });
   }
 }
