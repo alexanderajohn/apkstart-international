@@ -109,10 +109,12 @@ test('Backup IPC never exports new plaintext backups and retains native restore 
   const preload=fs.readFileSync(path.join(root,'src/preload.js'),'utf8');
   const ui=fs.readFileSync(path.join(root,'src/ui/backup-ui.js'),'utf8');
   const html=fs.readFileSync(path.join(root,'src/ui/index.html'),'utf8');
-  assert.ok(main.includes('return encryptedBackupCenter.create(picked.filePaths[0],password)'));
+  assert.ok(main.includes('encryptedBackupCenter.create(picked.filePaths[0],password)'));
+  assert.ok(main.includes("audited('backup-create'"), 'Encrypted export must be audited');
   assert.ok(main.includes('encryptedBackupCenter.previewRestore(folder,password)'));
-  assert.ok(main.includes('if(encrypted)return encryptedBackupCenter.restore(token,password)'));
-  assert.ok(main.includes('return backupCenter.restore(token)'), 'Legacy archives must remain readable');
+  assert.ok(main.includes('encryptedBackupCenter.restore(token,password)'));
+  assert.ok(main.includes('return audited(event,source'), 'Restore must retain audit wrapper');
+  assert.ok(main.includes('backupCenter.restore(token)'), 'Legacy archives must remain readable');
   assert.ok(main.includes("title:'Confirm Android profile restore'"));
   assert.ok(main.includes('if(approval.response!==1)return {canceled:true}'));
   assert.ok(preload.includes('backupCreate: (password)'));
