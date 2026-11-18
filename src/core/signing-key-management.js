@@ -170,7 +170,7 @@ class SigningKeyManagement{
         const handle=await p.open(history,'a',0o600);
         try{
           await handle.writeFile(JSON.stringify({version:1,at:new Date().toISOString(),
-            oldFingerprint,newFingerprint,transition:'active-pointer-switched'})+'\\n'.replace('\\\\n','\\n'));
+            oldFingerprint,newFingerprint,transition:'active-pointer-switched'})+String.fromCharCode(10));
           await handle.sync();
         }finally{await handle.close();}
       }catch(_){
