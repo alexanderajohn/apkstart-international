@@ -3229,6 +3229,28 @@ if (!gotLock) {
                 throw new Error('Backup Center preview UI did not render');
               console.log('[smoke] AES-256-GCM backup authenticated and preview shown; no restore executed');
               await snap(out.replace(/\.png$/i,'-backup.png'));
+              // Recovery Vault smoke: verify a synthetic local safety copy,
+              // render a read-only preview, never apply any rollback.
+              const recoveryTag=require('node:crypto').randomBytes(10).toString('hex');
+              const recoveryPath=smokeData+'.asi-'+recoveryTag+'.before-restore';
+              fs.writeFileSync(recoveryPath,'{"apps":["synthetic-recovery"]}\n',{flag:'wx'});
+              const available=await recoveryVault.list();
+              const recoveryPoint=available.points.find(x=>x.id==='restore:'+recoveryTag);
+              if(!recoveryPoint)throw new Error('Recovery Vault did not find the synthetic safety point');
+              const recoveryPreview=await recoveryVault.preview(recoveryPoint.id);
+              const shown=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  window.ASI_BACKUP.renderPreview("+JSON.stringify(recoveryPreview)+");" +
+                "  return {visible:!document.getElementById('backupPreview').hidden," +
+                "    recoveryLabel:document.getElementById('backupPreviewTitle').textContent," +
+                "    enabled:!document.getElementById('btnBackupRestore').disabled," +
+                "    findButton:!!document.getElementById('btnBackupRecoveryFind')};" +
+                "})()"
+              );
+              if(!recoveryPreview.recovery||!shown?.visible||!shown?.enabled||!shown?.findButton)
+                throw new Error('Recovery Vault read-only UI smoke failed');
+              console.log('[smoke] Recovery Vault preview rendered; no recovery applied');
+              await snap(out.replace(/\.png$/i,'-recovery.png'));
             }
             if (process.argv.includes('--perf')) {
               // 拍一张「性能与资源占用」区（设置页里控件最多的一块）
