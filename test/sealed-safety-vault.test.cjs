@@ -101,16 +101,14 @@ test('sealed archive is profile scoped; unknown or traversal IDs refused',()=>fi
   await assert.rejects(()=>x.vault.previewSealed(id,PASS),/no longer exists/);
   assert.equal(await p.readFile(x.old,'utf8'),'RECOVERY_APPS_SECRET');
 }));
-test('plaintext changes and missing sources during sealing are refused',()=>fixture(async x=>{
+test('running Android and missing local safety points block sealing',()=>fixture(async x=>{
   x.running(true);
   await assert.rejects(()=>x.vault.sealPoint(POINT,PASS),/Android must be stopped/);
   x.running(false);
   await p.rm(x.old);
-  await assert.rejects(()=>x.vault.sealPoint(POINT,PASS),/no longer exists|Nothing to back up|Source changed/).catch(async e=>{
-    // A partial recovery point can be valid when other components survive:
-    // its encrypted snapshot must still be authenticated and opt-in.
-    if(!/no longer exists/.test(String(e)))throw e;
-  });
+  await p.rm(x.cache,{recursive:true});
+  await assert.rejects(()=>x.vault.sealPoint(POINT,PASS),/Recovery point no longer exists/);
+  assert.equal(await p.readFile(x.targets['apps.json'],'utf8'),'CURRENT_APPS_PRIVATE');
 }));
 test('ordinary backup export cannot target local Safety Vault and symlink vault dirs are refused',()=>fixture(async x=>{
   const root=path.join(x.data,'safety-vault','default');
