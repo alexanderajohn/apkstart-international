@@ -15,6 +15,7 @@ const { EncryptedBackupCenter, validatePassword } = require('./core/encrypted-ba
 const { RecoveryVault } = require('./core/recovery-vault');
 const { SafetyRetention } = require('./core/safety-retention');
 const { DisasterHealth } = require('./core/disaster-health');
+const { RestoreDrill } = require('./core/restore-drill');
 const performance = require('./core/performance');
 const { validPackageName } = require('./core/pkgname');
 const { Installer } = require('./core/installer');
@@ -228,6 +229,7 @@ let encryptedBackupCenter = null;
 let recoveryVault = null;
 let safetyRetention = null;
 let disasterHealth = null;
+let restoreDrill = null;
 let backupBusy = false;
 let backupActiveCount = 0;
 // 「哪些窗口算我们的」由 whenReady 里赋值（见 agentScope）。放模块级是因为
@@ -1374,6 +1376,50 @@ function registerIpc() {
   // endpoints accepting raw filesystem paths are exposed to the renderer.
   // Health Check never accepts filesystem paths or an arbitrary profile ID.
   // Only a checked quarantine ID may be moved, with explicit approval.
+  // Readiness and drill never invoke backup:restore. Folder choice happens
+  // exclusively in the main-process operating-system picker.
+  ipcMain.handle('backup:drillSealedPreview', async (_event,request) => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    await backupIdleCheck();
+    validatePassword(request?.password);
+    return restoreDrill.preview('sealed',request?.archiveId,request.password);
+  });
+  ipcMain.handle('backup:drillExternalPreview', async (_event,password) => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    await backupIdleCheck();
+    validatePassword(password);
+    const picked=await dialog.showOpenDialog(mainWindow,{
+      title:'Choose encrypted backup directory for a SAFE restore rehearsal',
+      properties:['openDirectory'],
+      buttonLabel:'Inspect encrypted backup for recovery drill',
+    });
+    if(picked.canceled||!picked.filePaths?.[0])return {canceled:true};
+    return restoreDrill.preview('external',picked.filePaths[0],password);
+  });
+  ipcMain.handle('backup:drillCancel',(_event,token)=>({
+    canceled:restoreDrill.cancel(token),
+  }));
+  ipcMain.handle('backup:drillRun', async (_event,request) => {
+    if(request?.ack!=='DRILL'||typeof request?.token!=='string'
+      ||!/^[0-9a-f]{48}$/.test(request.token)
+      ||restoreDrill?.pending?.token!==request.token)
+      throw Error('Verified drill preview and typed DRILL approval required');
+    if(backupBusy)throw Error('Backup Center is busy');
+    await backupIdleCheck();
+    validatePassword(request?.password);
+    const confirm=await dialog.showMessageBox(mainWindow,{
+      type:'info',buttons:['Cancel','Run synthetic restore drill'],
+      defaultId:0,cancelId:0,noLink:true,
+      title:'Confirm safe restore drill',
+      message:'Run an isolated synthetic restore-and-rollback rehearsal?',
+      detail:'This reauthenticates every encrypted file, checks target-drive free space, then tests synthetic staging and rollback in OS temporary storage. No user plaintext is written, no live Android Profile is modified and Android is NOT booted.',
+    });
+    if(confirm.response!==1){
+      restoreDrill.cancel(request.token);
+      return {canceled:true};
+    }
+    return restoreDrill.run(request.token,request.password);
+  });
   ipcMain.handle('backup:healthReport', async () => {
     if(backupBusy)throw Error('Backup Center is busy');
     await backupIdleCheck();
@@ -2841,6 +2887,7 @@ if (!gotLock) {
     recoveryVault = new RecoveryVault({...backupOptions,encryptedBackupCenter});
     safetyRetention = new SafetyRetention({vault:recoveryVault,encryptedBackupCenter});
     disasterHealth = new DisasterHealth({vault:recoveryVault,encryptedBackupCenter});
+    restoreDrill = new RestoreDrill({vault:recoveryVault,encryptedBackupCenter});
     // 启动即留一行痕迹：出问题时用户把 app.log 发过来就能看到版本与数据目录
     appLog(`start v${app.getVersion()} data=${store.DATA_DIR} pid=${process.pid}`);
 
