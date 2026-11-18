@@ -57,3 +57,13 @@
 - [ ] Independent cryptographic/security review of encrypted backup format, nonce handling and failure cleanup.
 - [ ] Real Windows Android Emulator restore, interruption/rollback and multi-gigabyte AVD performance testing.
 - [ ] Offer password rotation/export recovery strategy and encrypted cloud backup only after separately reviewed authorization and threat model.
+
+## Pass 18 — Live Android validation evidence
+
+- [x] Add a non-destructive live runtime readiness button for the currently owned emulator, with exact active-Profile AVD check, authorized ADB device state, boot completion, API 34 and responsive package manager.
+- [x] Add synthetic Windows Node 20/22 readiness regression tests and an opt-in Windows live test harness for signed APK install/launch and two-profile persistence/isolation checks.
+- [ ] Run the live harness on real Windows 10/11 hardware with a signed, harmless APK in an explicitly disposable secondary Android Profile; verify actual window behavior and Android permissions.
+- [ ] Confirm two-profile APK/data isolation across actual emulator shutdown/restart, cold and snapshot boots, and profile switching.
+- [ ] Complete multi-GB encrypted backup/restore on real Android 14 AVD userdata, plus independent security review and signed production release artifacts.
+
+**CI is synthetic and read-only unless a tester explicitly invokes the live Windows harness on an appropriate host. A packaged EXE is not proof that Android installed or launched an APK.**
