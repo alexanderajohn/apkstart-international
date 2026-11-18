@@ -84,3 +84,20 @@ test('atomic pointer survives re-instantiation and a second rotation',()=>withFi
  const middlePub=path.join(x.data,'recovery-audit','default','retired-signing-keys',first.newFingerprint+'.pem');
  assert.ok(fs.existsSync(originalPub));assert.ok(fs.existsSync(middlePub));
 }));
+
+test('interruption after atomic pointer commit retains a usable NEW identity and reports cleanup risk',()=>withFixture(async x=>{
+ await x.signing.initialize(PASS);
+ const original=await x.signing.status();
+ const before=path.join(x.data,'recovery-audit','default','audit-ed25519-private.pem');
+ const keys=new SigningKeyManagement({signing:x.signing,hooks:{beforeCleanup:()=>{throw Error('SIMULATED_POWER_LOSS_AFTER_COMMIT');}}});
+ const result=await keys.rotate(PASS,NEW);
+ assert.equal(result.ok,true);
+ assert.equal(result.committed,true);
+ assert.match(result.warning,/cleanup failed/);
+ assert.ok(fs.existsSync(before)); // Previous encrypted private PEM needs explicit cleanup.
+ const fresh=new AuditSigning({audit:x.audit});
+ assert.notEqual((await fresh.status()).fingerprint,original.fingerprint);
+ const checkpoint=path.join(x.root,'after-restart.json');
+ await fresh.exportCheckpoint(checkpoint,NEW);
+ assert.equal((await fresh.verifyExternal(checkpoint)).ok,true);
+}));
