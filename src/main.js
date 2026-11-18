@@ -3288,6 +3288,27 @@ if (!gotLock) {
                 throw new Error('Recovery Vault read-only UI smoke failed');
               console.log('[smoke] Recovery Vault preview rendered; no recovery applied');
               await snap(out.replace(/\.png$/i,'-recovery.png'));
+              // Seal the same synthetic recovery point using the existing
+              // AES-256-GCM engine, verify locally and render without restore.
+              const sealed=await recoveryVault.sealPoint(recoveryPoint.id,smokeKey);
+              const sealedEntry=(await recoveryVault.listSealed()).archives[0];
+              const sealedPreview=await recoveryVault.previewSealed(sealedEntry.id,smokeKey);
+              if(!sealed.encrypted||!sealedPreview.sealed||!sealedPreview.encrypted
+                 ||!sealed.plaintextStillExists)
+                throw new Error('Encrypted Safety Vault smoke failed verification');
+              const sealedShown=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  window.ASI_BACKUP.renderPreview("+JSON.stringify(sealedPreview)+");" +
+                "  return {shown:!document.getElementById('backupPreview').hidden," +
+                "    findButton:!!document.getElementById('btnBackupSealedList')," +
+                "    label:document.getElementById('backupPreviewTitle').textContent," +
+                "    restartHidden:getComputedStyle(document.getElementById('btnBackupRestart')).display==='none'};" +
+                "})()"
+              );
+              if(!sealedShown?.shown||!sealedShown?.findButton||!sealedShown?.restartHidden)
+                throw new Error('Encrypted Safety Vault UI preview did not render');
+              console.log('[smoke] Encrypted Safety Vault authenticated; plaintext source preserved; no restore');
+              await snap(out.replace(/\.png$/i,'-sealed.png'));
             }
             if (process.argv.includes('--perf')) {
               // 拍一张「性能与资源占用」区（设置页里控件最多的一块）
