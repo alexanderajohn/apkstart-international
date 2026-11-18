@@ -18,6 +18,7 @@ const { EmulatorEngine } = require('./emulator');
 const doctor = require('./doctor');
 const container = require('./container');
 const backends = require('./backends');
+const performance = require('./performance');
 
 const LOG_DIR = path.join(store.DATA_DIR, 'logs');
 const MONITOR_PORT = 5556;
@@ -1074,11 +1075,12 @@ class Runtime {
     this._activeApps.add(pkg);
     this.touch();
     const s = this.settings;
-    const mode = (s.engine && s.engine.priorityMode) || 'balanced';
+    const preset = (s.engine && s.engine.appPerformanceProfiles || {})[pkg] || 'inherit';
+    const globalPriority = (s.engine && s.engine.priorityMode) || 'balanced';
     // 有应用在前台时的调度级别。balanced 用 normal（不是 below）：
     // below 会让 qemu 在系统繁忙时被饿到，表现为视频解码掉帧、点击要等一下才响应 ——
     // 这正是「点击不跟手」的主因。normal 只是与桌面同档，并不额外吃 CPU/内存/GPU。
-    const level = mode === 'game' ? 'game' : 'normal';
+    const level = performance.effectivePriority(performance.validMode(preset) ? preset : 'inherit', globalPriority);
 
     if (first) {
       // 有应用要开了：把「空闲存快照」推迟，别在应用启动时抢磁盘

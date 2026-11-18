@@ -9,6 +9,9 @@ const path = require('path');
 
 const store = require('./core/store');
 const { Runtime } = require('./core/engine');
+const { PerformanceMonitor } = require('./core/performance-monitor');
+const performance = require('./core/performance');
+const { validPackageName } = require('./core/pkgname');
 const { Installer } = require('./core/installer');
 const { Sharer } = require('./core/sharer');
 const { parseApk } = require('./core/apk');
@@ -214,6 +217,7 @@ const ICON_PNG = loadBrandIcon().toPNG();
 let mainWindow = null;
 let tray = null;
 let runtime = null;
+let performanceMonitor = null;
 // 「哪些窗口算我们的」由 whenReady 里赋值（见 agentScope）。放模块级是因为
 // runLaunch / 预热定时器都早于那段代码定义，闭包里的 const 在它们的作用域外看不到。
 let armAgent = async () => ({ ok: false });
@@ -1128,7 +1132,9 @@ async function launchOne(pkg) {
     await runtime.beginApp(pkg, { onActive: onContainerActive }).catch(() => {});
     // 游戏/低延迟模式：让窗口代理降频扫描，减少全桌面 EnumWindows 造成的整机卡顿
     if (winAgent) {
-      const game = store.getSettings().engine?.priorityMode === 'game';
+      const eng = store.getSettings().engine || {};
+      const mode = (eng.appPerformanceProfiles || {})[pkg] || 'inherit';
+      const game = performance.effectivePriority(mode, eng.priorityMode) === 'game';
       winAgent.setPerformanceMode(game).catch(() => {});
     }
     send('app:launched', { package: pkg, engine: r.engine });
@@ -1777,6 +1783,32 @@ function registerIpc() {
   });
 
   ipcMain.handle('runtime:usage', () => runtime.usage());
+
+  // Smart Performance Engine: on-demand telemetry, never transmitted.
+  ipcMain.handle('performance:sample', async (_e, rawPackage = '') => {
+    const pkg = typeof rawPackage === 'string' && validPackageName(rawPackage)
+      && store.getApps().some(a => a.package === rawPackage) ? rawPackage : '';
+    return performanceMonitor.snapshot(pkg);
+  });
+  ipcMain.handle('performance:profiles', () => {
+    const engine = store.getSettings().engine || {};
+    const raw = engine.appPerformanceProfiles || {};
+    // Expose only the user-selected presets; avoid leaking paths/logs.
+    return Object.fromEntries(Object.entries(raw).filter(([pkg, mode]) =>
+      validPackageName(pkg) && performance.validMode(mode)));
+  });
+  ipcMain.handle('performance:setProfile', (_e, args = {}) => {
+    const {pkg, mode} = args && typeof args === 'object' ? args : {};
+    if (!validPackageName(pkg) || pkg.length > 160 || !performance.validMode(mode))
+      throw new Error('Invalid app performance profile');
+    if (!store.getApps().some(app => app.package === pkg))
+      throw new Error('Only installed APKs may have performance presets');
+    const current = store.getSettings().engine?.appPerformanceProfiles || {};
+    const next = {...current, [pkg]:mode};
+    store.saveSettings({engine:{appPerformanceProfiles:next}});
+    return {ok:true,pkg,mode,appliesOnNextLaunch:true,scope:'process-priority-only'};
+  });
+
 
   // 通用确认框（渲染层统一走这里，避免各处自己拼 dialog 文案）
   ipcMain.handle('app:confirm', async (_e, opts = {}) => {
@@ -2482,6 +2514,7 @@ if (!gotLock) {
     // 固定项显示的还是 ApkStart 的图标。
     setAumid(APP_AUMID);
     runtime = new Runtime(APP_ROOT);
+    performanceMonitor = new PerformanceMonitor(runtime);
     // 启动即留一行痕迹：出问题时用户把 app.log 发过来就能看到版本与数据目录
     appLog(`start v${app.getVersion()} data=${store.DATA_DIR} pid=${process.pid}`);
 

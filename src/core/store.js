@@ -68,6 +68,8 @@ const DEFAULT_SETTINGS = {
     // 界面上只暴露这一个选项，保存时自动翻译成 liteMode / priorityMode / renderSize，
     // 底部仍然保留细项开关给高级用户。
     resourceMode: 'balanced',
+    // Per-APK process scheduling only; all apps share VM RAM/CPU core allocations.
+    appPerformanceProfiles: {},
     // 数据分区容量（GB）：应用、游戏缓存和它们的更新包都装在这里。
     // 0 = 自动（按磁盘剩余给 6/8GB）。改大后在下次开安卓时**就地扩容**，不丢已装应用。
     dataPartitionGB: 0,
