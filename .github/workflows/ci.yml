@@ -136,6 +136,9 @@ jobs:
           $drillShot = $shot -replace '\.png$', '-drill.png'
           if (!(Test-Path $drillShot)) { throw 'Isolated restore drill screenshot was not saved' }
           Copy-Item $drillShot (Join-Path $PWD 'asi-drill-smoke.png') -Force
+          $auditShot = $shot -replace '\.png$', '-audit.png'
+          if (!(Test-Path $auditShot)) { throw 'Recovery Audit Trail screenshot was not saved' }
+          Copy-Item $auditShot (Join-Path $PWD 'asi-audit-smoke.png') -Force
       - uses: actions/upload-artifact@v4
         with:
           name: ApkStart-International-Windows-dev-preview
@@ -158,5 +161,6 @@ jobs:
             asi-health-smoke.png
             asi-drill-readiness-smoke.png
             asi-drill-smoke.png
+            asi-audit-smoke.png
           retention-days: 3
           if-no-files-found: ignore
