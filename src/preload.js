@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld('apkstart', {
   drillExternalPreview: (password) => invoke('backup:drillExternalPreview', password),
   drillRun: (token,password,ack) => invoke('backup:drillRun', {token,password,ack}),
   drillCancel: (token) => invoke('backup:drillCancel', token),
+  auditSummary: () => invoke('backup:auditSummary'),
+  auditExport: () => invoke('backup:auditExport'),
   listApps: () => invoke('apps:list'),
   pickApk: () => invoke('apk:pick'),
   parseApk: (p) => invoke('apk:parse', p),
