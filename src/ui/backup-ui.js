@@ -74,6 +74,14 @@ const WORDS={
     drillVerified:'Encrypted backup authenticated. Restore drill available.',
     drillDone:'Synthetic restore-and-rollback drill passed. Android guest boot and live restore were NOT tested.',
     drillWarning:'This DOES NOT prove an Android emulator will boot. Physical Windows and Android AVD recovery still need separate testing.',
+    auditToggle:'Recovery Audit Trail & Verification Reports',auditTitle:'Recovery Audit Trail & Verification Reports',
+    auditNotice:'Offline per-profile audit: event kinds, outcomes, file counts and opaque SHA-256 evidence IDs only. No passwords, raw file paths, tokens or Android app names. Local hash chain is NOT a digital signature.',
+    auditView:'Verify event-chain integrity and view history',auditExport:'Export sanitized JSON verification report',
+    auditEmpty:'No recovery verification events recorded yet.',auditFailed:'Audit integrity FAILED. History cannot be trusted or exported.',
+    auditVerified:'Local audit chain verified',auditExported:'Verification report exported without overwriting an existing file.',
+    auditWarning:'Warning: local unkeyed hash chains can be rewritten or truncated by disk administrators. PASS reflects only a historic test, not a live recovery guarantee.',
+    auditPass:'Passed',auditFail:'Failed',auditCancel:'Cancelled',
+
 
 
 
@@ -158,6 +166,14 @@ const WORDS={
     drillVerified:'Backup mã hóa đã xác thực. Có thể diễn tập.',
     drillDone:'Diễn tập staging/rollback thành công. CHƯA thử khởi động Android hoặc khôi phục userdata thật.',
     drillWarning:'Diễn tập KHÔNG bảo đảm AVD khởi động. Vẫn phải kiểm thử khôi phục thực tế trên Windows.',
+    auditToggle:'Nhật ký khôi phục & báo cáo kiểm chứng',auditTitle:'Recovery Audit Trail & Verification Reports',
+    auditNotice:'Nhật ký riêng theo profile, chỉ lưu loại thao tác, kết quả, số file và mã SHA-256 ẩn danh. Không lưu mật khẩu, đường dẫn, token, tên app. Chuỗi hash cục bộ KHÔNG phải chữ ký số.',
+    auditView:'Kiểm tra toàn vẹn và xem lịch sử',auditExport:'Xuất báo cáo kiểm chứng JSON đã ẩn dữ liệu nhạy cảm',
+    auditEmpty:'Chưa có sự kiện kiểm chứng khôi phục.',auditFailed:'TOÀN VẸN NHẬT KÝ THẤT BẠI. Không thể tin hoặc xuất lịch sử.',
+    auditVerified:'Đã xác minh chuỗi nhật ký cục bộ',auditExported:'Đã xuất báo cáo kiểm chứng, không ghi đè file cũ.',
+    auditWarning:'Lưu ý: người có quyền sửa ổ đĩa vẫn có thể viết lại hoặc cắt nhật ký. PASS chỉ phản ánh kết quả kiểm tra trước đây, không bảo đảm khôi phục lúc này.',
+    auditPass:'Đạt',auditFail:'Lỗi',auditCancel:'Đã hủy',
+
 
 
 
@@ -240,6 +256,14 @@ const WORDS={
     drillVerified:'加密备份验证通过，可执行演练。',
     drillDone:'合成阶段还原与回滚演练通过；未测试 Android 系统启动及真实恢复。',
     drillWarning:'此演练不能保证 AVD 能启动，仍需在实际 Windows 机器测试。',
+    auditToggle:'恢复审计记录与验证报告',auditTitle:'恢复审计记录与验证报告',
+    auditNotice:'仅记录当前环境的事件类型、结果、文件数及匿名 SHA-256 标识，不记录密码、路径、令牌或 Android 应用名称。链式哈希不是数字签名。',
+    auditView:'验证日志完整性并查看记录',auditExport:'导出脱敏 JSON 验证报告',
+    auditEmpty:'暂无恢复验证记录。',auditFailed:'审计日志完整性验证失败。不能信任或导出。',
+    auditVerified:'本地审计哈希链验证通过',auditExported:'已导出验证报告，没有覆盖现有文件。',
+    auditWarning:'注意：拥有磁盘访问权限的管理员仍可重写或截断链式日志。PASS 仅代表历史检查结果，不能证明当前仍可恢复。',
+    auditPass:'成功',auditFail:'失败',auditCancel:'已取消',
+
 
 
 
@@ -285,6 +309,9 @@ function lock(on){
   $('btnBackupDrillExternal').disabled=on;
   $('btnBackupDrillRun').disabled=on||!drillPreview;
   $('btnBackupDrillCancel').disabled=on||!drillPreview;
+  $('btnBackupAuditToggle').disabled=on;
+  $('btnBackupAuditView').disabled=on;
+  $('btnBackupAuditExport').disabled=on;
   $('backupSealedSelect').disabled=on;
   $('btnBackupRecoveryInspect').disabled=on||$('backupRecoveryChoices').hidden;
   $('backupRecoverySelect').disabled=on;
@@ -347,6 +374,12 @@ function render(){
   $('backupDrillPreviewNotice').textContent=L.drillPreviewNotice;
   $('btnBackupDrillRun').textContent=L.drillRun;
   $('btnBackupDrillCancel').textContent=L.drillCancel;
+  $('btnBackupAuditToggle').textContent=L.auditToggle;
+  $('btnBackupAuditToggle').setAttribute('aria-expanded',String(!$('backupAuditPanel').hidden));
+  $('backupAuditTitle').textContent=L.auditTitle;
+  $('backupAuditNotice').textContent=L.auditNotice;
+  $('btnBackupAuditView').textContent=L.auditView;
+  $('btnBackupAuditExport').textContent=L.auditExport;
   $('btnBackupRestore').textContent=preview?.recovery?L.recoveryButton:L.restore;
   $('btnBackupCancel').textContent=L.cancel;
   $('btnBackupRestart').textContent=L.restart;
@@ -427,6 +460,51 @@ async function migrate(){
     if(r?.canceled)show(L.canceled);else setPreview(r);
   }catch(e){show(L.error+String(e?.message||e),true);}
   finally{secret='';clearPasswords();lock(false);}
+}
+function renderAudit(result){
+  const L=locale();
+  if(!result||result.integrity!=='verified'){
+    $('backupAuditSummary').textContent=L.auditFailed;
+    $('backupAuditEvents').textContent='';
+    $('btnBackupAuditExport').disabled=true;
+    lock(false);
+    return;
+  }
+  const t=result.totals||{};
+  $('backupAuditSummary').textContent=[
+    L.auditVerified+' · '+result.eventsCount+' events',
+    L.auditPass+': '+(t.passed||0)+' · '+L.auditFail+': '+(t.failed||0)+
+      ' · '+L.auditCancel+': '+(t.cancelled||0),
+    'SHA-256 head: '+result.head.slice(0,16)+'…',
+    L.auditWarning,
+  ].join('\n');
+  $('backupAuditEvents').textContent=(result.events||[]).length
+    ?result.events.map(e=>e.timestamp+' · '+e.event+' · '+e.status+
+      ' · '+e.source+' · '+(e.files===null?'—':e.files)+' files'+
+      (e.synthetic?' · synthetic':'')).join('\n')
+    :L.auditEmpty;
+  lock(false);
+}
+async function inspectAudit(){
+  if(busy)return;
+  lock(true);show(locale().working);
+  try{
+    const summary=await api.auditSummary();
+    renderAudit(summary);
+    show(summary.integrity==='verified'?locale().auditVerified:locale().auditFailed,
+      summary.integrity!=='verified');
+  }catch(e){show(locale().error+String(e?.message||e),true);}
+  finally{lock(false);}
+}
+async function exportAudit(){
+  if(busy)return;
+  lock(true);show(locale().working);
+  try{
+    const result=await api.auditExport();
+    if(result?.canceled){show(locale().canceled);return;}
+    if(result?.ok)show(locale().auditExported+' '+result.events+' events');
+  }catch(e){show(locale().error+String(e?.message||e),true);}
+  finally{lock(false);}
 }
 function resetDrill(){
   const token=drillPreview?.token;
@@ -835,6 +913,11 @@ function init(){
   $('btnBackupDrillSealed').addEventListener('click',()=>previewDrill('sealed'));
   $('btnBackupDrillExternal').addEventListener('click',()=>previewDrill('external'));
   $('btnBackupDrillRun').addEventListener('click',runDrill);
+  $('btnBackupAuditToggle').addEventListener('click',()=>{
+    $('backupAuditPanel').hidden=!$('backupAuditPanel').hidden;render();
+  });
+  $('btnBackupAuditView').addEventListener('click',inspectAudit);
+  $('btnBackupAuditExport').addEventListener('click',exportAudit);
   $('btnBackupDrillCancel').addEventListener('click',()=>{
     resetDrill();show(locale().canceled);
   });
@@ -865,7 +948,8 @@ function init(){
   show(locale().ready);
 }
 window.ASI_BACKUP={renderPreview:setPreview,renderRetention,
-  renderCleanupPreview,renderHealthReport,renderRescuePreview,renderDrillPreview,renderDrillResult,open:()=>{
+  renderCleanupPreview,renderHealthReport,renderRescuePreview,renderDrillPreview,renderDrillResult,
+  renderAudit,open:()=>{
   $('backupContent').hidden=false;render();$('backupCenter').scrollIntoView({block:'center'});
 }};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
