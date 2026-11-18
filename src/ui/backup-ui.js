@@ -81,6 +81,19 @@ const WORDS={
     auditVerified:'Local audit chain verified',auditExported:'Verification report exported without overwriting an existing file.',
     auditWarning:'Warning: local unkeyed hash chains can be rewritten or truncated by disk administrators. PASS reflects only a historic test, not a live recovery guarantee.',
     auditPass:'Passed',auditFail:'Failed',auditCancel:'Cancelled',
+    signingTitle:'Signed Verification Reports & External Checkpoints',
+    signingNotice:'Optional Ed25519 signatures. The private key stays encrypted by your passphrase on this PC. Save the checkpoint and independently trusted public-key fingerprint OFF this PC. This is NOT cloud notarization or Android boot verification.',
+    signingStatus:'Inspect signing identity',signingCreate:'Create encrypted Ed25519 key',
+    signingCheckpoint:'Export independent checkpoint',signingReport:'Export signed verification report',
+    signingVerify:'Verify external checkpoint or report',signingNone:'No signing identity created.',
+    signingReady:'Signing identity ready. Trust fingerprint independently: ',
+    signingAsk:'Type CREATE SIGNING KEY to create a new passphrase-encrypted signing identity. There is no automatic key recovery.',
+    signingPassword:'Enter signing passphrase in Backup Password (12+ bytes). It is never stored.',
+    signingMismatch:'Re-enter the same passphrase in Repeat Password.',
+    signingSaved:'Signed evidence exported. Move checkpoint to independent storage and save fingerprint separately.',
+    signingVerified:'Ed25519 signature and local audit checkpoint consistency PASS. Compare fingerprint with your independently trusted copy: ',
+    signingCaveat:'A replaced signing key and local history can still fool checks if fingerprint/checkpoint are not trusted independently.',
+
 
 
 
@@ -173,6 +186,19 @@ const WORDS={
     auditVerified:'Đã xác minh chuỗi nhật ký cục bộ',auditExported:'Đã xuất báo cáo kiểm chứng, không ghi đè file cũ.',
     auditWarning:'Lưu ý: người có quyền sửa ổ đĩa vẫn có thể viết lại hoặc cắt nhật ký. PASS chỉ phản ánh kết quả kiểm tra trước đây, không bảo đảm khôi phục lúc này.',
     auditPass:'Đạt',auditFail:'Lỗi',auditCancel:'Đã hủy',
+    signingTitle:'Báo cáo ký số & Checkpoint độc lập',
+    signingNotice:'Chữ ký Ed25519 tùy chọn. Khóa riêng được mã hóa bằng mật khẩu trên máy. Lưu checkpoint và dấu vân tay khóa công khai ở nơi ĐỘC LẬP. Không phải công chứng trên cloud hay xác nhận Android khởi động.',
+    signingStatus:'Kiểm tra khóa ký số',signingCreate:'Tạo khóa ký số Ed25519 mã hóa',
+    signingCheckpoint:'Xuất checkpoint độc lập',signingReport:'Xuất báo cáo kiểm chứng ký số',
+    signingVerify:'Đối chiếu checkpoint hoặc báo cáo bên ngoài',signingNone:'Chưa tạo khóa ký số.',
+    signingReady:'Đã tạo khóa. Phải lưu dấu vân tay ở nơi độc lập: ',
+    signingAsk:'Nhập CREATE SIGNING KEY để tạo khóa ký số mã hóa bằng mật khẩu. Không có cách tự khôi phục mật khẩu.',
+    signingPassword:'Nhập mật khẩu khóa ký số ở ô Backup Password (tối thiểu 12 byte); không lưu mật khẩu.',
+    signingMismatch:'Nhập lại đúng mật khẩu ở ô Repeat Password.',
+    signingSaved:'Đã xuất bản ký số. Hãy lưu checkpoint và dấu vân tay khóa ở nơi độc lập.',
+    signingVerified:'Chữ ký Ed25519 hợp lệ và lịch sử trùng checkpoint. Đối chiếu dấu vân tay với bản tin cậy: ',
+    signingCaveat:'Nếu kẻ tấn công thay được cả khóa và nhật ký trên máy, việc kiểm tra không đáng tin khi chưa xác minh dấu vân tay/checkpoint độc lập.',
+
 
 
 
@@ -263,6 +289,19 @@ const WORDS={
     auditVerified:'本地审计哈希链验证通过',auditExported:'已导出验证报告，没有覆盖现有文件。',
     auditWarning:'注意：拥有磁盘访问权限的管理员仍可重写或截断链式日志。PASS 仅代表历史检查结果，不能证明当前仍可恢复。',
     auditPass:'成功',auditFail:'失败',auditCancel:'已取消',
+    signingTitle:'签名验证报告与外部检查点',
+    signingNotice:'可选 Ed25519 签名。私钥由密码加密保存在本机。请将检查点和可信公钥指纹独立保存到其他设备。并非云端公证或 Android 启动验证。',
+    signingStatus:'查看签名密钥状态',signingCreate:'创建加密 Ed25519 签名密钥',
+    signingCheckpoint:'导出独立检查点',signingReport:'导出签名验证报告',
+    signingVerify:'验证外部检查点或报告',signingNone:'尚未创建签名密钥。',
+    signingReady:'签名密钥已建立。请在其他位置保存公钥指纹：',
+    signingAsk:'输入 CREATE SIGNING KEY 创建由密码保护的新签名密钥。无法自动恢复密码。',
+    signingPassword:'在备份密码栏输入签名密码（至少12字节），程序不会保存。',
+    signingMismatch:'在确认密码栏再次输入同一密码。',
+    signingSaved:'已导出签名材料。请在独立位置保存检查点和可信指纹。',
+    signingVerified:'Ed25519 签名与本地历史一致。请核对独立保存的公钥指纹：',
+    signingCaveat:'若攻击者同时替换本机密钥与历史，没有独立可信的指纹和检查点则无法检测。',
+
 
 
 
@@ -314,6 +353,11 @@ function lock(on){
   $('btnBackupAuditToggle').disabled=on;
   $('btnBackupAuditView').disabled=on;
   $('btnBackupAuditExport').disabled=on;
+  $('btnBackupSigningStatus').disabled=on;
+  $('btnBackupSigningCreate').disabled=on;
+  $('btnBackupSigningCheckpoint').disabled=on;
+  $('btnBackupSigningReport').disabled=on;
+  $('btnBackupSigningVerify').disabled=on;
   $('backupSealedSelect').disabled=on;
   $('btnBackupRecoveryInspect').disabled=on||$('backupRecoveryChoices').hidden;
   $('backupRecoverySelect').disabled=on;
@@ -382,6 +426,13 @@ function render(){
   $('backupAuditNotice').textContent=L.auditNotice;
   $('btnBackupAuditView').textContent=L.auditView;
   $('btnBackupAuditExport').textContent=L.auditExport;
+  $('backupSigningTitle').textContent=L.signingTitle;
+  $('backupSigningNotice').textContent=L.signingNotice;
+  $('btnBackupSigningStatus').textContent=L.signingStatus;
+  $('btnBackupSigningCreate').textContent=L.signingCreate;
+  $('btnBackupSigningCheckpoint').textContent=L.signingCheckpoint;
+  $('btnBackupSigningReport').textContent=L.signingReport;
+  $('btnBackupSigningVerify').textContent=L.signingVerify;
   $('btnBackupRestore').textContent=preview?.recovery?L.recoveryButton:L.restore;
   $('btnBackupCancel').textContent=L.cancel;
   $('btnBackupRestart').textContent=L.restart;
@@ -463,6 +514,75 @@ async function migrate(){
     if(r?.canceled)show(L.canceled);else setPreview(r);
   }catch(e){show(L.error+String(e?.message||e),true);}
   finally{secret='';clearPasswords();lock(false);}
+}
+function renderSigningStatus(r){
+  const L=locale();
+  $('backupSigningStatus').textContent=r?.initialized
+    ?L.signingReady+r.fingerprint+'\n'+(r.warning||L.signingCaveat)
+    :L.signingNone+'\n'+L.signingCaveat;
+  lock(false);
+}
+function renderSigningVerification(r){
+  const L=locale();
+  $('backupSigningResult').textContent=(r?.ok
+    ?L.signingVerified+r.fingerprint+'\n'+r.kind+' · '+r.checkpointEvents+
+      ' / '+r.currentEvents+' events\n'+L.signingCaveat
+    :L.signingCaveat);
+  lock(false);
+}
+async function inspectSigning(){
+  if(busy)return;
+  lock(true);show(locale().working);
+  try{renderSigningStatus(await api.signingStatus());}
+  catch(e){show(locale().error+String(e?.message||e),true);}
+  finally{lock(false);}
+}
+async function createSigning(){
+  if(busy)return;
+  const L=locale();
+  let secret=$('backupPassword').value;
+  if(!validPassword(secret)){show(L.signingPassword,true);return;}
+  if(secret!==$('backupPasswordConfirm').value){show(L.signingMismatch,true);return;}
+  if(window.prompt(L.signingAsk)!=='CREATE SIGNING KEY')return;
+  lock(true);show(L.working);
+  try{
+    const task=api.signingInitialize(secret,'CREATE SIGNING KEY');
+    clearPasswords();secret='';
+    const result=await task;
+    if(result?.canceled){show(L.canceled);return;}
+    renderSigningStatus(result);show(L.signingReady+result.fingerprint);
+  }catch(e){show(L.error+String(e?.message||e),true);}
+  finally{secret='';clearPasswords();lock(false);}
+}
+async function exportSigned(kind){
+  if(busy)return;
+  const L=locale();
+  let secret=$('backupPassword').value;
+  if(!validPassword(secret)){show(L.signingPassword,true);return;}
+  lock(true);show(L.working);
+  try{
+    const task=api.signingExport(kind,secret);
+    clearPasswords();secret='';
+    const result=await task;
+    if(result?.canceled){show(L.canceled);return;}
+    if(result?.ok){
+      $('backupSigningResult').textContent=L.signingSaved+
+        '\n'+result.fingerprint+' · '+result.events+' events\n'+result.warning;
+      show(L.signingSaved);
+    }
+  }catch(e){show(L.error+String(e?.message||e),true);}
+  finally{secret='';clearPasswords();lock(false);}
+}
+async function verifySigned(){
+  if(busy)return;
+  lock(true);show(locale().working);
+  try{
+    const result=await api.signingVerifyExternal();
+    if(result?.canceled){show(locale().canceled);return;}
+    renderSigningVerification(result);
+    if(result?.ok)show(locale().signingVerified+result.fingerprint);
+  }catch(e){show(locale().error+String(e?.message||e),true);}
+  finally{lock(false);}
 }
 function renderAudit(result){
   const L=locale();
@@ -929,6 +1049,11 @@ function init(){
   });
   $('btnBackupAuditView').addEventListener('click',inspectAudit);
   $('btnBackupAuditExport').addEventListener('click',exportAudit);
+  $('btnBackupSigningStatus').addEventListener('click',inspectSigning);
+  $('btnBackupSigningCreate').addEventListener('click',createSigning);
+  $('btnBackupSigningCheckpoint').addEventListener('click',()=>exportSigned('checkpoint'));
+  $('btnBackupSigningReport').addEventListener('click',()=>exportSigned('report'));
+  $('btnBackupSigningVerify').addEventListener('click',verifySigned);
   $('btnBackupDrillCancel').addEventListener('click',()=>{
     resetDrill();show(locale().canceled);
   });
@@ -960,7 +1085,7 @@ function init(){
 }
 window.ASI_BACKUP={renderPreview:setPreview,renderRetention,
   renderCleanupPreview,renderHealthReport,renderRescuePreview,renderDrillPreview,renderDrillResult,
-  renderAudit,open:()=>{
+  renderAudit,renderSigningStatus,renderSigningVerification,open:()=>{
   $('backupContent').hidden=false;render();$('backupCenter').scrollIntoView({block:'center'});
 }};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
