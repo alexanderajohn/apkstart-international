@@ -1340,7 +1340,7 @@ class Runtime {
     const path = require('path');
     try {
       if (this.vmRunning) await this.stop().catch(() => {});
-      const avdDir = path.join(this.provisioner.paths().avdHome, 'apkstart.avd');
+      const avdDir = path.join(this.provisioner.paths().avdHome, store.profiles.avdName() + '.avd');
       let reclaimed = 0;
       if (fs.existsSync(avdDir)) {
         for (const e of fs.readdirSync(avdDir, { withFileTypes: true })) {

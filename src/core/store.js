@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { safeFilePart } = require('./pkgname');
+const { createRegistry } = require('./profiles');
 
 /**
  * 是不是 Microsoft Store（MSIX / APPX）打包版？
@@ -33,6 +34,7 @@ const ICON_DIR = path.join(DATA_DIR, 'icons');
 const APK_DIR = path.join(DATA_DIR, 'apks');
 const APPS_FILE = path.join(DATA_DIR, 'apps.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+const profileRegistry = createRegistry(DATA_DIR);
 
 const DEFAULT_SETTINGS = {
   adbPath: '',
@@ -188,7 +190,8 @@ const DEFAULT_SETTINGS = {
 };
 
 function ensureDirs() {
-  for (const d of [DATA_DIR, ICON_DIR, APK_DIR]) {
+  const current = profileRegistry.paths();
+  for (const d of [DATA_DIR, current.iconsDir, current.apkDir]) {
     if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
   }
 }
@@ -246,7 +249,11 @@ function resourcePreset(mode) {
 }
 
 const store = {
-  DATA_DIR, ICON_DIR, APK_DIR,
+  DATA_DIR,
+  profiles: profileRegistry,
+  // Dynamic getters preserve the default data while isolating APKs/icons.
+  get ICON_DIR() { return profileRegistry.paths().iconsDir; },
+  get APK_DIR() { return profileRegistry.paths().apkDir; },
   // 商店（MSIX）打包版标记：main.js 据此关掉自更新、跳过需要管理员权限的内核驱动安装
   STORE_BUILD,
 
@@ -285,12 +292,12 @@ const store = {
   },
 
   getApps() {
-    const data = readJson(APPS_FILE, { apps: [] });
+    const data = readJson(profileRegistry.paths().appsFile, { apps: [] });
     return Array.isArray(data.apps) ? data.apps : [];
   },
 
   saveApps(apps) {
-    writeJson(APPS_FILE, { apps });
+    writeJson(profileRegistry.paths().appsFile, { apps });
   },
 
   upsertApp(app) {
@@ -314,12 +321,12 @@ const store = {
   iconPath(pkg) {
     // 第二层防御：pkg 来自外部解析的 APK / apps.json，必须锁在数据目录内。
     // 即使有旧版本写入的坏记录，也不能让它拼出 ICON_DIR 之外的路径（issue #2 P0-1）。
-    return path.join(ICON_DIR, `${safeFilePart(pkg)}.png`);
+    return path.join(this.ICON_DIR, `${safeFilePart(pkg)}.png`);
   },
 
   apkPath(pkg, version = 'cur') {
     const v = /^[A-Za-z0-9_-]+$/.test(String(version)) ? version : 'cur';
-    return path.join(APK_DIR, `${safeFilePart(pkg)}-${v}.apk`);
+    return path.join(this.APK_DIR, `${safeFilePart(pkg)}-${v}.apk`);
   },
 
   ensureDirs,

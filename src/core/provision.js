@@ -288,7 +288,11 @@ class Provisioner {
       emulatorExe: path.join(root, 'emulator', 'emulator.exe'),
       sysImgRoot: sysRoot,
       sysImgDir: path.join(sysRoot, `android-${sysApi}`, sysTag, sysAbi),
-      avdHome: insideData ? path.join(root, 'avd') : writable,
+      // Secondary profiles isolate Android AVD/userdata. Default keeps exact legacy path.
+      avdHome: store.profiles.currentId() === 'default'
+        ? (insideData ? path.join(root, 'avd') : writable)
+        : (explicitAvd ? path.join(explicitAvd, 'profiles', store.profiles.currentId())
+          : store.profiles.paths().avdHome),
       aehdDir: path.join(rootWritable ? root : path.join(store.DATA_DIR, 'runtime'), 'aehd'),
       imagesDir: path.join(rootWritable ? root : path.join(store.DATA_DIR, 'runtime'), 'images'),
       iso: path.join(root, 'images', 'android-x86.iso'),
