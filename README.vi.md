@@ -45,3 +45,7 @@ Gói .apks/.xapk hiện chỉ kiểm tra giới hạn, kèm cảnh báo. SmartCh
 ## Auto-Repair 2.0 — chẩn đoán và sửa lỗi an toàn
 
 Vào **Cài đặt → Môi trường Android → Auto-Repair 2.0 → Kiểm tra lỗi**. Công cụ nhận diện lỗi GPU, ảo hóa, ADB, Quick Boot, ổ đĩa và thành phần còn thiếu; hiển thị gợi ý tiếng Việt/Anh/Trung. Quét chẩn đoán chỉ đọc; muốn sửa thì người dùng phải xác nhận. Chỉ thay đổi chế độ GPU software, Quick Boot cho lần chạy sau hoặc kết nối lại ADB trên cổng riêng 5044 khi máy ảo đang chạy. Không tự xóa dữ liệu ứng dụng, snapshot, cài driver hay đổi cấu hình Windows.
+
+## Smart Performance Engine — đo hiệu năng và tối ưu theo APK
+
+Vào **Settings → Performance & Resource Usage → Smart Performance Engine → Bắt đầu đo**. Màn hình đo CPU/RAM Windows, CPU/RAM tiến trình emulator khi có, chế độ render GPU và ước lượng FPS bằng Android `dumpsys gfxinfo` khi APK đang chạy. Không có số liệu sẽ báo N/A, không bịa FPS/GPU. Máy ảo Android dùng chung tài nguyên; số đo emulator **không phải CPU/RAM riêng của từng APK**. Chọn cấu hình cho mỗi APK (`inherit/save/balanced/smooth`) để áp dụng mức ưu tiên tiến trình ở **lần mở APK kế tiếp**, không đổi RAM/số nhân VM, không tự chỉnh cấu hình. Dữ liệu đo chỉ dùng trong phiên hiện tại và không được gửi ra máy chủ.

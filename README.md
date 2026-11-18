@@ -76,3 +76,11 @@ Static inspection cannot establish that an APK is safe or will work. Direct comm
 Open **Settings → Runtime & Environment → Auto-Repair 2.0**, then choose **Analyze problems**. The scan checks known failures (GPU, Hypervisor, ADB, Quick Boot snapshots, storage, missing runtime components), shows guidance in EN/VI/ZH, and never modifies the system during diagnosis. GPU software fallback or disabling Quick Boot **for the next launch** require explicit confirmation. Reconnecting ADB is limited to ApkStart's isolated port 5044, only on a running emulator. Other actions are manual recommendations, not automatic repairs. No Android app data or snapshots are deleted by this feature.
 
 See [Auto-Repair safety and limits](docs/AUTO_REPAIR.md). **The existing one-click bulk repair in the environment panel was replaced by a per-issue review.**
+
+## Smart Performance Engine (developer preview)
+
+Open **Settings → Performance & Resource Usage → Smart Performance Engine** and press **Start measuring**. No telemetry is uploaded. The dashboard displays Windows CPU and memory usage, optional Android emulator process CPU and working-set RAM, the configured GPU rendering backend, and recent Android app **gfxinfo frame-completion rate** when available. FPS is not a universal frame-rate sensor; GPU **utilization % is not supported**. Unsupported/absent data is shown as N/A, never fabricated.
+
+The Android emulator is a **shared VM**. VM CPU/RAM are never attributed to a single APK. Choose a per-app scheduling preset (`inherit`, `save`, `balanced`, `smooth`) with explicit approval; changes take effect **on the next app launch**. RAM, vCPU, and render resolution remain global VM settings. `smooth` raises process priority and can reduce host responsiveness. The rules suggest a preset using measured pressure, but **never apply it automatically**. No data resets, installer changes, network telemetry, or third-party services.
+
+See [Performance technical notes](docs/SMART_PERFORMANCE.md).

@@ -1,3 +1,11 @@
+## Unreleased — Smart Performance Engine
+
+- Add opt-in local host CPU/RAM sampling and private-runtime emulator CPU/working-set metrics (when available).
+- Estimate recent app frame-completion rate with Android gfxinfo; never fabricate unavailable FPS or GPU utilization.
+- Add explainable, conservative performance recommendations based on measured resource pressure.
+- Save allowlisted per-APK scheduling presets; apply on the next app launch without resetting Android or changing shared VM memory/cores.
+- Add EN/VI/ZH Performance Center, privacy copy, synthetic tests and Windows UI smoke coverage.
+
 ## Unreleased — Android Auto-Repair 2.0
 
 - Add read-only troubleshooting for GPU, Hypervisor, ADB, Quick Boot snapshots, missing runtime components and common boot errors.

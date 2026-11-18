@@ -32,3 +32,8 @@
 - [x] Replace legacy unattended multi-fix UI with per-issue safety review.
 - [ ] Verify GPU/ADB/Snapshot/Hypervisor recovery on real Windows 10/11 machines with genuine boot failures.
 - [ ] Observe and verify that software GPU/Quick Boot preferences persist across a full Android boot.
+
+- [x] Implement opt-in Smart Performance Engine dashboard and per-app process priority profiles.
+- [ ] Calibrate CPU/RAM readings on real Windows 10/11 hardware with a running Google Android Emulator.
+- [ ] Validate Android gfxinfo FPS estimator against a separately measured benchmark; FPS unavailable on unsupported apps is expected.
+- [ ] Confirm multi-app priority behavior and hardware GPU telemetry before promoting performance claims.

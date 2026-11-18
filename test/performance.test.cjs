@@ -47,3 +47,37 @@ test('Measurement script only reads processes under its provided runtime root',(
   assert.match(code,/RuntimeRoot/);
   assert.doesNotMatch(code,/Stop-Process|Remove-Item|Set-CimInstance|Invoke-WebRequest/i);
 });
+
+test('Per-APK process priority uses dedicated IPC with installed-package validation',()=>{
+  const main=fs.readFileSync(path.join(__dirname,'../src/main.js'),'utf8');
+  const engine=fs.readFileSync(path.join(__dirname,'../src/core/engine.js'),'utf8');
+  const preload=fs.readFileSync(path.join(__dirname,'../src/preload.js'),'utf8');
+  assert.ok(main.includes("ipcMain.handle('performance:sample'"));
+  assert.ok(main.includes("ipcMain.handle('performance:setProfile'"));
+  assert.ok(main.includes("Only installed APKs may have performance presets"));
+  assert.ok(main.includes("performance.validMode(mode)"));
+  assert.ok(engine.includes("performance.effectivePriority("));
+  assert.ok(preload.includes("performanceSetProfile: (pkg, mode)"));
+});
+test('Performance Center requires manual opt-in and never assumes GPU/FPS measurements',()=>{
+  const html=fs.readFileSync(path.join(__dirname,'../src/ui/index.html'),'utf8');
+  const ui=fs.readFileSync(path.join(__dirname,'../src/ui/performance.js'),'utf8');
+  for(const id of ['smartPerformanceCenter','btnPerfStart','btnPerfStop','perfHostCpu','perfGuestRam','perfGuestFps','perfAppSelect','btnPerfApply']) {
+    assert.ok(html.includes('id="'+id+'"'),id);
+  }
+  assert.ok(html.includes('<script src="performance.js"></script>'));
+  assert.ok(ui.includes('window.confirm(L.confirm)'));
+  assert.ok(ui.includes('window.confirm(L.confirmHigh)'));
+  assert.ok(ui.includes('if(!selectedApp()||!last?.recommendation)return'));
+  assert.ok(ui.includes('if(!$('+"'settingsMask'"+').classList.contains('+"'on'"+')){stop();return;}'));
+  assert.ok(ui.includes('en:')&&ui.includes('vi:')&&ui.includes("'zh-CN':"));
+  assert.ok(!ui.includes('innerHTML'),'Metrics rendered safely with textContent');
+});
+test('Performance snapshot never invents GPU utilization or assigns shared VM RAM per APK',()=>{
+  const monitor=fs.readFileSync(path.join(__dirname,'../src/core/performance-monitor.js'),'utf8');
+  assert.ok(monitor.includes('gpuPercent:null'));
+  assert.ok(monitor.includes('scope:'+"'shared-android-runtime'"));
+  assert.ok(monitor.includes('telemetryUploaded:false'));
+  assert.ok(monitor.includes('active.includes(pkg)'));
+  assert.ok(monitor.includes('validPackageName(pkg)'));
+});
