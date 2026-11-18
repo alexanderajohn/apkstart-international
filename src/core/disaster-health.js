@@ -106,9 +106,12 @@ class DisasterHealth{
       const layout=this.vault.layout();
       const {pending,stages,issues}=await this._artifacts(layout);
       const {items:partials,issues:partialIssues}=await this._partials(layout);
-      const plain=await this.vault.findPoints(layout);
-      const sealed=await this.vault.findSealed(layout);
       const allIssues=[...issues,...partialIssues],quarantines=[];
+      let plain=[],sealed=[];
+      try{plain=await this.vault.findPoints(layout);}
+      catch(e){allIssues.push({type:'recovery-points',reason:String(e.message||e)});}
+      try{sealed=await this.vault.findSealed(layout);}
+      catch(e){allIssues.push({type:'encrypted-archives',reason:String(e.message||e)});}
       for(const q of pending){
         let valid=true,files=0,bytes=0;
         try{
@@ -122,6 +125,7 @@ class DisasterHealth{
       }
       return {profileId:layout.id,checkedAt:new Date().toISOString(),
         localRecoveryPoints:plain.length,encryptedArchives:sealed.length,
+        archives:sealed.map(x=>({id:x.id,createdAt:x.createdAt,authenticated:false})),
         archivesAuthenticated:false, // listing does not know encryption passwords
         quarantine:quarantines,stages,partialArchives:partials,issues:allIssues,
         recommendations:[
