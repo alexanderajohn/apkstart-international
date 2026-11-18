@@ -7,6 +7,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { sha256File } = require('./smartcheck');
+const { verifyOwner } = require('./runtime-owner');
 const { installSession } = require('./install-session');
 const store = require('./store');
 const { autoGrantEnabled } = require('./permission-policy');
@@ -157,8 +158,9 @@ class Installer {
     const filePath = staged.path;
     const client = rt.client;
     const serial = client.serial;
-    const checkGuest = () => assertProfileGuest({ expectedProfileId,
-      getProfileId: () => store.profiles.currentId(), client, serial, engine: rt.engine });
+    const checkGuest = () => rt.engine === 'emulator'
+      ? verifyOwner(client, store.profiles, expectedProfileId)
+      : assertProfileGuest({ expectedProfileId, getProfileId: () => store.profiles.currentId(), client, serial, engine: rt.engine });
     await checkGuest();
     const existing = store.getApp(meta.package);
     const parts = [];

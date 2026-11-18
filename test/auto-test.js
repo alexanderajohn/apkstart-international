@@ -1303,9 +1303,8 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     const repairBody = repair.slice(0, repair.indexOf('async ', 10) > 0 ? undefined : undefined);
     assert(/repairWifi/.test(repairBody), 'repairNetwork 应先尝试轻量的 Wi-Fi 重连');
     const wifiAt = repairBody.indexOf('repairWifi');
-    const wipeAt = repairBody.indexOf('forceWipeOnNextStart');
-    assert(wifiAt > -1 && wipeAt > -1 && wifiAt < wipeAt,
-      '顺序必须是：先重连 Wi-Fi，最后才重置数据（不能一上来就清用户数据）');
+    assert(wifiAt >= 0 && !repairBody.includes('forceWipeOnNextStart('),
+      'Network repair must preserve Android userdata even when cold boot fails');
 
     // ensureNetwork 也要先试轻量修复，别直接冷启动
     const ensure = engineJs.slice(engineJs.indexOf('async ensureNetwork'));

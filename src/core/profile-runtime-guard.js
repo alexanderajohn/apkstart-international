@@ -20,7 +20,7 @@ async function assertProfileGuest({expectedProfileId,getProfileId,client,serial,
   // Historical QEMU support is only possible for the Default profile, and
   // never treated as evidence that a secondary Android emulator is isolated.
   if(!SERIAL.test(serial)){
-    if(expectedProfileId!=='default'||engine!=='builtin')
+    if(expectedProfileId!=='default'||engine!=='builtin'||serial!=='127.0.0.1:5555')
       throw Error('Only a verified Android Emulator is supported for secondary Profiles');
     if(await client.deviceState()!=='device')throw Error('Default QEMU ADB device is not authorized');
     assertProfileUnchanged(expectedProfileId,getProfileId);
@@ -35,6 +35,7 @@ async function assertProfileGuest({expectedProfileId,getProfileId,client,serial,
   }catch(_){}
   // Strict identity is essential when the app has several profiles and can
   // leave detached emulator processes behind. Missing result is NOT a match.
+  if(client.serial!==serial)throw Error('ADB target changed during operation');
   if(!name||name!==expectedAvd(expectedProfileId))
     throw Error('Cannot verify exact Android AVD for selected Profile; refusing install or launch');
   assertProfileUnchanged(expectedProfileId,getProfileId);

@@ -148,21 +148,9 @@ class EmulatorEngine {
     }
   }
 
-  /**
-   * 清掉上次异常退出留下的锁。
-   * 注意 hardware-qemu.ini.lock 是**目录**不是文件，bsdtar 式的 rmSync(force) 删不掉它，
-   * 于是模拟器会一直报 "Running multiple emulators with the same AVD" 起不来
-   * （被强杀过一次就会这样），必须递归删。
-   */
-  clearLocks(avdDir) {
-    try {
-      for (const f of fs.readdirSync(avdDir)) {
-        if (!/\.lock$/i.test(f)) continue;
-        try {
-          fs.rmSync(path.join(avdDir, f), { recursive: true, force: true });
-        } catch (_) { /* 被占用就跳过，下次再清 */ }
-      }
-    } catch (_) { /* ignore */ }
+  assertAvdUnlocked(avdDir) {
+    if (fs.readdirSync(avdDir).some(name => /\.lock$/i.test(name)))
+      throw Error('AVD lock is held or stale. Close the owning emulator before starting this Profile.');
   }
 
   /**
@@ -227,61 +215,6 @@ class EmulatorEngine {
     } catch (_) {
       return null;
     }
-  }
-
-  async killOrphanProcesses({ onLog = () => {} } = {}) {
-    if (process.platform !== 'win32') return 0;
-    const avdDir = path.join(this.provisioner.paths().avdHome, `${activeAvdName()}.avd`);
-
-    // 快速路径（每次冷启动都会走到）：
-    //  - 没有 .lock → 不可能有活着的 emulator 占着这个 AVD，直接返回；
-    //  - 有 lock 但端口没人监听 → 只是上次强杀留下的残留目录，清掉即可。
-    // 以前无论什么情况都要跑一次 wmic（1~3 秒，还很吃 CPU），冷启动时明显拖慢。
-    let locks = [];
-    try { locks = fs.readdirSync(avdDir).filter((f) => /\.lock$/i.test(f)); } catch (_) { locks = []; }
-    if (!locks.length) return 0;
-    if (!(await this._anyEmulatorPortAlive())) {
-      this.clearLocks(avdDir);
-      return 0;
-    }
-
-    const pids = new Set();
-    // 1) 锁文件里 emulator 自己写的 pid（最可靠）
-    try {
-      const f = path.join(avdDir, 'hardware-qemu.ini.lock', 'pid');
-      if (fs.existsSync(f) && fs.statSync(f).isFile()) {
-        const pid = parseInt(fs.readFileSync(f, 'utf8').trim(), 10);
-        if (pid) pids.add(pid);
-      }
-    } catch (_) { /* ignore */ }
-    // 2) 兜底：按进程名 + 端口找活着的 qemu（tasklist/netstat 比 wmic 快一个量级）
-    try {
-      const [tl, ns] = await Promise.all([
-        new Promise((res) => execFile('tasklist', ['/FO', 'CSV', '/NH'], { windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (e, o) => res(e ? '' : String(o || '')))),
-        new Promise((res) => execFile('netstat', ['-ano', '-p', 'TCP'], { windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (e, o) => res(e ? '' : String(o || '')))),
-      ]);
-      const qemuPids = new Set();
-      for (const line of tl.split('\n')) {
-        const m = /^"([^"]+)","(\d+)"/.exec(line.trim());
-        if (m && /qemu|emulator/i.test(m[1])) qemuPids.add(m[2]);
-      }
-      for (const line of ns.split('\n')) {
-        const m = /:(\d+)\s+\S+\s+LISTENING\s+(\d+)/i.exec(line);
-        if (m && qemuPids.has(m[2])) pids.add(Number(m[2]));
-      }
-    } catch (_) { /* 拿不到进程列表就只靠锁文件里的 pid */ }
-    pids.delete(process.pid);
-    if (!pids.size) {
-      this.clearLocks(avdDir);
-      return 0;
-    }
-    onLog(`清理 ${pids.size} 个残留模拟器进程`);
-    await Promise.all([...pids].map((pid) => new Promise((r) => {
-      execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => r());
-    })));
-    await sleep(1200);
-    this.clearLocks(avdDir);
-    return pids.size;
   }
 
   /** 5554~5620 里是否有 emulator 控制台端口在监听（连接被拒会立刻返回，代价极小） */
@@ -397,7 +330,7 @@ class EmulatorEngine {
     const home = p.avdHome;
     const avdDir = path.join(home, `${activeAvdName()}.avd`);
     fs.mkdirSync(avdDir, { recursive: true });
-    this.clearLocks(avdDir);
+    this.assertAvdUnlocked(avdDir);
 
     // 屏幕分辨率：有硬件加速时 720x1280@320 画面清晰、文字不糊；
     // 纯软件模拟时降到 540x960，帧率优先（面积只有 56%，肉眼差距远小于流畅度差距）。
@@ -895,14 +828,8 @@ class EmulatorEngine {
     this.proc = null;
     if (proc) {
       try { proc.kill(); } catch (_) { /* ignore */ }
-      if (process.platform === 'win32' && proc.pid) {
-        try { spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); } catch (_) { /* ignore */ }
-      }
     }
     await sleep(800);
-    // proc 句柄常常已经没了（emulator.exe 启动完就退出，qemu 是 detached 的独立进程），
-    // 不按进程名兜底清一遍，下一轮就会被 AVD 锁挡成 FATAL。
-    await this.killOrphanProcesses().catch(() => {});
   }
 
   /**
@@ -1299,11 +1226,6 @@ class EmulatorEngine {
     this.lastDiagnosis = null;
     let lastError = '';
 
-    // 冷启前先清孤儿：上一次运行留下的 qemu 仍占着 AVD 锁时，
-    // 所有尝试都会立刻 FATAL "Running multiple emulators with the same AVD"。
-    // eslint-disable-next-line no-await-in-loop
-    await this.killOrphanProcesses({ onLog }).catch(() => {});
-
     for (let i = 0; i < variants.length; i += 1) {
       const base = variants[i];
       // 端口占用也会导致失败，每次重试重新探测一次
@@ -1552,7 +1474,7 @@ class EmulatorEngine {
     if (adbPath) {
       await new Promise((resolve) => {
         execFile(adbPath, ['-s', serial, 'emu', 'kill'],
-          { timeout: 10000, windowsHide: true }, () => resolve());
+          { timeout: 10000, windowsHide: true, env: { ...process.env, ANDROID_ADB_SERVER_PORT: String(this.adbPort || 5044) } }, () => resolve());
       });
     }
     // 等它自己走完「落盘 → 退出」的流程。以前固定等 6 秒就强杀，

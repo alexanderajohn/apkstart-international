@@ -917,6 +917,7 @@ let installBusy = null;   // 正在安装的文件路径：双击 APK 连点会�
 let lastInstallErr = { msg: '', at: 0 };
 
 async function runInstall(filePath) {
+  if (store.profileSwitching) throw Error('Android Profile is switching');
   if (backupBusy) throw new Error('Backup or restore is in progress');
   showWindow();
   // 同一个包正在装（用户连点了几次图标 / 拖了好几次）→ 只提示一次，别重复跑一遍安装
@@ -1028,6 +1029,7 @@ let launchInFlight = null;
 let accelWarned = false;
 
 async function runLaunch(pkg) {
+  if (store.profileSwitching) throw Error('Android Profile is switching');
   if (backupBusy) throw new Error('Backup or restore is in progress');
   // A bare --launch name from a Windows shortcut must never address a guest
   // application that is not in the selected Profile's own catalog.
@@ -1300,7 +1302,7 @@ function registerIpc() {
   // Android Profiles: one live guest at a time. Never switch with Android,
   // installer, auto-download, app windows or another emulator still active.
   async function profileBusyReason() {
-    if (backupBusy || installBusy || deploying || updateBusy || runtime.vmStarting
+    if (backupBusy || launchInFlight || installBusy || deploying || updateBusy || runtime.vmStarting
        || runtime.installing || runtime._ensurePromise || runtime.activeApps.length
        || currentAppPkg || (appWin && appWin.isOpen)) {
       return 'Finish active installs, app windows and runtime tasks before switching Android profiles.';
@@ -1321,6 +1323,7 @@ function registerIpc() {
   // or import is selected by the operating-system folder dialog. A restore
   // requires a verified preview AND a short-lived, single-use approval token.
   async function backupIdleCheck() {
+  if (store.profileSwitching) throw Error('Android Profile is switching');
     if (installBusy || deploying || updateBusy || runtime.vmStarting ||
         runtime.installing || runtime._ensurePromise || runtime.activeApps.length ||
         currentAppPkg || (appWin && appWin.isOpen)) {
@@ -1839,9 +1842,14 @@ function registerIpc() {
     const registry=store.profiles.list();
     if (!registry.profiles.some(p => p.id===id)) throw new Error('Unknown Android profile');
     if (id===registry.activeId) return {ok:true,changed:false,activeId:id};
-    const busy=await profileBusyReason();
-    if (busy) throw new Error(busy);
-    const result=store.profiles.activate(id);
+    if (store.profileSwitching) throw Error('Profile switch already in progress');
+    store.profileSwitching = true;
+    let result;
+    try {
+      const busy=await profileBusyReason();
+      if (busy) throw new Error(busy);
+      result=store.profiles.activate(id);
+    } catch (error) { store.profileSwitching = false; throw error; }
     // Restart rather than mutating paths while IPC/renderer or background
     // tasks could still hold file descriptors to the old profile.
     setTimeout(() => {
@@ -1851,6 +1859,7 @@ function registerIpc() {
         app.quit();
       } catch(e) {
         try{store.profiles.activate(result.previousId);}catch(_){}
+        store.profileSwitching = false;
         appLog('Profile relaunch failed: '+e.message);
       }
     }, 350).unref?.();
@@ -2466,7 +2475,19 @@ function registerIpc() {
    * 就地扩容做不到时（quickboot 差量盘）走这条：按目标容量重建 /data。
    * 会清空已装应用与存档 —— 调用方必须已经让用户明确确认过。
    */
+  async function confirmResetData() {
+    const id = store.profiles.currentId();
+    if (installBusy || launchInFlight || backupBusy || store.profileSwitching)
+      throw Error('Finish active Profile operations before a reset');
+    const result = await dialog.showMessageBox(mainWindow || undefined, {
+      type:'warning', buttons:['Cancel','Erase Android data'], cancelId:0, defaultId:0,
+      title:'Erase Android Profile data?', message:'Erase apps, saved data and snapshots in Profile ' + id + '?'
+    });
+    return result.response === 1 && id === store.profiles.currentId() &&
+      !installBusy && !launchInFlight && !backupBusy && !store.profileSwitching;
+  }
   ipcMain.handle('runtime:resetAndResize', async (_e, gb) => {
+    if (!await confirmResetData()) return {ok:false,cancelled:true};
     const res = require('./core/resources');
     const doctor = require('./core/doctor');
     const freeMB = doctor.freeDiskMB(runtime.provisioner.paths().root);
@@ -2545,6 +2566,7 @@ function registerIpc() {
   // 彻底重置安卓数据：清空 /data 用户分区 + 已装应用 + 快速启动快照，
   // AVD 还原成「刚装好系统」的干净状态。会真实删除数 GB 数据，UI 必须二次确认。
   ipcMain.handle('runtime:resetData', async () => {
+    if (!await confirmResetData()) return {ok:false,cancelled:true};
     try {
       const r = await runtime.resetAndroidData();
       if (!r.ok) return { ok: false, error: r.error };
@@ -2888,20 +2910,9 @@ function registerIpc() {
   });
 
   /** 清理上次残留的 AVD 锁文件：会让下次启动被误判为「AVD 已被占用」而 FATAL */
-  ipcMain.handle('app:clearLocks', async () => {
-    try {
-      const avdHome = runtime.provisioner.paths().avdHome;
-      let removed = 0;
-      for (const f of fs.readdirSync(avdHome)) {
-        if (/\.lock$/i.test(f)) {
-          try { fs.rmSync(path.join(avdHome, f), { force: true }); removed++; } catch (_) { /* ignore */ }
-        }
-      }
-      return { ok: true, removed };
-    } catch (e) {
-      return { ok: false, error: e.message };
-    }
-  });
+  ipcMain.handle('app:clearLocks', () => ({
+    ok:false, error:'Close the emulator that owns this AVD lock. Restart Windows if its process is no longer visible.'
+  }));
 
   /**
    * 一键卸载 ApkStart 本体：
@@ -2924,7 +2935,7 @@ function registerIpc() {
       const { spawn } = require('child_process');
       // 卸载前先收掉常驻的模拟器：qemu 会锁住 resources\runtime 里的 exe/dll，
       // NSIS 删不掉就会留下半个安装目录。这里只针对「真的在卸载」，不影响日常退出。
-      try { await runtime?.emulator?.killOrphanProcesses(); } catch (_) { /* ignore */ }
+
       // 先让本程序退出，再由一个独立进程延迟 2 秒拉起卸载器：
       // 运行中的 exe 会锁住安装目录里的文件，直接拉起卸载器容易删不干净。
       const cmd = `ping 127.0.0.1 -n 3 >nul & start "" "${uninstaller}"`;
