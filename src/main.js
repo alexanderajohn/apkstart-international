@@ -2934,6 +2934,36 @@ if (!gotLock) {
               console.log('[smoke] Auto-Repair 2.0 diagnosis rendered; no repair executed');
               await snap(out.replace(/\.png$/i, '-auto-repair.png'));
             }
+            if (process.argv.includes('--smart-performance')) {
+              const result = await mainWindow.webContents.executeJavaScript(
+                "(async () => {" +
+                "  const mask=document.getElementById('settingsMask');" +
+                "  if (!mask.classList.contains('on')) document.getElementById('btnSettings').click();" +
+                "  for(let i=0;i<40;i++) {" +
+                "    if(mask.classList.contains('on')) break;" +
+                "    await new Promise(r=>setTimeout(r,100));" +
+                "  }" +
+                "  document.getElementById('btnPerfStart').click();" +
+                "  let rendered=false;" +
+                "  for(let i=0;i<170;i++) {" +
+                "    await new Promise(r=>setTimeout(r,100));" +
+                "    const val=document.getElementById('perfHostRam').textContent;" +
+                "    if(val.includes('%') && document.getElementById('perfAdvice').textContent.length>6){" +
+                "      rendered=true;break;" +
+                "    }" +
+                "  }" +
+                "  document.getElementById('btnPerfStop').click();" +
+                "  document.getElementById('smartPerformanceCenter').scrollIntoView({block:'center'});" +
+                "  return {rendered,shown:mask.classList.contains('on')," +
+                "    v:document.getElementById('perfHostRam').textContent};" +
+                "})()"
+              );
+              if (!result || !result.rendered || !result.shown) {
+                throw new Error('Smart Performance Center failed host-only smoke measurement');
+              }
+              console.log('[smoke] Performance metrics rendered locally; no Android guest installed');
+              await snap(out.replace(/\.png$/i, '-smart-performance.png'));
+            }
             if (process.argv.includes('--perf')) {
               // 拍一张「性能与资源占用」区（设置页里控件最多的一块）
               await mainWindow.webContents.executeJavaScript(
