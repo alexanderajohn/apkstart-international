@@ -26,3 +26,9 @@ Runtime reuse verifies the saved Profile, ADB serial, AVD name and guest kernel 
 | 22 | Runnable live harness; Hardware Validation Pending | This revision | Pending | Pending | All physical Windows matrix cells, permission prompt and UI observations |
 
 The harness tests install, launch, close and relaunch in a disposable Android Profile. Optional app-private digest checks distinguish persistence from package presence. Cold/Quick Boot and GPU/CPU/Hyper-V evidence instructions are in LIVE_ANDROID_VALIDATION.md. Run `npm run test:runtime:live -- --help`; the Linux builder has no AVD or physical Windows host.
+
+| Pass | Status | Commit | Windows CI | Preview | Remaining work |
+| --- | --- | --- | --- | --- | --- |
+| 23 | Device-specific APK set support | This revision | Pending | Pending | Real signed APK/APKS/XAPK, store variants, device ABI combinations |
+
+SmartCheck now requires one base manifest, consistent package/version and unique split IDs, and binds each payload digest to approval. File names are generated locally, extraction checks output size, and install compares native libraries with live guest ABIs. Android enforces signing, downgrade policy and package commit. OBB assets and multi-variant archives need a device-targeted export. Hardware Validation Pending.

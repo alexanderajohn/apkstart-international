@@ -47,13 +47,13 @@ function friendlyInstallError(raw) {
   const table = {
     INSTALL_FAILED_NO_MATCHING_ABIS:
       '安装失败：这个应用只提供 ARM 原生库（多数国产应用如此），'
-      + '当前系统镜像没有 ARM 转译层。ApkStart 会自动切换到内置新版翻译层的兼容镜像并重试。',
+      + '当前系统镜像没有 ARM 转译层。请选择与当前 Android ABI 匹配的安装包。',
     INSTALL_FAILED_OLDER_SDK:
       '安装失败：应用要求的 Android 版本高于当前运行时（需更高系统镜像）。',
     INSTALL_PARSE_FAILED_NO_CERTIFICATES:
       '安装失败：APK 没有有效签名，无法安装。',
     INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES:
-      '安装失败：与已安装版本签名不一致，请先卸载旧版再装。',
+      '安装失败：与已安装版本签名不一致，请使用原开发者签名的更新。',
     INSTALL_FAILED_VERSION_DOWNGRADE:
       '安装失败：设备上已安装更高版本，不能降级覆盖。',
     INSTALL_FAILED_INSUFFICIENT_STORAGE:
@@ -61,12 +61,12 @@ function friendlyInstallError(raw) {
     INSTALL_FAILED_INVALID_APK:
       '安装失败：APK 文件损坏或不完整（可能下载未完成），请重新获取。',
     INSTALL_FAILED_INVALID_URI: '安装失败：APK 路径含特殊字符，请把文件移到纯英文路径后重试。',
-    INSTALL_FAILED_ALREADY_EXISTS: '安装失败：已存在同名应用且签名不同，请先卸载。',
-    INSTALL_FAILED_UPDATE_INCOMPATIBLE: '安装失败：与已安装版本签名不一致，请先卸载旧版。',
+    INSTALL_FAILED_ALREADY_EXISTS: '安装失败：已存在同名应用且签名不同，请检查现有安装。',
+    INSTALL_FAILED_UPDATE_INCOMPATIBLE: '安装失败：与已安装版本签名不一致，请使用原开发者签名的更新。',
     INSTALL_FAILED_DEPRECATED_SDK_VERSION:
       '安装失败：这是面向很老 Android 版本的应用（targetSdk 过低），Android 14 默认禁止安装。'
-      + 'ApkStart 会自动用官方绕过参数重试。',
-    INSTALL_FAILED_TEST_ONLY: '安装失败：这是仅供测试的应用包，已自动加上测试包参数重试。',
+      + '请选择支持 Android 14 的新版应用。',
+    INSTALL_FAILED_TEST_ONLY: '安装失败：这是仅供测试的应用包，请使用正常签名的发行包。',
     INSTALL_FAILED_MISSING_SHARED_LIBRARY: '安装失败：应用依赖的设备特性（如特定厂商库）在当前运行时不存在。',
     INSTALL_FAILED_USER_RESTRICTION: '安装失败：系统限制了安装，请重启运行时后重试。',
     INSTALL_FAILED_CONFLICTING_PROVIDER: '安装失败：与已有应用的 ContentProvider 冲突，请卸载冲突应用。',
@@ -496,7 +496,7 @@ class AdbClient {
     const totalBytes = staged.reduce((n, s) => n + (fs.existsSync(s.path) ? fs.statSync(s.path).size : 0), 0);
     const timeout = installTimeoutMs(totalBytes);
     try {
-      for (const extra of [['-r', '-t', '--bypass-low-target-sdk-block'], ['-r', '-t']]) {
+      for (const extra of [['-R']]) {
         try {
           // eslint-disable-next-line no-await-in-loop
           const { stdout } = await this.exec(['install-multiple', ...extra, ...files], { timeout });

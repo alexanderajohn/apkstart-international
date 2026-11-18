@@ -10,15 +10,7 @@ function autoGrantEnabled(settings) {
 }
 
 function installVariants(file, settings) {
-  const variants = [
-    ['install', '-r', '-t', '--bypass-low-target-sdk-block', file],
-    ['install', '-r', '-t', file],
-    ['install', '-r', file],
-  ];
-  if (autoGrantEnabled(settings)) {
-    variants.unshift(['install', '-r', '-t', '-g', '--bypass-low-target-sdk-block', file]);
-  }
-  return variants;
+  return [['install', '-R', ...(autoGrantEnabled(settings) ? ['-g'] : []), file]];
 }
 
 module.exports = { autoGrantEnabled, installVariants };

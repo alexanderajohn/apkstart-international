@@ -70,9 +70,9 @@ function axmlEndElement(nsIdx, nameIdx) {
 }
 
 /** 生成 AndroidManifest.xml 的二进制 AXML */
-function buildManifestAxml({ minSdk = 21, targetSdk = 34, permissions = [] } = {}) {
+function buildManifestAxml({ minSdk = 21, targetSdk = 34, permissions = [], split = null, versionCode = 7 } = {}) {
   const S = [
-    'manifest', 'package', 'com.example.test', 'android', ANDROID_NS,
+    ...(split ? ['split',split] : []), 'manifest', 'package', 'com.example.test', 'android', ANDROID_NS,
     'versionCode', 'versionName', '1.2.3',
     'uses-sdk', 'minSdkVersion', 'targetSdkVersion',
     'application', 'label', 'TestApp', 'icon', 'res/mipmap-hdpi/ic_launcher.png',
@@ -88,7 +88,8 @@ function buildManifestAxml({ minSdk = 21, targetSdk = 34, permissions = [] } = {
     axmlChunk(0x0100, 16, Buffer.concat([u32(0), u32(0), u32(idx.android), u32(ns)])),
     axmlStartElement(idx.manifest, [
       { ns: 0xffffffff, name: idx.package, data: idx['com.example.test'], type: 0x03 },
-      { ns, name: idx.versionCode, data: 7, type: 0x10 },
+      ...(split ? [{name:idx.split, data:idx[split]}] : []),
+      { ns, name: idx.versionCode, data: versionCode, type: 0x10 },
       { ns, name: idx.versionName, data: idx['1.2.3'], type: 0x03 },
     ]),
     axmlStartElement(idx['uses-sdk'], [

@@ -264,6 +264,10 @@ function parseApkZip(zip, filePath, stat) {
     filePath,
     sizeBytes: stat.size,
     package: packageName,
+    split: attrValue(manifest,'split','') || '',
+    versionCodeMajor: attrValue(manifest,'versionCodeMajor') || 0,
+    requiredSplits: children(manifest,'uses-split').map(n => attrValue(n,'name'))
+      .concat(attrValue(manifest,'configForSplit') || []).filter(Boolean),
     label: String(label).replace(/\s+/g, ' ').trim().slice(0, 60),
     versionName: String(versionName),
     versionCode,

@@ -84,20 +84,23 @@ test('Old target SDK is a warning, not a malware or binary safety verdict', () =
   assert.ok(result.findings.includes('OLD_OR_UNKNOWN_TARGET_SDK'));
 });
 
-test('Unsupported split packages get limited inspection but retain hash', async () => {
-  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'asi-bundle-check-'));
+test('split review requires one base and consistent versions, regardless of entry order', async () => {
+  const { buildStoredZip, buildApkBytes } = require('./lib/make-apk');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(),'asi-bundle-'));
+  const file = path.join(dir,'app.apks');
+  const write = (split,versionCode) => fs.writeFileSync(file, buildStoredZip([
+    {name:'first.apk',data:buildApkBytes({split,versionCode, permissions:['android.permission.CAMERA']})},
+    {name:'second.apk',data:buildApkBytes()}
+  ]));
   try {
-    const file = path.join(folder, 'sample.xapk');
-    const bytes = Buffer.alloc(1025, 0x41);
-    fs.writeFileSync(file, bytes);
+    write('config.en',7);
     const result = await inspectApk(file);
-    assert.equal(result.supported, false);
-    assert.equal(result.compatibility.level, 'caution');
-    assert.equal(result.canProceed, true);
-    assert.equal(result.sha256.length, 64);
-  } finally {
-    fs.rmSync(folder, { recursive: true, force: true });
-  }
+    assert.equal(result.package,'com.example.test');
+    assert.equal(result.splitDigests.length,2);
+    assert.ok(result.sensitivePermissions.includes('android.permission.CAMERA'));
+    write('config.en',8); await assert.rejects(inspectApk(file),/version/);
+    write(null,7); await assert.rejects(inspectApk(file),/one base/);
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
 });
 
 test('Unreadable file names, wrong extensions and tiny files are rejected', async () => {

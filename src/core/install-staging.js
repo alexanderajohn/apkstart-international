@@ -18,7 +18,7 @@ async function withApprovedCopy(preview, activeProfile, consume) {
     const staged = await prepareInstall(target, activeProfile);
     if (staged.sha256 !== preview.sha256 || staged.bytes !== preview.bytes ||
         staged.package !== preview.package || staged.version !== preview.version ||
-        staged.format !== preview.format)
+        JSON.stringify(staged.splitDigests) !== JSON.stringify(preview.splitDigests) || staged.format !== preview.format)
       throw Error('Staged APK differs from the approved file');
     return await consume(staged);
   } finally {

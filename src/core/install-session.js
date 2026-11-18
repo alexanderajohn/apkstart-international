@@ -66,6 +66,15 @@ async function installSession(client, parts, { pkg, replace, grant, checkGuest, 
       await checkGuest();
       await command(['install-abandon', id], 15000);
     } catch { /* The emulator may have disconnected or already closed the session. */ }
+    const tag = /INSTALL_(?:FAILED|PARSE_FAILED)_[A-Z_]+/.exec(String(error.raw || error.message))?.[0];
+    const reason = {
+      INSTALL_FAILED_VERSION_DOWNGRADE: 'Android already has a newer version.',
+      INSTALL_FAILED_UPDATE_INCOMPATIBLE: 'Select an update signed by the original publisher.',
+      INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES: 'APK signing certificates differ.',
+      INSTALL_FAILED_INSUFFICIENT_STORAGE: 'Free space in this Android Profile before retrying.',
+      INSTALL_FAILED_ALREADY_EXISTS: 'This install was approved only for a new package.'
+    }[tag];
+    if (reason) throw Error(reason + ' (' + tag + ')');
     if (commitSent) throw Error('Check the package in this Profile before retrying. Android commit result: ' + error.message);
     throw error;
   }

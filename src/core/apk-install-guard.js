@@ -36,6 +36,7 @@ async function prepareInstall(file,profileId,{inspect=inspectApk}={}){
     sha256:verdict.sha256,format:verdict.format,
     package:verdict.package||null,label:verdict.label||null,
     version:verdict.versionName||null,
+    splitDigests:verdict.splitDigests || null,
     signatureVerified:verdict.signing?.verified===true,
     compatibility:verdict.compatibility?.level||'unknown'
   });

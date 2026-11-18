@@ -122,13 +122,20 @@ async function inspectApk(filePath) {
   const fileName = path.basename(filePath);
   const sha256 = await sha256File(filePath);
   if (!/\.apk$/i.test(filePath)) {
-    return {
-      format: path.extname(filePath).slice(1).toLowerCase(),
-      supported: false, canProceed: true,
-      fileName, sizeBytes: stat.size, sha256,
-      signing: { evidence: 'not-inspected', verified: false },
-      compatibility: { level: 'caution', findings: ['SPLIT_PACKAGE_NOT_ANALYZED'] },
-    };
+    const bundle = await require('./apk-bundle').parseBundle(filePath);
+    try {
+      const reports = [];
+      for (const file of bundle.files) reports.push(await inspectApk(file));
+      const base = reports[bundle.parts.findIndex(part => !part.meta.split)];
+      const union = key => [...new Set(reports.flatMap(r => r[key]))].sort();
+      const minSdk = Math.max(...reports.map(r => r.minSdk));
+      const abis = union('abis'), sensitivePermissions = union('sensitivePermissions'), features = union('features');
+      const compatibility = assessCompatibility({minSdk,targetSdk:base.targetSdk,abis,sensitivePermissions,features});
+      return { ...base, format:path.extname(filePath).slice(1).toLowerCase(), fileName, sizeBytes:stat.size,
+        sha256, minSdk, abis, permissions:union('permissions'), sensitivePermissions, features,
+        signing:{evidence:'not-verified',verified:false}, splitDigests:bundle.parts.map(p => p.sha256),
+        compatibility, canProceed:compatibility.level !== 'blocked' };
+    } finally { bundle.cleanup(); }
   }
 
   const zip = new ZipFile(filePath);

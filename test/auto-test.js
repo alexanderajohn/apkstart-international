@@ -199,7 +199,7 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
 
   await test('Android 14 老 targetSdk 应用失败有明确指引', () => {
     const s = friendlyInstallError('Failure [INSTALL_FAILED_DEPRECATED_SDK_VERSION: app must target at least 23]');
-    assert(s.includes('Android 14') && s.includes('自动'), s);
+    assert(s.includes('Android 14') && s.includes('新版应用') && !s.includes('绕过'), s);
   });
 
   await test('ARM 翻译层崩溃能给出可执行的中文结论', () => {
@@ -2186,7 +2186,7 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     const okPath = path.join(TMP, 'ok.xapk');
     fs.writeFileSync(okPath, buildStoredZip([
       { name: 'base.apk', data: apk },
-      { name: 'split_config.arm64_v8a.apk', data: apk },
+      { name: 'split_config.arm64_v8a.apk', data: buildApkBytes({split:'config.arm64_v8a'}) },
       { name: 'manifest.json', data: Buffer.from('{}') },
     ]));
     const b = await parseBundle(okPath);

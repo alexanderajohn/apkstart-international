@@ -4,7 +4,7 @@
  * 把「解析 APK → 安装进运行时 → 落本地元数据 → 生成桌面快捷方式」串成一条流水线。
  */
 const fs = require('fs');
-const os = require('os');
+const { parseBundle } = require('./apk-bundle');
 const path = require('path');
 const { sha256File } = require('./smartcheck');
 const { verifyOwner } = require('./runtime-owner');
@@ -13,45 +13,9 @@ const store = require('./store');
 const { autoGrantEnabled } = require('./permission-policy');
 const { parseApk } = require('./apk');
 const { assertProfileGuest, assertProfileUnchanged } = require('./profile-runtime-guard');
-const { ZipFile } = require('./zip');
 const { iconToIco, writeShortcut, removeShortcut, safeFileName, shortcutExt } = require('./shortcut');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-/**
- * 拆分安装包（.apks / .xapk）：解出里面的分片 APK 到纯 ASCII 临时目录。
- * 用文件版 ZIP 读取器 + 流式落盘：拆分包动辄 2GB+，整包读内存会失败。
- * 返回 { meta, files, cleanup }；meta 来自带 AndroidManifest 的 base APK。
- */
-async function parseBundle(filePath) {
-  const zip = new ZipFile(filePath);
-  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'asi-splits-'));
-  const cleanup = () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* ignore */ } };
-  try {
-    const apkNames = zip.names().filter((n) => /\.apk$/i.test(n));
-    if (!apkNames.length) throw new Error('这个安装包里没有找到 APK 分片（可能不是 .apks/.xapk）');
-    if (apkNames.length > 128) throw Error('Too many APK splits');
-    const files = [];
-    for (let i = 0; i < apkNames.length; i++) {
-      const target = path.join(dir, `split-${i}.apk`);
-      // 单个分片也可能是几百 MB：流式解压，不经过 Buffer
-      // eslint-disable-next-line no-await-in-loop
-      await zip.pipeTo(apkNames[i], fs.createWriteStream(target, { flags: 'wx', mode: 0o600 }));
-      files.push(target);
-    }
-    let meta = null;
-    for (const f of files) {
-      try { meta = parseApk(f); break; } catch (_) { /* 分片里没有清单 */ }
-    }
-    if (!meta) throw new Error('拆分包的 base APK 解析失败');
-    return { meta, files, cleanup };
-  } catch (e) {
-    cleanup();
-    throw e;
-  } finally {
-    zip.close();
-  }
-}
 
 function accentOf(pkg) {
   let h = 0;
@@ -163,10 +127,15 @@ class Installer {
       : assertProfileGuest({ expectedProfileId, getProfileId: () => store.profiles.currentId(), client, serial, engine: rt.engine });
     await checkGuest();
     const existing = store.getApp(meta.package);
-    const parts = [];
-    for (const file of bundle ? bundle.files : [filePath]) {
-      if (bundle && parseApk(file).package !== meta.package) throw Error('Bundle contains different Android packages');
-      parts.push({ path: file, bytes: fs.statSync(file).size, sha256: bundle ? await sha256File(file) : staged.sha256 });
+    const parts = bundle ? bundle.parts : [{path:filePath, bytes:staged.bytes, sha256:staged.sha256}];
+    if (bundle && JSON.stringify(parts.map(p => p.sha256)) !== JSON.stringify(staged.splitDigests))
+      throw Error('Split payloads differ from the approved package set');
+    const required = bundle ? bundle.parts.map(p => p.meta.abis) : [meta.abis];
+    if (required.some(abis => abis.length)) {
+      const { stdout } = await client.exec(['shell','getprop','ro.product.cpu.abilist']);
+      const available = stdout.trim().split(',');
+      if (required.some(abis => abis.length && !abis.some(abi => available.includes(abi))))
+        throw Error('No matching Android ABI. Choose APKs built for ' + available.join(', '));
     }
     onProgress({ stage: 'install', message: replace ? 'Updating Android app…' : 'Installing Android app…' });
     await installSession(client, parts, { pkg: meta.package, replace: replace && staged.package === meta.package,
@@ -205,7 +174,7 @@ class Installer {
     // 备份 APK，便于日后重装/找回
     let apkCopy = null;
     try {
-      const cache = store.apkPath(meta.package, staged.sha256);
+      const cache = store.apkPath(meta.package, staged.sha256).replace(/\.apk$/, '.' + staged.format);
       try {
         fs.copyFileSync(filePath, cache, fs.constants.COPYFILE_EXCL);
       } catch (error) { if (error.code !== 'EEXIST') throw error; }
