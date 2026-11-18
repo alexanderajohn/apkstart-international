@@ -43,3 +43,10 @@
 - [ ] Test installing the same APK in two profiles on real Windows Android Emulator, including restart/persistence.
 - [ ] Verify shutdown, snapshot restoration, profile switching, and Windows shortcut behavior with real APK data.
 - [ ] Implement profile-qualified shortcuts and robust per-profile backup/restore before enabling deletion or cloning.
+
+- [x] Implement per-profile offline directory backup with allowlisted components, SHA-256 manifest and disk-space preflight.
+- [x] Implement consent-token restore, verified staging, safety copies and rollback regression tests.
+- [x] Add EN/VI/ZH Backup Center UI, typed RESTORE confirmation and Windows host-only smoke test.
+- [ ] Exercise multi-GB Android 14 emulator userdata/snapshots backup + restore on actual Windows hardware (Default and secondary profile).
+- [ ] Validate restores across disks, disk-full and interrupted copy scenarios with real-world AVD files.
+- [ ] Add backup encryption, optional ZIP packaging and reliable cross-machine profile-ID migration before stable release.

@@ -112,3 +112,15 @@ test('IPC is fixed to selected directories and two-phase explicit consent',()=>{
   for(const id of ['backupCenter','btnBackupCreate','btnBackupPick','btnBackupRestore','backupPreview'])
     assert.ok(html.includes('id="'+id+'"'));
 });
+
+test('Windows CI starts verified snapshot UI but never runs restore against live profile',()=>{
+  const root=path.join(__dirname,'..');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  const ci=fs.readFileSync(path.join(root,'.github/workflows/ci.yml'),'utf8');
+  assert.ok(main.includes("process.argv.includes('--backup')"));
+  assert.ok(main.includes('const snapshot=await backupCenter.create(exportRoot)'));
+  assert.ok(main.includes('const inspected=await backupCenter.previewRestore(snapshot.path)'));
+  assert.ok(main.includes('no restore executed'));
+  assert.ok(ci.includes("'--backup'"));
+  assert.ok(ci.includes('asi-backup-smoke.png'));
+});

@@ -55,3 +55,11 @@ Vào **Settings → Performance & Resource Usage → Smart Performance Engine �
 Trên màn hình chính có thanh **Android Profiles** để tạo môi trường như Công việc / Giải trí / Thử nghiệm. Mỗi profile phụ có danh sách APK, cache, AVD, ứng dụng và dữ liệu Android riêng. Profile **Mặc định** giữ nguyên vị trí dữ liệu cũ, không di chuyển hay xóa gì. Thành phần Android Emulator và ảnh hệ thống được dùng chung để tiết kiệm dung lượng.
 
 Chỉ chạy **một profile tại một thời điểm**. Trước khi chuyển, anh cần dừng runtime trong Settings và đóng ứng dụng; nếu còn máy ảo mở, hệ thống từ chối chuyển để tránh gắn nhầm dữ liệu. Chuyển xong ApkStart tự khởi động lại. Shortcut của profile phụ tạm thời không tạo để tránh mở sai Android. Chưa hỗ trợ nhân bản/xóa profile hay chuyển dữ liệu giữa chúng. Xem [tài liệu Android Profiles](docs/ANDROID_PROFILES.md).
+
+## Backup & Restore Center - Sao luu va khoi phuc Android
+
+Mo **Backup & Restore Center** ngay duoi thanh Android Profiles. Phan mem sao luu **profile dang duoc chon** thanh mot **thu muc** (chua phai ZIP), gom danh sach ung dung, APK/icon da luu va AVD Android chua userdata/snapshot. **Dung Android trong Settings truoc khi sao luu/khôi phuc.** Ban sao luu gan voi ID profile; neu chuyen sang may moi, can giu `profiles.json` rieng de khong mat dinh danh profile phu.
+
+Moi file duoc kiem tra SHA-256; truoc khoi phuc se kiem tra dung luong con trong va buoc anh nhap `RESTORE`. Du lieu cu duoc giu lai duoi ten `.before-restore`, khong tu dong xoa. Khoi dong lai ApkStart sau khi khoi phuc.
+
+**Luu y bao mat:** Thu muc sao luu **KHONG MA HOA**, co the chua thong tin dang nhap va du lieu ca nhan. Nen luu tren o dia da ma hoa; tuyet doi khong cong khai. Khong upload len server. Chi ho tro AVD cua Android Emulator, khong sao luu QEMU/ISO va runtime binary. Xem [tai lieu ky thuat](docs/BACKUP_RESTORE.md).

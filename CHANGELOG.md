@@ -1,3 +1,12 @@
+## Unreleased — Backup & Restore Center
+
+- Offline per-profile directory snapshots with SHA-256 manifest and source-path allowlisting.
+- Restore preflight verifies files and destination free space; a one-time preview token and typed consent are required.
+- Stage and verify data before atomic per-component rename; preserve replaced originals as safety copies, with rollback on errors.
+- Block Android runtime launches, app installs and profile switching during backup/restore.
+- Add tri-lingual Backup Center UI, progress and restart action; Windows CI smoke verifies the preview without restoring guest data.
+- Backup format is an unencrypted directory (not ZIP); cross-profile migration and full Android guest runtime hardware validation remain release blockers.
+
 ## Unreleased — Android Profiles (isolated guests)
 
 - Preserve Default's existing AVD and app library without migration or deletion.

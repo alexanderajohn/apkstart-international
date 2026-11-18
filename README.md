@@ -94,3 +94,11 @@ Create **Work / Games / Testing** environments from the new Android Profiles bar
 Secondary-profile desktop shortcuts are deliberately disabled in this preview: unqualified legacy Windows shortcuts continue to refer to Default, never to whatever profile happens to be active. Profile deletion, cloning, and cross-profile app-data migration are **not implemented**. General UI/runtime settings stay shared, while APK data and guest userdata are isolated.
 
 See [Android Profiles technical and safety notes](docs/ANDROID_PROFILES.md).
+
+## Backup & Restore Center (developer preview)
+
+Open **Backup & Restore Center** under Android Profiles. The app creates a **portable backup folder** (not a ZIP) for the *currently active* Android profile, containing its APK catalog, cached APKs and icons, plus Android Emulator's persistent AVD userdata/snapshots, when present. The existing Default paths are preserved. **Stop Android in Settings and close all apps before creating or applying a backup.** A backup can be imported only into the *same profile ID*, so users should retain `profiles.json` separately if moving computers.
+
+Each backup contains a SHA-256 manifest. Restore always starts with a full integrity and free-disk-space check, followed by a one-time token and explicit typed `RESTORE` consent. Restored files are staged and verified **before** target paths are renamed; old data is kept in `.before-restore` safety copies, not silently deleted. Restart ApkStart after restoring, then check the Android app data and manage safety-copy disk usage manually.
+
+**Privacy warning:** Backups are **NOT encrypted** and may contain sensitive app sessions, tokens, messages and passwords. Store on a trusted encrypted drive, never upload or share them casually. No network upload or automatic retention/deletion is performed. This preview excludes shared SDK/system images, general settings and legacy external QEMU/ISO disks. See [Backup & Restore technical notes](docs/BACKUP_RESTORE.md).

@@ -3122,6 +3122,35 @@ if (!gotLock) {
               console.log('[smoke] Android Profiles created with Default untouched; no switch/Android boot');
               await snap(out.replace(/\.png$/i, '-profiles.png'));
             }
+            if (process.argv.includes('--backup')) {
+              // CI fixture: create a small default-profile snapshot in a safe
+              // temp folder, verify its manifest, then render the actual UI.
+              // Never perform restore against the running CI test profile.
+              const smokeData=path.join(store.DATA_DIR,'apps.json');
+              if (!fs.existsSync(smokeData)) fs.writeFileSync(smokeData,'{"apps":[]}\n');
+              const exportRoot=fs.mkdtempSync(path.join(require('os').tmpdir(),'asi-backup-ci-'));
+              const snapshot=await backupCenter.create(exportRoot);
+              const inspected=await backupCenter.previewRestore(snapshot.path);
+              if (!inspected || inspected.profileId !== 'default' || !inspected.token ||
+                  !Array.isArray(inspected.components)) {
+                throw new Error('Backup Center manifest verification failed in Windows smoke test');
+              }
+              const result=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  window.ASI_BACKUP.open();" +
+                "  window.ASI_BACKUP.renderPreview(" + JSON.stringify(inspected) + ");" +
+                "  const preview=document.getElementById('backupPreview');" +
+                "  const title=document.getElementById('backupPreviewTitle').textContent;" +
+                "  const details=document.getElementById('backupPreviewDetails').textContent;" +
+                "  return {shown:!preview.hidden,hasData:details.includes('SHA')||details.includes('Files:')," +
+                "    title,restoreEnabled:!document.getElementById('btnBackupRestore').disabled};" +
+                "})()"
+              );
+              if(!result || !result.shown || !result.restoreEnabled)
+                throw new Error('Backup Center preview UI did not render');
+              console.log('[smoke] Backup snapshot verified and preview shown; no restore executed');
+              await snap(out.replace(/\.png$/i,'-backup.png'));
+            }
             if (process.argv.includes('--perf')) {
               // 拍一张「性能与资源占用」区（设置页里控件最多的一块）
               await mainWindow.webContents.executeJavaScript(
