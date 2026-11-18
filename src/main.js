@@ -9,6 +9,7 @@ const path = require('path');
 
 const store = require('./core/store');
 const { Runtime } = require('./core/engine');
+const { inspectRuntime } = require('./core/runtime-readiness');
 const { PerformanceMonitor } = require('./core/performance-monitor');
 const { BackupCenter } = require('./core/backup-center');
 const { EncryptedBackupCenter, validatePassword } = require('./core/encrypted-backup');
@@ -2168,6 +2169,18 @@ function registerIpc() {
     return { ok: true, overview: await driverOverview() };
   });
 
+  // Pass 18: read-only, profile-scoped live Android evidence.
+  // Does not boot an emulator, run repairs, install APKs or mutate userdata.
+  ipcMain.handle('runtime:readiness',async ()=>{
+    return inspectRuntime({
+      client:runtime.client(),serial:runtime.emuSerial,
+      profileId:store.profiles.currentId(),
+      owned:runtime._profileOwnedRuntime===true,
+      running:runtime.emulator.running(),
+      busy:!!(installBusy||backupBusy||deploying||updateBusy||
+        runtime.vmStarting||runtime.installing||runtime._ensurePromise)
+    });
+  });
   ipcMain.handle('runtime:status', async () => runtime.status());
   ipcMain.handle('runtime:probe', async () => runtime.probe());
   ipcMain.handle('runtime:start', async () => {
