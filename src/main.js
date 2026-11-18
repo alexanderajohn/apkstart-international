@@ -225,6 +225,7 @@ let backupCenter = null;
 let encryptedBackupCenter = null;
 let recoveryVault = null;
 let backupBusy = false;
+let backupActiveCount = 0;
 // 「哪些窗口算我们的」由 whenReady 里赋值（见 agentScope）。放模块级是因为
 // runLaunch / 预热定时器都早于那段代码定义，闭包里的 const 在它们的作用域外看不到。
 let armAgent = async () => ({ ok: false });
@@ -1335,6 +1336,36 @@ function registerIpc() {
   });
   // Recovery Vault accepts only IDs discovered for the active profile.
   // The renderer cannot choose arbitrary files or a different profile target.
+  ipcMain.handle('backup:sealedList', async () => {
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    return recoveryVault.listSealed();
+  });
+  ipcMain.handle('backup:sealedPreview', async (_event,request) => {
+    const password=request?.password,archiveId=request?.archiveId;
+    validatePassword(password);
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    return recoveryVault.previewSealed(archiveId,password);
+  });
+  ipcMain.handle('backup:sealedCreate', async (_event,request) => {
+    const password=request?.password,pointId=request?.pointId;
+    validatePassword(password);
+    if(request?.ack!=='SEAL'||typeof pointId!=='string'
+      ||!/^(restore|recovery):[a-f0-9]{20}$/.test(pointId))
+      throw new Error('Explicit SEAL approval and an existing recovery point are required');
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',buttons:['Cancel','Encrypt recovery point'],
+      defaultId:0,cancelId:0,noLink:true,
+      title:'Confirm encrypted Safety Vault export',
+      message:'Create a new encrypted local copy of this recovery point?',
+      detail:'Original local safety copies are plaintext and WILL NOT be deleted automatically. A lost vault password cannot be recovered. Android must remain stopped.',
+    });
+    if(approval.response!==1)return {canceled:true};
+    return recoveryVault.sealPoint(pointId,password);
+  });
   ipcMain.handle('backup:recoveryList', async () => {
     if(backupBusy)throw new Error('Backup Center is busy');
     await backupIdleCheck();
@@ -2711,12 +2742,18 @@ if (!gotLock) {
           backupPortLastChecked=Date.now();
         }
       },
-      onBusy:busy=>{backupBusy=busy;store.backupLocked=busy;},
+      onBusy:busy=>{
+        // Recovery Vault may call EncryptedBackupCenter for nested operations.
+        // Reference count prevents an inner completion from unlocking the UI.
+        backupActiveCount=Math.max(0,backupActiveCount+(busy?1:-1));
+        backupBusy=backupActiveCount>0;
+        store.backupLocked=backupBusy;
+      },
       onProgress:ev=>send('backup:progress',ev),
     };
     backupCenter = new BackupCenter(backupOptions);
     encryptedBackupCenter = new EncryptedBackupCenter(backupOptions);
-    recoveryVault = new RecoveryVault(backupOptions);
+    recoveryVault = new RecoveryVault({...backupOptions,encryptedBackupCenter});
     // 启动即留一行痕迹：出问题时用户把 app.log 发过来就能看到版本与数据目录
     appLog(`start v${app.getVersion()} data=${store.DATA_DIR} pid=${process.pid}`);
 
