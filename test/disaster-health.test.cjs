@@ -133,8 +133,8 @@ test('other profile never exposes cleanup fragments, and moving profile invalida
   const next=x.registry.create('New Host');
   x.registry.activate(next.id);
   assert.equal((await x.health.report()).quarantine.length,0);
-  await assert.rejects(()=>x.health.previewRescue(qid),/no longer exists/);
   await assert.rejects(()=>x.health.applyRescue(preview.token),/Active profile changed/);
+  await assert.rejects(()=>x.health.previewRescue(qid),/no longer exists/);
   assert.equal(fs.existsSync(x.pending),true);
 }));
 test('running Android blocks read-only verification, inspection and rescue',()=>fixture(async x=>{
