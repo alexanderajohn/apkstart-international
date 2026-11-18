@@ -603,10 +603,10 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     const perf = require('../src/core/performance');
     assert(/performance\.effectivePriority/.test(begin),
       'beginApp must use per-app priority policy');
-    assert.equal(perf.effectivePriority('inherit', 'balanced'), 'normal');
-    assert.equal(perf.effectivePriority('balanced', 'game'), 'normal');
-    assert.equal(perf.effectivePriority('save', 'balanced'), 'below');
-    assert.equal(perf.effectivePriority('smooth', 'balanced'), 'game');
+    assert(perf.effectivePriority('inherit', 'balanced')) === 'normal');
+    assert(perf.effectivePriority('balanced', 'game')) === 'normal');
+    assert(perf.effectivePriority('save', 'balanced')) === 'below');
+    assert(perf.effectivePriority('smooth', 'balanced')) === 'game');
     assert(!/performance.*\? 'normal' : 'below'/.test(begin),
       '不能再把 balanced 落到 below');
     // 每次打开/切回都要重设优先级：endApp 会降到 idle，切换回来不提权就会发木
