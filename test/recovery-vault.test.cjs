@@ -136,7 +136,8 @@ test('Recovery approval must be typed and confirmed natively in Electron',()=>{
   assert.ok(main.includes("request?.ack!=='RECOVER'"));
   assert.ok(main.includes("title:'Confirm Recovery Vault rollback'"));
   assert.ok(main.includes('defaultId:0,cancelId:0'));
-  assert.ok(main.includes('return recoveryVault.apply(token)'));
+  assert.ok(main.includes('recoveryVault.apply(token)'));
+  assert.ok(main.includes("audited('recovery'"), 'Recovery must be audited');
   assert.ok(preload.includes("recoveryApply: (token,ack)"));
   assert.ok(ui.includes("window.prompt(L.recoveryAsk)!=='RECOVER'"));
   assert.ok(ui.includes('api.recoveryPreview('));
