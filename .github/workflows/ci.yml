@@ -130,6 +130,12 @@ jobs:
           $healthShot = $shot -replace '\.png$', '-health.png'
           if (!(Test-Path $healthShot)) { throw 'Disaster health screenshot was not saved' }
           Copy-Item $healthShot (Join-Path $PWD 'asi-health-smoke.png') -Force
+          $readinessShot = $shot -replace '\.png$', '-drill-readiness.png'
+          if (!(Test-Path $readinessShot)) { throw 'Restore readiness preview screenshot was not saved' }
+          Copy-Item $readinessShot (Join-Path $PWD 'asi-drill-readiness-smoke.png') -Force
+          $drillShot = $shot -replace '\.png$', '-drill.png'
+          if (!(Test-Path $drillShot)) { throw 'Isolated restore drill screenshot was not saved' }
+          Copy-Item $drillShot (Join-Path $PWD 'asi-drill-smoke.png') -Force
       - uses: actions/upload-artifact@v4
         with:
           name: ApkStart-International-Windows-dev-preview
@@ -150,5 +156,7 @@ jobs:
             asi-sealed-smoke.png
             asi-retention-smoke.png
             asi-health-smoke.png
+            asi-drill-readiness-smoke.png
+            asi-drill-smoke.png
           retention-days: 3
           if-no-files-found: ignore
