@@ -18,6 +18,7 @@ const { DisasterHealth } = require('./core/disaster-health');
 const { RestoreDrill } = require('./core/restore-drill');
 const { RecoveryAudit, causeCode } = require('./core/recovery-audit');
 const { AuditSigning } = require('./core/audit-signing');
+const { SigningKeyManagement } = require('./core/signing-key-management');
 const performance = require('./core/performance');
 const { validPackageName } = require('./core/pkgname');
 const { Installer } = require('./core/installer');
@@ -1378,6 +1379,52 @@ function registerIpc() {
     });
     if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
     return auditSigning.verifyExternal(chosen.filePaths[0]);
+  });
+  // Pass 15: paths are exclusively chosen by native Windows dialogs.
+  ipcMain.handle('backup:keyExport',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    validatePassword(request?.keyPassword);validatePassword(request?.backupPassword);
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',buttons:['Cancel','Export encrypted key backup'],defaultId:0,cancelId:0,noLink:true,
+      message:'Export the signing private key encrypted with a separate backup password?',
+      detail:'Anyone with this backup and BOTH passwords can sign as this identity. Store the backup and password independently.'
+    });
+    if(approval.response!==1)return {canceled:true};
+    const chosen=await dialog.showSaveDialog(mainWindow,{
+      title:'Save encrypted signing-key backup outside application data',defaultPath:'ApkStart-Signing-Key-Backup.json',
+      filters:[{name:'Encrypted JSON key backup',extensions:['json']}]
+    });
+    if(chosen.canceled||!chosen.filePath)return {canceled:true};
+    return new SigningKeyManagement({signing:auditSigning}).exportEncrypted(chosen.filePath,request.keyPassword,request.backupPassword);
+  });
+  ipcMain.handle('backup:keyImport',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    if(request?.ack!=='IMPORT SIGNING KEY')throw Error('Typed import approval required');
+    validatePassword(request?.keyPassword);validatePassword(request?.backupPassword);
+    const chosen=await dialog.showOpenDialog(mainWindow,{
+      title:'Select encrypted signing-key backup',properties:['openFile'],
+      filters:[{name:'Encrypted JSON key backup',extensions:['json']}]
+    });
+    if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',buttons:['Cancel','Import into empty profile'],defaultId:0,cancelId:0,noLink:true,
+      message:'Import signing identity for the current profile?',
+      detail:'Only an empty signing identity is accepted. An existing identity is never replaced.'
+    });
+    if(approval.response!==1)return {canceled:true};
+    return new SigningKeyManagement({signing:auditSigning}).importEncrypted(chosen.filePaths[0],request.backupPassword,request.keyPassword);
+  });
+  ipcMain.handle('backup:keyRotate',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    if(request?.ack!=='ROTATE SIGNING KEY')throw Error('Typed rotation approval required');
+    validatePassword(request?.oldPassword);validatePassword(request?.newPassword);
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',buttons:['Cancel','Rotate signing identity'],defaultId:0,cancelId:0,noLink:true,
+      message:'Rotate the signing key for this Android profile?',
+      detail:'Export an encrypted copy of the old key first. Existing signatures retain their previous fingerprint. Rotation is not revocation.'
+    });
+    if(approval.response!==1)return {canceled:true};
+    return new SigningKeyManagement({signing:auditSigning}).rotate(request.oldPassword,request.newPassword);
   });
   ipcMain.handle('backup:auditSummary', async () => {
     if(backupBusy)throw Error('Backup Center is busy');
