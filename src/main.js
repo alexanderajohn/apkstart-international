@@ -2620,6 +2620,7 @@ if (!gotLock) {
     setAumid(APP_AUMID);
     runtime = new Runtime(APP_ROOT);
     performanceMonitor = new PerformanceMonitor(runtime);
+    let backupPortLastChecked=0;
     backupCenter = new BackupCenter({
       registry:store.profiles,
       dataDir:store.DATA_DIR,
@@ -2633,8 +2634,13 @@ if (!gotLock) {
         if(bad)throw new Error('Android runtime or install task became active during backup');
         if(await runtime.client().isOnline().catch(()=>false))
           throw new Error('ADB is online during backup');
-        const ports=await runtime.emulatorPorts();
-        if(ports.length)throw new Error('Android emulator port active during backup');
+        // Throttle expensive Windows tasklist/netstat to avoid one subprocess
+        // scan for every small file in a profile containing thousands of APKs.
+        if(Date.now()-backupPortLastChecked>2500){
+          const ports=await runtime.emulatorPorts();
+          if(ports.length)throw new Error('Android emulator port active during backup');
+          backupPortLastChecked=Date.now();
+        }
       },
       onBusy:busy=>{backupBusy=busy;store.backupLocked=busy;},
       onProgress:ev=>send('backup:progress',ev),

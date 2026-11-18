@@ -106,6 +106,7 @@ function checkManifest(m){
   }
   for(const d of required)if(!dirs.has(d))throw Error('Missing parent directory: '+d);
   for(const c of DIRS)if(components.has(c)&&!dirs.has(c))throw Error('Missing component directory');
+  if(components.has('apps.json') && !names.has('apps.json')) throw Error('App catalog component has no file');
   if(bytes!==m.totalBytes)throw Error('Backup byte count mismatch');
   return m;
 }
@@ -239,16 +240,19 @@ class BackupCenter{
     return [...drives.values()];
   }
   async previewRestore(folder){
-    if(this.busy)throw Error('Backup Center is busy');
-    this.pending=null;
-    const layout=this.layout(),s=await this.verify(folder,layout);
-    const space=this.requirements(layout,s.manifest).map(x=>({location:x.path,requiredBytes:x.bytes,availableBytes:checkSpace(x.path,x.bytes)}));
-    const token=uid(24);
-    this.pending={token,id:layout.id,createdAt:Date.now(),directory:s.directory,sha:s.manifestSha};
-    return {token,profileId:layout.id,createdAt:s.manifest.createdAt,
-      bytes:s.manifest.totalBytes,files:s.manifest.files.length,
-      components:s.manifest.components,space,
-      warning:'Existing data will be preserved as .before-restore safety copies. Restart ApkStart after restoration.'};
+    return this.exclusive(async()=>{
+      this.pending=null;
+      const layout=this.layout(),s=await this.verify(folder,layout);
+      const space=this.requirements(layout,s.manifest).map(x=>({
+        location:x.path,requiredBytes:x.bytes,availableBytes:checkSpace(x.path,x.bytes)
+      }));
+      const token=uid(24);
+      this.pending={token,id:layout.id,createdAt:Date.now(),directory:s.directory,sha:s.manifestSha};
+      return {token,profileId:layout.id,createdAt:s.manifest.createdAt,
+        bytes:s.manifest.totalBytes,files:s.manifest.files.length,
+        components:s.manifest.components,space,
+        warning:'Existing data will be preserved as .before-restore safety copies. Restart ApkStart after restoration.'};
+    });
   }
   async restore(token){
     return this.exclusive(async()=>{
