@@ -176,6 +176,22 @@ class SigningKeyManagement{
       }catch(_){
         cleanupWarning=(cleanupWarning||'')+' Rotation history could not be recorded; compare independently preserved fingerprints.';
       }
+      // Hash-linked rotation record. This remains a LOCAL chain until the user
+      // exports a separately pinned signed checkpoint.
+      try{
+        const {readChain,verifyChain,hash}=require('./trust-hardening');
+        const chainFile=path.join(folder,'rotation-history-chain.jsonl');
+        const entries=await readChain(chainFile),state=verifyChain(entries);
+        const item={version:1,sequence:state.events+1,at:new Date().toISOString(),
+          oldFingerprint,newFingerprint,transition:'active-pointer-switched',
+          previous:state.head};
+        const entry={...item,hash:hash('ASI-ROTATION-CHAIN-v1'+String.fromCharCode(10)+JSON.stringify(item))};
+        const handle=await p.open(chainFile,'a',0o600);
+        try{await handle.writeFile(JSON.stringify(entry)+String.fromCharCode(10));await handle.sync();}
+        finally{await handle.close();}
+      }catch(_){
+        cleanupWarning=(cleanupWarning||'')+' Hash-linked rotation journal could not be extended; export a trusted checkpoint and investigate.';
+      }
       return {ok:true,oldFingerprint,newFingerprint,committed:true,
         warning:cleanupWarning||'New key activated atomically. Preserve external fingerprints. Rotation does not revoke prior signatures.'};
     });
