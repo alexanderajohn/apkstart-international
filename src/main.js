@@ -3021,6 +3021,30 @@ if (!gotLock) {
               console.log('[smoke] Performance metrics rendered locally; no Android guest installed');
               await snap(out.replace(/\.png$/i, '-smart-performance.png'));
             }
+            if (process.argv.includes('--profiles')) {
+              const result = await mainWindow.webContents.executeJavaScript(
+                "(async () => {" +
+                "  document.getElementById('btnDoneSettings').click();" +
+                "  const before=await window.apkstart.profilesList();" +
+                "  const profile=await window.apkstart.profilesCreate('CI Smoke Profile');" +
+                "  await window.ASI_PROFILES.reload();" +
+                "  const picker=document.getElementById('profilePicker');" +
+                "  picker.value=profile.id;" +
+                "  picker.dispatchEvent(new Event('change'));" +
+                "  const after=await window.apkstart.profilesList();" +
+                "  return {stable:before.activeId==='default'&&after.activeId==='default'," +
+                "    created:after.profiles.some(x=>x.id===profile.id)," +
+                "    switchEnabled:!document.getElementById('btnSwitchProfile').disabled," +
+                "    visible:!!document.getElementById('androidProfilesBar')};" +
+                "})()"
+              );
+              if (!result || !result.stable || !result.created ||
+                  !result.switchEnabled || !result.visible) {
+                throw new Error('Android Profiles failed isolated creation UI smoke');
+              }
+              console.log('[smoke] Android Profiles created with Default untouched; no switch/Android boot');
+              await snap(out.replace(/\.png$/i, '-profiles.png'));
+            }
             if (process.argv.includes('--perf')) {
               // 拍一张「性能与资源占用」区（设置页里控件最多的一块）
               await mainWindow.webContents.executeJavaScript(

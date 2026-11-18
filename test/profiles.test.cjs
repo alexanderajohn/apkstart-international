@@ -130,3 +130,14 @@ test('Switching profiles only via explicit, idle-state, restart-bound IPC',()=>{
   assert.ok(ui.includes('window.confirm(L.confirm)'));
   assert.ok(ui.includes('window.prompt(L.name)'));
 });
+
+test('Windows UI smoke covers creating a second profile without changing active AVD',()=>{
+  const root=path.join(__dirname,'..');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  const ci=fs.readFileSync(path.join(root,'.github/workflows/ci.yml'),'utf8');
+  assert.ok(main.includes("process.argv.includes('--profiles')"));
+  assert.ok(main.includes("profilesCreate('CI Smoke Profile')"));
+  assert.ok(main.includes("before.activeId==='default'&&after.activeId==='default'"));
+  assert.ok(ci.includes("'--profiles'"));
+  assert.ok(ci.includes('asi-profiles-smoke.png'));
+});

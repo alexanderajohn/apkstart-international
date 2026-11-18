@@ -318,6 +318,8 @@ class Runtime {
 
   async boot({ install = false, onLog = () => {} } = {}) {
     const env = await this.provisioner.checkEnv();
+    if (store.profiles.currentId() !== 'default' && (install || !env.emulator.ok || !env.sysimg.ok))
+      return {ok:false,error:'Secondary profiles require the official Android Emulator with a supported system image; shared QEMU/ISO disks are disabled.'};
     this._hv = env.hypervisor;
 
     // 首选：官方 emulator（自带设备模型与 GPU 转译，体验最好）
@@ -822,6 +824,8 @@ class Runtime {
   // ---------------- 安装系统到虚拟磁盘 ----------------
 
   async startInstaller({ onLog = () => {} } = {}) {
+    if (store.profiles.currentId() !== 'default')
+      throw new Error('Installing to a shared QEMU/ISO disk is disabled for secondary profiles.');
     const env = await this.provisioner.checkEnv();
     if (!env.iso.ok) {
       throw new Error(env.iso.reason || '请先下载/导入 Android 系统镜像（ISO）');

@@ -99,8 +99,8 @@ jobs:
           $shot = Join-Path $env:RUNNER_TEMP 'asi-preview-smoke.png'
           $env:ASI_SMARTCHECK_FIXTURE = Join-Path $env:RUNNER_TEMP 'asi-smartcheck-synthetic.apk'
           node -e "const fs=require('fs'); const { buildApkBytes }=require('./test/lib/make-apk'); fs.writeFileSync(process.env.ASI_SMARTCHECK_FIXTURE,buildApkBytes({permissions:['android.permission.CAMERA','android.permission.INTERNET']}));"
-          $p = Start-Process -FilePath $exe -ArgumentList @('--smoke', $shot, '--smartcheck', '--auto-repair', '--smart-performance') -PassThru
-          if (-not $p.WaitForExit(100000)) {
+          $p = Start-Process -FilePath $exe -ArgumentList @('--smoke', $shot, '--smartcheck', '--auto-repair', '--smart-performance', '--profiles') -PassThru
+          if (-not $p.WaitForExit(110000)) {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
             throw 'UI smoke timed out (Windows CI may not provide a desktop session)'
           }
@@ -112,6 +112,9 @@ jobs:
           $perfShot = $shot -replace '\.png$', '-smart-performance.png'
           if (!(Test-Path $perfShot)) { throw 'Smart Performance screenshot was not saved' }
           Copy-Item $perfShot (Join-Path $PWD 'asi-smart-performance-smoke.png') -Force
+          $profilesShot = $shot -replace '\.png$', '-profiles.png'
+          if (!(Test-Path $profilesShot)) { throw 'Android Profiles screenshot was not saved' }
+          Copy-Item $profilesShot (Join-Path $PWD 'asi-profiles-smoke.png') -Force
       - uses: actions/upload-artifact@v4
         with:
           name: ApkStart-International-Windows-dev-preview
@@ -126,5 +129,6 @@ jobs:
             asi-preview-smoke.png
             asi-auto-repair-smoke.png
             asi-smart-performance-smoke.png
+            asi-profiles-smoke.png
           retention-days: 3
           if-no-files-found: ignore
