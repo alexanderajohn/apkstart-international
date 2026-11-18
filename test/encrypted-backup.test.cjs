@@ -172,4 +172,4 @@ test('A ciphertext mutation after preflight removes partial plaintext staging wi
     'Incomplete decrypted stage files must be removed immediately on failure');
   assert.ok(!entries.some(name=>name.includes('.before-restore')),
     'Uncommitted restoration must not move original user data');
-});
+}));
