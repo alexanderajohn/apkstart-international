@@ -42,6 +42,13 @@ jobs:
       - name: Run internationalization and fork-safety tests
         run: npm run test:international
 
+      - name: Check Pass 18 runtime modules and renderer syntax
+        shell: pwsh
+        run: |
+          node --check src/core/runtime-readiness.js
+          node --check scripts/asi/live-runtime-smoke.cjs
+          node --check src/ui/profiles-ui.js
+
       - name: Check manual live-emulator harness without touching Android
         run: npm run test:runtime:live -- --help
 
