@@ -129,3 +129,13 @@ test('Existing one-click environment fix-all no longer executes multiple risky r
   assert.ok(app.includes('btnEnvReviewAll'));
   assert.ok(app.includes("('btnAutoRepairScan')?.click()"));
 });
+
+test('Windows CI smoke boots real Electron UI and renders non-destructive repair plan', () => {
+  const main=fs.readFileSync(path.join(__dirname,'../src/main.js'),'utf8');
+  const ci=fs.readFileSync(path.join(__dirname,'../.github/workflows/ci.yml'),'utf8');
+  assert.ok(main.includes("process.argv.includes('--auto-repair')"));
+  assert.ok(main.includes("document.getElementById('btnAutoRepairScan').click()"));
+  assert.ok(main.includes('Auto-Repair 2.0 did not render a diagnostic plan'));
+  assert.ok(ci.includes("'--auto-repair'"));
+  assert.ok(ci.includes('asi-auto-repair-smoke.png'));
+});

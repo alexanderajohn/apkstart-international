@@ -99,13 +99,16 @@ jobs:
           $shot = Join-Path $env:RUNNER_TEMP 'asi-preview-smoke.png'
           $env:ASI_SMARTCHECK_FIXTURE = Join-Path $env:RUNNER_TEMP 'asi-smartcheck-synthetic.apk'
           node -e "const fs=require('fs'); const { buildApkBytes }=require('./test/lib/make-apk'); fs.writeFileSync(process.env.ASI_SMARTCHECK_FIXTURE,buildApkBytes({permissions:['android.permission.CAMERA','android.permission.INTERNET']}));"
-          $p = Start-Process -FilePath $exe -ArgumentList @('--smoke', $shot, '--smartcheck') -PassThru
-          if (-not $p.WaitForExit(45000)) {
+          $p = Start-Process -FilePath $exe -ArgumentList @('--smoke', $shot, '--smartcheck', '--auto-repair') -PassThru
+          if (-not $p.WaitForExit(60000)) {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
             throw 'UI smoke timed out (Windows CI may not provide a desktop session)'
           }
           if (!(Test-Path $shot)) { throw 'No UI smoke screenshot was saved' }
           Copy-Item $shot (Join-Path $PWD 'asi-preview-smoke.png') -Force
+          $arShot = $shot -replace '\.png$', '-auto-repair.png'
+          if (!(Test-Path $arShot)) { throw 'Auto-Repair screenshot was not saved' }
+          Copy-Item $arShot (Join-Path $PWD 'asi-auto-repair-smoke.png') -Force
       - uses: actions/upload-artifact@v4
         with:
           name: ApkStart-International-Windows-dev-preview
@@ -116,6 +119,8 @@ jobs:
         if: always()
         with:
           name: ApkStart-International-smoke-screenshot
-          path: asi-preview-smoke.png
+          path: |
+            asi-preview-smoke.png
+            asi-auto-repair-smoke.png
           retention-days: 3
           if-no-files-found: ignore

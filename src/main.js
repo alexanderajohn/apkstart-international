@@ -2875,6 +2875,32 @@ if (!gotLock) {
               console.log('[smoke] saved', file);
             };
             await snap(out);
+            if (process.argv.includes('--auto-repair')) {
+              const state = await mainWindow.webContents.executeJavaScript(
+                "(async () => {" +
+                "  document.getElementById('smartCheckCancel').click();" +
+                "  document.getElementById('btnSettings').click();" +
+                "  for (let i=0; i<50; i++) {" +
+                "    if (document.getElementById('settingsMask').classList.contains('on')) break;" +
+                "    await new Promise(r=>setTimeout(r,100));" +
+                "  }" +
+                "  document.getElementById('btnAutoRepairScan').click();" +
+                "  let scanned=false;" +
+                "  for (let i=0; i<120; i++) {" +
+                "    await new Promise(r=>setTimeout(r,100));" +
+                "    const box=document.getElementById('autoRepairResults');" +
+                "    if (box.querySelector('.asi-ar-item,.asi-ar-ok')) { scanned=true; break; }" +
+                "  }" +
+                "  document.getElementById('autoRepairSection').scrollIntoView({block:'center'});" +
+                "  return {scanned,open:document.getElementById('settingsMask').classList.contains('on')};" +
+                "})()"
+              );
+              if (!state || !state.open || !state.scanned) {
+                throw new Error('Auto-Repair 2.0 did not render a diagnostic plan');
+              }
+              console.log('[smoke] Auto-Repair 2.0 diagnosis rendered; no repair executed');
+              await snap(out.replace(/\.png$/i, '-auto-repair.png'));
+            }
             if (process.argv.includes('--perf')) {
               // 拍一张「性能与资源占用」区（设置页里控件最多的一块）
               await mainWindow.webContents.executeJavaScript(
