@@ -1248,6 +1248,54 @@ function startNotifier() {
 // ---------------- IPC ----------------
 
 function registerIpc() {
+  // Android Profiles: one live guest at a time. Never switch with Android,
+  // installer, auto-download, app windows or another emulator still active.
+  async function profileBusyReason() {
+    if (installBusy || deploying || updateBusy || runtime.vmStarting
+       || runtime.installing || runtime._ensurePromise || runtime.activeApps.length
+       || currentAppPkg || (appWin && appWin.isOpen)) {
+      return 'Finish active installs, app windows and runtime tasks before switching Android profiles.';
+    }
+    if (runtime.vmRunning) {
+      return 'Android is running. Use Settings > Stop Runtime before switching profiles.';
+    }
+    if (await runtime.client().isOnline().catch(() => false)) {
+      return 'An Android device is still online. Stop it before switching profiles.';
+    }
+    const ports=await runtime.emulatorPorts();
+    if (ports.length) {
+      return 'An Android emulator is still listening on a local port. Close it before switching profiles.';
+    }
+    return '';
+  }
+  ipcMain.handle('profiles:list', () => store.profiles.list());
+  ipcMain.handle('profiles:create', async (_event, name) => {
+    const busy=await profileBusyReason();
+    if(busy) throw new Error(busy);
+    return store.profiles.create(name);
+  });
+  ipcMain.handle('profiles:switch', async (_event, id) => {
+    const registry=store.profiles.list();
+    if (!registry.profiles.some(p => p.id===id)) throw new Error('Unknown Android profile');
+    if (id===registry.activeId) return {ok:true,changed:false,activeId:id};
+    const busy=await profileBusyReason();
+    if (busy) throw new Error(busy);
+    const result=store.profiles.activate(id);
+    // Restart rather than mutating paths while IPC/renderer or background
+    // tasks could still hold file descriptors to the old profile.
+    setTimeout(() => {
+      try {
+        quitting=true;
+        app.relaunch();
+        app.quit();
+      } catch(e) {
+        try{store.profiles.activate(result.previousId);}catch(_){}
+        appLog('Profile relaunch failed: '+e.message);
+      }
+    }, 350).unref?.();
+    return {ok:true,changed:true,restarting:true,activeId:id};
+  });
+
   ipcMain.handle('app:info', () => ({    version: app.getVersion(),
     isDev: IS_DEV,
     dataDir: store.DATA_DIR,

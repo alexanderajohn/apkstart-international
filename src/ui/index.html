@@ -43,6 +43,16 @@
 </header>
 
 <main class="shell">
+  <section id="androidProfilesBar" class="asi-profiles" aria-labelledby="profilesLabel">
+    <div class="asi-profiles-info">
+      <label id="profilesLabel" for="profilePicker">Android Profiles</label>
+      <span id="profilesActiveLabel">Default profile · current Android environment</span>
+    </div>
+    <select id="profilePicker" aria-label="Select Android profile"></select>
+    <button type="button" id="btnSwitchProfile" class="btn ghost sm" disabled>Switch profile</button>
+    <button type="button" id="btnCreateProfile" class="btn ghost sm">+ New profile</button>
+    <p id="profilesNotice" role="status" aria-live="polite">Profiles keep APKs and Android app data separate. Switching requires Android to be stopped and restarts ApkStart.</p>
+  </section>
   <section class="toolbar">
     <div class="search">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -875,5 +885,6 @@
 <script src="smartcheck.js"></script>
 <script src="auto-repair.js"></script>
 <script src="performance.js"></script>
+<script src="profiles-ui.js"></script>
 </body>
 </html>

@@ -5,6 +5,9 @@ const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload);
 
 contextBridge.exposeInMainWorld('apkstart', {
   info: () => invoke('app:info'),
+  profilesList: () => invoke('profiles:list'),
+  profilesCreate: (name) => invoke('profiles:create', name),
+  profilesSwitch: (id) => invoke('profiles:switch', id),
   listApps: () => invoke('apps:list'),
   pickApk: () => invoke('apk:pick'),
   parseApk: (p) => invoke('apk:parse', p),

@@ -915,3 +915,15 @@ kbd {
 .asi-perf-form select{width:100%;min-width:0;font-size:12px}
 .asi-perf-advice{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-size:12px;line-height:1.5;margin:12px 0;overflow-wrap:anywhere}
 @media(max-width:570px){.asi-perf-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.asi-perf-form{grid-template-columns:1fr}.asi-perf-head{flex-direction:column}}
+
+
+/* Android Profiles: explicit environment selection with no silent data reset */
+.asi-profiles{display:flex;align-items:center;gap:9px 12px;flex-wrap:wrap;background:var(--panel-2);padding:11px 15px;border:1px solid var(--line);border-radius:13px;margin:11px 0 9px}
+.asi-profiles-info{display:flex;flex-direction:column;min-width:155px;gap:2px;margin-right:auto}
+.asi-profiles-info label{font-size:12px;font-weight:750;color:var(--text)}
+.asi-profiles-info span{font-size:10px;color:var(--muted)}
+.asi-profiles select{min-width:155px;max-width:240px;font-size:12px}
+.asi-profiles button:disabled{opacity:.5;cursor:not-allowed}
+.asi-profiles p{flex-basis:100%;margin:0;font-size:10.5px;line-height:1.5;color:var(--muted)}
+.asi-profiles p.error{color:#c0392b}
+@media(max-width:560px){.asi-profiles-info{min-width:100%;}.asi-profiles select{flex:1;min-width:100px}}
