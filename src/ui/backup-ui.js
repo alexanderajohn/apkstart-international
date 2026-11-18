@@ -175,8 +175,13 @@ async function restore(){
   let secret=$('backupPassword').value;
   if(encrypted&&!validPassword(secret)){show(L.passTooShort,true);return;}
   // A typed approval deliberately separates preview from destructive commit.
-  if(window.prompt(preview.migration?'Type MIGRATE to import this encrypted backup into the selected profile. Existing data is preserved.':L.ask)!==(preview.migration?'MIGRATE':'RESTORE'))return;
-  if(!window.confirm(preview.migration?'Import this authenticated profile backup? Android must be stopped; destination data will be kept in .before-restore safety copies.':L.confirm))return;
+  if(preview.migration){
+    if(window.prompt('Type MIGRATE to import this encrypted backup into the selected profile. Existing data is preserved.')!=='MIGRATE')return;
+    if(!window.confirm('Import this authenticated profile backup? Android must be stopped; destination data will be kept in .before-restore safety copies.'))return;
+  }else{
+    if(window.prompt(L.ask)!=='RESTORE')return;
+    if(!window.confirm(L.confirm))return;
+  }
   const token=preview.token;
   preview=null;$('backupPreview').hidden=true;
   lock(true);show(L.working);
