@@ -584,6 +584,34 @@ async function verifySigned(){
   }catch(e){show(locale().error+String(e?.message||e),true);}
   finally{lock(false);}
 }
+async function manageSigningKey(action){
+  if(busy)return;
+  const L=locale();
+  // Existing password and confirmation fields are used as two distinct secrets.
+  // Export/import: signing-key password then backup encryption password.
+  // Rotation: old signing password then NEW signing password.
+  let first=$('backupPassword').value,second=$('backupPasswordConfirm').value;
+  if(!validPassword(first)||!validPassword(second)){
+    show('Both password fields require a strong secret (12+ UTF-8 bytes).',true);return;
+  }
+  const ack=action==='import'?'IMPORT SIGNING KEY':action==='rotate'?'ROTATE SIGNING KEY':null;
+  if(ack&&window.prompt('Type '+ack+' to approve this change')!==ack)return;
+  lock(true);show(L.working);
+  try{
+    let task;
+    if(action==='export')task=api.signingKeyExport(first,second);
+    else if(action==='import')task=api.signingKeyImport(first,second,ack);
+    else task=api.signingKeyRotate(first,second,ack);
+    clearPasswords();first='';second='';
+    const result=await task;
+    if(result?.canceled){show(L.canceled);return;}
+    $('backupSigningResult').textContent='Signing key '+action+' completed.\n'+
+      (result.fingerprint||result.newFingerprint||'')+'\n'+(result.warning||'');
+    show('Signing key '+action+' completed.');
+    renderSigningStatus(await api.signingStatus());
+  }catch(e){show(L.error+String(e?.message||e),true);}
+  finally{first='';second='';clearPasswords();lock(false);}
+}
 function renderAudit(result){
   const L=locale();
   if(!result||result.integrity!=='verified'){
@@ -1054,6 +1082,9 @@ function init(){
   $('btnBackupSigningCheckpoint').addEventListener('click',()=>exportSigned('checkpoint'));
   $('btnBackupSigningReport').addEventListener('click',()=>exportSigned('report'));
   $('btnBackupSigningVerify').addEventListener('click',verifySigned);
+  $('btnBackupSigningKeyExport').addEventListener('click',()=>manageSigningKey('export'));
+  $('btnBackupSigningKeyImport').addEventListener('click',()=>manageSigningKey('import'));
+  $('btnBackupSigningKeyRotate').addEventListener('click',()=>manageSigningKey('rotate'));
   $('btnBackupDrillCancel').addEventListener('click',()=>{
     resetDrill();show(locale().canceled);
   });
