@@ -206,6 +206,15 @@
             <button class="btn ghost sm" id="btnBackupTrustHistory" type="button">Rotation history</button>
             <button class="btn ghost sm" id="btnBackupTrustInventory" type="button">Review orphan keys (read-only)</button>
           </div>
+          <div class="asi-backup-actions">
+            <button class="btn ghost sm" id="btnBackupTrustSignedExport" type="button">Export signed trust bundle</button>
+            <button class="btn ghost sm" id="btnBackupTrustSignedVerify" type="button">Verify signed trust bundle</button>
+            <button class="btn ghost sm" id="btnBackupTrustRotationCheckpoint" type="button">Export signed rotation checkpoint</button>
+            <button class="btn ghost sm" id="btnBackupTrustRotationVerify" type="button">Verify rotation checkpoint</button>
+          </div>
+          <div class="asi-backup-actions">
+            <button class="btn ghost sm" id="btnBackupKeyQuarantine" type="button">Quarantine inactive key (review + confirm)</button>
+          </div>
           <div id="backupSigningResult" class="asi-backup-progress" role="status" aria-live="polite">Do not disclose your signing passphrase. Check the fingerprint against a separately trusted copy.</div>
         </div>
       </div>
