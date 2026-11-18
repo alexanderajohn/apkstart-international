@@ -27,3 +27,8 @@
 - [ ] Verify SmartCheck against real APKs and complete split bundle inspection.
 - [ ] Extend SmartCheck confirmation to Windows file association / direct command line installs.
 - [ ] Perform actual cryptographic APK signature verification before claiming signatures are valid.
+
+- [x] Add Auto-Repair 2.0 read-only classification with explicit non-destructive repair actions.
+- [x] Replace legacy unattended multi-fix UI with per-issue safety review.
+- [ ] Verify GPU/ADB/Snapshot/Hypervisor recovery on real Windows 10/11 machines with genuine boot failures.
+- [ ] Observe and verify that software GPU/Quick Boot preferences persist across a full Android boot.

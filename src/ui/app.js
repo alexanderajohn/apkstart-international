@@ -2118,7 +2118,7 @@ function renderEnvCheck(r) {
       ${warns ? `<span class="ec-count warn">${warns} 个提示</span>` : ''}
       <span class="ec-spacer"></span>
       <button class="btn ghost sm" id="btnEnvRecheck">重新检查</button>
-      <button class="btn primary sm" id="btnEnvFixAll">一键修复全部</button>
+      <button class="btn ghost sm" id="btnEnvReviewAll">逐项检查（安全优先）</button>
     </div>
     <div class="env-check-list">
       ${issues.map((i) => `
@@ -2133,8 +2133,14 @@ function renderEnvCheck(r) {
     </div>`;
   const re = $('btnEnvRecheck');
   if (re) re.addEventListener('click', selfCheck);
-  const fixAll = $('btnEnvFixAll');
-  if (fixAll) fixAll.addEventListener('click', () => fixAllIssues(issues));
+  // Old bulk repair silently chained elevation, downloads and file cleanup.
+  // It is replaced by a non-destructive review with explicit per-action consent.
+  const review = $('btnEnvReviewAll');
+  if (review) review.addEventListener('click', () => {
+    const section = $('autoRepairSection');
+    if (section) section.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    $('btnAutoRepairScan')?.click();
+  });
   box.querySelectorAll('.ec-fix').forEach((b) => {
     b.addEventListener('click', () => {
       const issue = issues.find((x) => x.code === b.dataset.code);
@@ -2212,16 +2218,6 @@ async function fixIssue(issue) {
   // 修复后重新自检，刷新横幅与状态
   setTimeout(selfCheck, 600);
   setTimeout(refreshStatus, 600);
-}
-
-async function fixAllIssues(issues) {
-  const fixable = issues.filter((i) => i.fix);
-  for (const i of fixable) {
-    // eslint-disable-next-line no-await-in-loop
-    await fixIssue(i);
-    // eslint-disable-next-line no-await-in-loop
-    await new Promise((res) => setTimeout(res, 500));
-  }
 }
 
 init().catch((e) => {

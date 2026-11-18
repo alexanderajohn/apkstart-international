@@ -70,3 +70,9 @@ SmartCheck performs a local read-only inspection when the user selects or drags 
 For Android 14 (API 34), APKs requiring a minimum API higher than 34 cannot proceed through the SmartCheck dialog. Older target SDKs and ARM-only binaries produce compatibility warnings, not safety verdicts. Split .apks/.xapk bundles get a limited filename/size/hash preview with a conspicuous warning.
 
 Static inspection cannot establish that an APK is safe or will work. Direct command-line and Windows file-association installs are not yet covered by the renderer's confirmation UI. See [SmartCheck details](docs/SMARTCHECK.md).
+
+## Auto-Repair 2.0 — safe troubleshooting preview
+
+Open **Settings → Runtime & Environment → Auto-Repair 2.0**, then choose **Analyze problems**. The scan checks known failures (GPU, Hypervisor, ADB, Quick Boot snapshots, storage, missing runtime components), shows guidance in EN/VI/ZH, and never modifies the system during diagnosis. GPU software fallback or disabling Quick Boot **for the next launch** require explicit confirmation. Reconnecting ADB is limited to ApkStart's isolated port 5044, only on a running emulator. Other actions are manual recommendations, not automatic repairs. No Android app data or snapshots are deleted by this feature.
+
+See [Auto-Repair safety and limits](docs/AUTO_REPAIR.md). **The existing one-click bulk repair in the environment panel was replaced by a per-issue review.**

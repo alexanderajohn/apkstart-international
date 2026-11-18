@@ -121,3 +121,11 @@ test('Settings panel exposes diagnostics before repair and warns of consent', ()
   assert.ok(!ui.includes('innerHTML'),'No HTML interpolation of untrusted logs');
   assert.ok(ui.includes("'zh-CN':")&&ui.includes('vi:')&&ui.includes('en:'),'Three supported UI languages');
 });
+
+test('Existing one-click environment fix-all no longer executes multiple risky repairs', () => {
+  const app=fs.readFileSync(path.join(__dirname,'../src/ui/app.js'),'utf8');
+  assert.ok(!app.includes('btnEnvFixAll'));
+  assert.ok(!app.includes('fixAllIssues('));
+  assert.ok(app.includes('btnEnvReviewAll'));
+  assert.ok(app.includes("('btnAutoRepairScan')?.click()"));
+});

@@ -41,3 +41,7 @@ Dự án gốc: https://github.com/RoutineMiku/apkstart — tác giả RoutineMi
 Chọn hoặc kéo tệp APK vào giao diện để kiểm tra ngay trên máy: Android tối thiểu, target SDK, CPU ABI, quyền ứng dụng, dấu hiệu chữ ký (chưa xác minh mật mã) và SHA-256. Không tải APK lên máy chủ. Chỉ bắt đầu cài khi người dùng nhấn xác nhận.
 
 Gói .apks/.xapk hiện chỉ kiểm tra giới hạn, kèm cảnh báo. SmartCheck không phải công cụ diệt virus và không bảo đảm APK chạy được. Cài trực tiếp qua liên kết tệp Windows hoặc dòng lệnh chưa đi qua hộp thoại này.
+
+## Auto-Repair 2.0 — chẩn đoán và sửa lỗi an toàn
+
+Vào **Cài đặt → Môi trường Android → Auto-Repair 2.0 → Kiểm tra lỗi**. Công cụ nhận diện lỗi GPU, ảo hóa, ADB, Quick Boot, ổ đĩa và thành phần còn thiếu; hiển thị gợi ý tiếng Việt/Anh/Trung. Quét chẩn đoán chỉ đọc; muốn sửa thì người dùng phải xác nhận. Chỉ thay đổi chế độ GPU software, Quick Boot cho lần chạy sau hoặc kết nối lại ADB trên cổng riêng 5044 khi máy ảo đang chạy. Không tự xóa dữ liệu ứng dụng, snapshot, cài driver hay đổi cấu hình Windows.

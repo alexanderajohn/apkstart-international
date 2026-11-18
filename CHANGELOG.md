@@ -1,3 +1,10 @@
+## Unreleased — Android Auto-Repair 2.0
+
+- Add read-only troubleshooting for GPU, Hypervisor, ADB, Quick Boot snapshots, missing runtime components and common boot errors.
+- Add user-approved, allowlisted safe recovery: software GPU and Quick Boot preferences for next launch; ADB reconnect on isolated port 5044 only.
+- Add EN/VI/ZH guidance and prevent the old bulk Fix All button from chaining administrator prompts/downloads/cleanup operations.
+- Add regression tests for approvals, server allowlisting, ADB isolation and no automatic Android app-data deletion.
+
 ## Unreleased — SmartCheck pre-install APK analysis
 
 - Read Android API requirements, native ABIs, requested permissions, signer-file presence and streaming SHA-256 locally before installation.
