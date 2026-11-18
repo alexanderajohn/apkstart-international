@@ -83,7 +83,7 @@ function init(){
   notice(strings().hint);
   reload().catch(e=>notice(strings().failed+String(e?.message||e),true));
 }
-window.ASI_PROFILES={reload};
+window.ASI_PROFILES={reload,isSecondary:()=>!!index&&index.activeId!=='default'};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});
 else init();
 })();

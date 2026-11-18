@@ -141,3 +141,13 @@ test('Windows UI smoke covers creating a second profile without changing active 
   assert.ok(ci.includes("'--profiles'"));
   assert.ok(ci.includes('asi-profiles-smoke.png'));
 });
+
+test('Secondary profiles cannot be advertised as supporting unsafe unqualified shortcuts',()=>{
+  const root=path.join(__dirname,'..');
+  const app=fs.readFileSync(path.join(root,'src/ui/app.js'),'utf8');
+  const html=fs.readFileSync(path.join(root,'src/ui/index.html'),'utf8');
+  const ui=fs.readFileSync(path.join(root,'src/ui/profiles-ui.js'),'utf8');
+  assert.ok(app.includes("it.key !== 'shortcut' || !window.ASI_PROFILES?.isSecondary?.()"));
+  assert.ok(html.includes('桌面快捷方式目前仅适用于默认环境'));
+  assert.ok(ui.includes("index.activeId!=='default'"));
+});
