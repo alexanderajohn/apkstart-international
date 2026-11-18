@@ -64,7 +64,7 @@ function encode(payload,password){
     iv:iv.toString('hex'),tag:cipher.getAuthTag().toString('hex'),ciphertext:ciphertext.toString('base64')};
 }
 class SigningKeyManagement{
-  constructor({signing}){if(!signing?.audit)throw Error('Signing manager requires audit signing');this.signing=signing;this.audit=signing.audit;}
+  constructor({signing,hooks={}}){if(!signing?.audit)throw Error('Signing manager requires audit signing');this.signing=signing;this.audit=signing.audit;this.hooks=hooks;}
   async exportEncrypted(destination,keyPassword,backupPassword){
     return this.audit._enqueue(async()=>{
       const dest=await externalPath(destination,this.audit.dataDir);
@@ -143,6 +143,7 @@ class SigningKeyManagement{
         keyPair(await safeFile(path.join(slot,'private.pem')),
           await safeFile(path.join(slot,'public.pem')),newPassword);
         await writeSynced(temp,JSON.stringify({version:1,fingerprint:newFingerprint})+'\n');
+        if(this.hooks.beforeCommit)await this.hooks.beforeCommit(); // synthetic crash-injection test only
         // This is the ONLY active-identity commit point. If this rename fails,
         // old legacy files or the previous active pointer remain authoritative.
         await p.rename(temp,pointer);
