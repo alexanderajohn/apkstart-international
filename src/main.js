@@ -1348,7 +1348,7 @@ function registerIpc() {
       type:'warning',
       buttons:['Cancel',migrating?'Import verified migration':'Restore verified profile'],
       defaultId:0,cancelId:0,noLink:true,
-      title:migrating?'Confirm portable profile migration':'Confirm Android profile restore',
+      title:'Confirm Android profile restore',
       message:migrating?'Import this encrypted profile into the active Android profile?':'Replace the selected Android profile with the verified backup?',
       detail:'Android must be stopped. Current APK data and Android userdata are renamed to .before-restore safety copies, not deleted. A restart is required.',
     });
