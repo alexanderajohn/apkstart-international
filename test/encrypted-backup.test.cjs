@@ -147,3 +147,29 @@ test('Partial decrypted staging paths are tracked before any file decryption',()
   assert.ok(restore.includes('if(item.oldMoved&&fs.existsSync(item.safety))'),
     'Existing original data restored after a failed commit');
 });
+
+test('A ciphertext mutation after preflight removes partial plaintext staging without touching live data',()=>fixture(async x=>{
+  await source(x);
+  const backup=await x.svc.create(x.out,PASSWORD);
+  await write(path.join(x.data,'apps.json'),'ACTIVE_CATALOG_MUST_SURVIVE');
+  const preview=await x.svc.previewRestore(backup.path,PASSWORD);
+  const manifest=(await x.svc._verify(backup.path,PASSWORD,x.svc.layout())).manifest;
+  const catalog=manifest.files.find(f=>f.path==='apps.json');
+  const blob=path.join(backup.path,'payload',catalog.blob+'.bin');
+  let calls=0;
+  x.svc.assertIdle=async()=>{
+    calls++;
+    if(calls===2){
+      const altered=await p.readFile(blob);
+      altered[0]^=0x20;
+      await p.writeFile(blob,altered);
+    }
+  };
+  await assert.rejects(()=>x.svc.restore(preview.token,PASSWORD),/authentication|mismatch/);
+  assert.equal(await p.readFile(path.join(x.data,'apps.json'),'utf8'),'ACTIVE_CATALOG_MUST_SURVIVE');
+  const entries=await p.readdir(x.data);
+  assert.ok(!entries.some(name=>name.includes('.stage')),
+    'Incomplete decrypted stage files must be removed immediately on failure');
+  assert.ok(!entries.some(name=>name.includes('.before-restore')),
+    'Uncommitted restoration must not move original user data');
+});
