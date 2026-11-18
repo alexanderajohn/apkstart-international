@@ -279,9 +279,11 @@ const WORDS={
 };
 const fmt=(n)=>n>=1024**3?(n/1024**3).toFixed(2)+' GB':n>=1024**2?(n/1024**2).toFixed(1)+' MB':n>=1024?(n/1024).toFixed(1)+' KB':String(n)+' B';
 const locale=()=>{const lang=window.ASI_I18N?.getLanguage?.()||navigator.language||'en';return /^vi/i.test(lang)?WORDS.vi:/^zh/i.test(lang)?WORDS['zh-CN']:WORDS.en;};
-let preview=null,cleanupPreview=null,healthRescuePreview=null,drillPreview=null,busy=false;
-function show(msg,error=false){$('backupProgress').textContent=msg;$('backupProgress').style.color=error?'#c0392b':'';}
+let preview=null,cleanupPreview=null,healthRescuePreview=null,drillPreview=null,busy=false,auditWarningMessage='';
+function show(msg,error=false){$('backupProgress').textContent=String(msg)+(auditWarningMessage?'\nAudit warning: '+auditWarningMessage:'');$('backupProgress').style.color=error||auditWarningMessage?'#c0392b':'';}
+function noticeAudit(result){if(result?.auditWarning)auditWarningMessage=result.auditWarning;}
 function lock(on){
+  if(on)auditWarningMessage='';
   busy=on;
   $('btnBackupCreate').disabled=on;
   $('btnBackupPick').disabled=on;
@@ -391,6 +393,7 @@ function render(){
   }).catch(()=>{});
 }
 function setPreview(result){
+  noticeAudit(result);
   if(!result||!result.token)return;
   preview=result;
   const L=locale();
@@ -466,8 +469,8 @@ function renderAudit(result){
   if(!result||result.integrity!=='verified'){
     $('backupAuditSummary').textContent=L.auditFailed;
     $('backupAuditEvents').textContent='';
-    $('btnBackupAuditExport').disabled=true;
     lock(false);
+    $('btnBackupAuditExport').disabled=true;
     return;
   }
   const t=result.totals||{};
@@ -514,6 +517,7 @@ function resetDrill(){
 }
 function renderDrillPreview(result){
   if(!result?.token)return;
+  noticeAudit(result);
   drillPreview=result;
   $('backupDrillPreviewPanel').hidden=false;
   const L=locale();
@@ -561,6 +565,8 @@ async function previewDrill(kind){
       :api.drillExternalPreview(secret);
     clearPasswords();secret='';
     const result=await request;
+    noticeAudit(result);
+    noticeAudit(result);
     if(result?.canceled){show(L.canceled);return;}
     renderDrillPreview(result);show(L.drillVerified);
   }catch(e){show(L.error+String(e?.message||e),true);}
@@ -580,6 +586,7 @@ async function runDrill(){
     const request=api.drillRun(token,secret,'DRILL');
     clearPasswords();secret='';
     const result=await request;
+    noticeAudit(result);
     if(result?.canceled){show(L.canceled);return;}
     if(result?.ok){renderDrillResult(result);show(L.drillDone);}
   }catch(e){show(L.error+String(e?.message||e),true);}
@@ -659,6 +666,7 @@ async function verifyHealthArchive(){
     const request=api.healthVerify(id,password);
     clearPasswords();password='';
     const result=await request;
+    noticeAudit(result);
     $('backupHealthSummary').textContent+=
       '\n'+L.healthArchiveOk+result.files+' · '+fmt(result.bytes)+' · '+id;
     show(L.healthArchiveOk+result.files);
@@ -765,6 +773,7 @@ async function applyCleanup(){
     const request=api.cleanupApply(token,secret,'DELETE PLAINTEXT');
     clearPasswords();secret='';
     const result=await request;
+    noticeAudit(result);
     if(result?.canceled){show(L.cleanupCanceled);return;}
     if(result?.ok){
       $('backupRecoveryChoices').hidden=true;
@@ -819,6 +828,7 @@ async function sealPoint(){
     const request=api.sealedCreate(pointId,secret,'SEAL');
     clearPasswords();secret='';
     const result=await request;
+    noticeAudit(result);
     if(result?.canceled){show(L.canceled);return;}
     show(L.sealedDone+result.path+'\n'+L.plaintextRemains);
   }catch(e){show(L.error+String(e?.message||e),true);}
@@ -879,6 +889,7 @@ async function restore(){
     const request=previewRecovery?api.recoveryApply(token,'RECOVER'):api.backupRestore(token,secret);
     clearPasswords();secret='';
     const result=await request;
+    noticeAudit(result);
     if(result?.canceled){show(L.canceled);return;}
     if(result?.ok){
       show((result.recovery?L.recovered:L.restored)+'\n'+L.preserved+(result.preserved||[]).join('\n'));
