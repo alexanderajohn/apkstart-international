@@ -29,6 +29,7 @@ const { Installer } = require('./core/installer');
 const { Sharer } = require('./core/sharer');
 const { parseApk } = require('./core/apk');
 const { inspectApk } = require('./core/smartcheck');
+const { prepareInstall, verifyInstallSource, approvalText } = require('./core/apk-install-guard');
 const { drawAppIcon } = require('./core/png');
 
 // 品牌 Logo（build/render-logo.js 生成）；缺失时回退到程序化绘制的旧版图标
@@ -927,9 +928,27 @@ async function runInstall(filePath) {
     return { ok: false, error: '已有安装任务在进行' };
   }
   installBusy = filePath;
-  send('install:start', { file: filePath });
   try {
-    const result = await installer.install(filePath, (p) => send('install:progress', p));
+    const profileId=store.profiles.currentId();
+    // All entry points (renderer, drag-drop, Explorer and CLI) pass through a
+    // MAIN-process native confirmation with Cancel as the default action.
+    const preview=await prepareInstall(filePath,profileId);
+    const profile=store.profiles.list().profiles.find(p=>p.id===profileId);
+    const existing=!!(preview.package&&store.getApp(preview.package));
+    const approval=await dialog.showMessageBox(mainWindow||undefined,{
+      type:'warning',buttons:['Cancel','Install to '+(profile?.name||profileId)],
+      defaultId:0,cancelId:0,noLink:true,
+      title:'Confirm Android APK installation',
+      message:existing?'Confirm update of an Android app':'Confirm APK installation',
+      detail:approvalText(preview,{existing})
+    });
+    if(approval.response!==1) {
+      send('install:cancelled',{file:filePath});
+      return {ok:false,canceled:true};
+    }
+    const source=await verifyInstallSource(preview,store.profiles.currentId());
+    send('install:start', { file: source });
+    const result = await installer.install(source, (p) => send('install:progress', p));
     send('install:done', result);
     // 新建的桌面图标要让资源管理器立刻刷新，否则用户会以为「没创建快捷方式」
     windowctl.refreshShell().catch(() => {});
@@ -1009,6 +1028,10 @@ let accelWarned = false;
 
 async function runLaunch(pkg) {
   if (backupBusy) throw new Error('Backup or restore is in progress');
+  // A bare --launch name from a Windows shortcut must never address a guest
+  // application that is not in the selected Profile's own catalog.
+  if(!validPackageName(pkg)||!store.getApp(pkg))
+    throw new Error('App is not installed in the active Android Profile');
   if (launchInFlight) {
     if (launchInFlight.pkg === pkg) {
       appLog(`launch reused in-flight ${pkg}`);
@@ -1903,6 +1926,7 @@ function registerIpc() {
 
   ipcMain.handle('apk:install', async (_e, filePath) => {
     const r = await runInstall(filePath);
+    if(r?.canceled||r?.ok===false)return r;
     return { ok: true, app: r.app, warnings: r.warnings };
   });
 
@@ -3102,7 +3126,9 @@ if (!gotLock) {
       send('toast',{type:'error',message:'This shortcut belongs to Default profile. Switch to Default before launching it.'});
       return;
     }
-    if (args.launch) { runLaunch(args.launch); return; }
+    if (args.launch) { runLaunch(args.launch).catch(e=>{
+      showWindow();send('toast',{type:'error',message:String(e.message||e)});
+    }); return; }
     if (args.apk) { runInstall(args.apk).catch(() => {}); return; }
     showWindow();
   });
