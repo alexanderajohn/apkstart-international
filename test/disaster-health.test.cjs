@@ -105,13 +105,14 @@ test('explicit rescue renames only surviving cleanup quarantine back to safety l
 test('rescue can restore surviving subset without claiming complete recovery',()=>fixture(async x=>{
   await archive(x);
   const qid=await quarantine(x);
-  await write(x.layout.targets.apks+'.asi-'+HASH+'.before-restore.asi-'+TX+'.cleanup-pending','ONLY_FRAGMENT');
+  const apksFragment=x.layout.targets.apks+'.asi-'+HASH+'.before-restore.asi-'+TX+'.cleanup-pending';
+  await write(path.join(apksFragment,'old.apk'),'ONLY_FRAGMENT');
   const preview=await x.health.previewRescue(qid);
   assert.equal(preview.components.length,2);
   const outcome=await x.health.applyRescue(preview.token);
   assert.equal(outcome.sourceWasPartial,true);
   assert.equal(outcome.restoredFragments,2);
-  assert.equal(await p.readFile(x.layout.targets.apks+'.asi-'+HASH+'.before-restore','utf8'),'ONLY_FRAGMENT');
+  assert.equal(await p.readFile(path.join(x.layout.targets.apks+'.asi-'+HASH+'.before-restore','old.apk'),'utf8'),'ONLY_FRAGMENT');
   assert.equal(await p.readFile(x.live,'utf8'),'LIVE_ANDROID_PROFILE_DATA');
 }));
 test('rescue preview and apply reject changes after preview and original destination collisions',()=>fixture(async x=>{
