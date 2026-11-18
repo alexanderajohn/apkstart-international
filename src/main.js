@@ -14,6 +14,7 @@ const { BackupCenter } = require('./core/backup-center');
 const { EncryptedBackupCenter, validatePassword } = require('./core/encrypted-backup');
 const { RecoveryVault } = require('./core/recovery-vault');
 const { SafetyRetention } = require('./core/safety-retention');
+const { DisasterHealth } = require('./core/disaster-health');
 const performance = require('./core/performance');
 const { validPackageName } = require('./core/pkgname');
 const { Installer } = require('./core/installer');
@@ -226,6 +227,7 @@ let backupCenter = null;
 let encryptedBackupCenter = null;
 let recoveryVault = null;
 let safetyRetention = null;
+let disasterHealth = null;
 let backupBusy = false;
 let backupActiveCount = 0;
 // 「哪些窗口算我们的」由 whenReady 里赋值（见 agentScope）。放模块级是因为
@@ -1370,6 +1372,48 @@ function registerIpc() {
   });
   // Retention is advisory only. No timers, background pruning or deletion
   // endpoints accepting raw filesystem paths are exposed to the renderer.
+  // Health Check never accepts filesystem paths or an arbitrary profile ID.
+  // Only a checked quarantine ID may be moved, with explicit approval.
+  ipcMain.handle('backup:healthReport', async () => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    await backupIdleCheck();
+    return disasterHealth.report();
+  });
+  ipcMain.handle('backup:healthVerify', async (_e,request) => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    await backupIdleCheck();
+    validatePassword(request?.password);
+    return disasterHealth.verifyArchive(request?.archiveId,request.password);
+  });
+  ipcMain.handle('backup:rescuePreview', async (_e,id) => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    await backupIdleCheck();
+    return disasterHealth.previewRescue(id);
+  });
+  ipcMain.handle('backup:rescueCancel',(_e,token)=>({
+    canceled:disasterHealth.cancelRescue(token),
+  }));
+  ipcMain.handle('backup:rescueApply', async (_e,request) => {
+    const token=request?.token;
+    if(typeof token!=='string'||!/^[a-f0-9]{48}$/.test(token)
+      ||request?.ack!=='RESCUE'||disasterHealth?.pending?.token!==token)
+      throw Error('A verified interruption preview and typed RESCUE are required');
+    if(backupBusy)throw Error('Backup Center is busy');
+    await backupIdleCheck();
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',
+      buttons:['Cancel','Rescue remaining safety fragments'],
+      defaultId:0,cancelId:0,noLink:true,
+      title:'Confirm manual disaster rescue',
+      message:'Move remaining interrupted-cleanup fragments back into safety-copy locations?',
+      detail:'No live Android data or encrypted archives will be modified. This may only be a PARTIAL recovery; already deleted files cannot be reconstructed. Original destination paths must be empty. No automatic cleanup will run.',
+    });
+    if(approval.response!==1){
+      disasterHealth.cancelRescue(token);
+      return {canceled:true};
+    }
+    return disasterHealth.applyRescue(token);
+  });
   ipcMain.handle('backup:retentionReport', async (_e,days) => {
     if(backupBusy)throw new Error('Backup Center is busy');
     await backupIdleCheck();
@@ -2796,6 +2840,7 @@ if (!gotLock) {
     encryptedBackupCenter = new EncryptedBackupCenter(backupOptions);
     recoveryVault = new RecoveryVault({...backupOptions,encryptedBackupCenter});
     safetyRetention = new SafetyRetention({vault:recoveryVault,encryptedBackupCenter});
+    disasterHealth = new DisasterHealth({vault:recoveryVault,encryptedBackupCenter});
     // 启动即留一行痕迹：出问题时用户把 app.log 发过来就能看到版本与数据目录
     appLog(`start v${app.getVersion()} data=${store.DATA_DIR} pid=${process.pid}`);
 
