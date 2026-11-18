@@ -127,7 +127,8 @@ test('Safety Vault IPC requires native SEAL approval and still uses native RESTO
   assert.ok(main.includes("title:'Confirm encrypted Safety Vault export'"));
   assert.ok(main.includes('defaultId:0,cancelId:0'));
   assert.ok(main.includes("title:'Confirm Android profile restore'"));
-  assert.ok(main.includes('return encryptedBackupCenter.restore(token,password)'));
+  assert.ok(main.includes('encryptedBackupCenter.restore(token,password)'));
+  assert.ok(main.includes('return audited(event,source'), 'Restore must be audited');
   assert.ok(preload.includes('sealedCreate: (pointId,password,ack)'));
   assert.ok(ui.includes("window.prompt(L.sealAsk)!=='SEAL'"));
   assert.ok(ui.includes("window.prompt(L.ask)!=='RESTORE'"));
