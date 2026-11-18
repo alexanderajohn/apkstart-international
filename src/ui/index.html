@@ -182,6 +182,21 @@
         </div>
         <div id="backupAuditSummary" class="asi-backup-progress" role="status" aria-live="polite">History is not verified until opened. Hash chaining detects many edits but is not a digital signature.</div>
         <div id="backupAuditEvents" class="asi-backup-progress"></div>
+        <div class="asi-backup-preview" id="backupSigningPanel">
+          <strong id="backupSigningTitle">Signed Verification Reports &amp; External Checkpoints</strong>
+          <p id="backupSigningNotice">Opt-in Ed25519 signatures with a locally passphrase-encrypted private key. Save checkpoints and trusted fingerprint OFF this PC. Signing cannot prove an Android AVD can boot.</p>
+          <div id="backupSigningStatus" class="asi-backup-progress" role="status" aria-live="polite">Signing identity has not been inspected.</div>
+          <div class="asi-backup-actions">
+            <button class="btn ghost sm" id="btnBackupSigningStatus" type="button">Inspect signing identity</button>
+            <button class="btn ghost sm" id="btnBackupSigningCreate" type="button">Create encrypted Ed25519 signing key</button>
+          </div>
+          <div class="asi-backup-actions">
+            <button class="btn ghost sm" id="btnBackupSigningCheckpoint" type="button">Export independently stored checkpoint</button>
+            <button class="btn ghost sm" id="btnBackupSigningReport" type="button">Export signed verification report</button>
+            <button class="btn ghost sm" id="btnBackupSigningVerify" type="button">Verify external checkpoint/report</button>
+          </div>
+          <div id="backupSigningResult" class="asi-backup-progress" role="status" aria-live="polite">Do not disclose your signing passphrase. Check the fingerprint against a separately trusted copy.</div>
+        </div>
       </div>
       <div id="backupProgress" class="asi-backup-progress" role="status" aria-live="polite">Ready. Choose an external folder for a backup.</div>
       <div id="backupPreview" class="asi-backup-preview" hidden>
