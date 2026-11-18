@@ -77,6 +77,10 @@ async function run(){
  const apk=requireEnv('ASI_E2E_APK_PATH'),stat=fs.statSync(apk);
  if(!path.isAbsolute(apk)||!stat.isFile()||stat.size<1024||stat.size>200*1024*1024||!apk.toLowerCase().endsWith('.apk'))
   throw Error('Supply a signed installable test APK smaller than 200 MB');
+ const {parseApk}=require('../../src/core/apk');
+ const metadata=parseApk(apk);
+ if(metadata.package!==pkg)throw Error('APK manifest package does not match expected disposable test package');
+ if(Number(metadata.minSdk)>34)throw Error('APK requires a newer Android version than this runtime');
  const fd=fs.openSync(apk,'r'),magic=Buffer.alloc(4);
  try{fs.readSync(fd,magic,0,4,0);}finally{fs.closeSync(fd);}
  if(magic.toString('hex')!=='504b0304')throw Error('Test APK is not a ZIP package');
