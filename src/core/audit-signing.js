@@ -186,6 +186,7 @@ class AuditSigning{
   async verifyExternal(source){
     return this.audit._enqueue(async()=>{
       if(typeof source!=='string')throw Error('Choose a signed evidence JSON file');
+      await statSafe(source);
       const original=await p.realpath(source),e=await readLimited(original);
       const q=verifyEnvelope(e);
       if(q.kind==='report'){
