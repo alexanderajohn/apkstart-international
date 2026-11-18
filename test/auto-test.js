@@ -598,8 +598,15 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     // balanced/performance 有应用在前台时必须是 normal：below 会让 qemu 被饿，
     // 表现为视频解码掉帧、点击要等一下才响应（用户说的「点击不跟手」主因）。
     const begin = engJs.slice(engJs.indexOf('async beginApp'));
-    assert(/mode === 'game' \? 'game' : 'normal'/.test(begin),
-      "beginApp 前台优先级应映射为 game→game、其余→normal");
+    // Fork supports explicitly configured per-app process presets.
+    // Inherit / balanced use Normal; only an opted-in save profile uses BelowNormal.
+    const perf = require('../src/core/performance');
+    assert(/performance\.effectivePriority/.test(begin),
+      'beginApp must use per-app priority policy');
+    assert.equal(perf.effectivePriority('inherit', 'balanced'), 'normal');
+    assert.equal(perf.effectivePriority('balanced', 'game'), 'normal');
+    assert.equal(perf.effectivePriority('save', 'balanced'), 'below');
+    assert.equal(perf.effectivePriority('smooth', 'balanced'), 'game');
     assert(!/performance.*\? 'normal' : 'below'/.test(begin),
       '不能再把 balanced 落到 below');
     // 每次打开/切回都要重设优先级：endApp 会降到 idle，切换回来不提权就会发木
