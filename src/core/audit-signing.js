@@ -98,13 +98,33 @@ class AuditSigning{
   }
   async _identity(create=false){
     const loc=await this.audit._location(create);
-    const folder=loc.folder,privateFile=path.join(folder,'audit-ed25519-private.pem');
+    const folder=loc.folder;
+    const pointer=path.join(folder,'active-key.json');
+    // Versioned key slots are immutable once published. A single rename of
+    // active-key.json selects a complete pair, never two independent PEM moves.
+    if(fs.existsSync(pointer)){
+      const st=await statSafe(pointer);
+      if(st.size>512)throw Error('Active signing pointer exceeds size limit');
+      const entry=JSON.parse(await p.readFile(pointer,'utf8'));
+      if(!entry||Object.keys(entry).sort().join(',')!=='fingerprint,version'
+        ||entry.version!==1||!H.test(entry.fingerprint))
+        throw Error('Invalid active signing pointer');
+      const root=path.join(folder,'signing-key-slots');
+      const slot=path.join(root,entry.fingerprint);
+      await statSafe(root,true);await statSafe(slot,true);
+      const privateFile=path.join(slot,'private.pem'),publicFile=path.join(slot,'public.pem');
+      await statSafe(privateFile);await statSafe(publicFile);
+      const pub=await p.readFile(publicFile,'utf8');
+      if(fingerprint(pub)!==entry.fingerprint)throw Error('Active signing pointer fingerprint mismatch');
+      return {folder,privateFile,publicFile,exists:true,versioned:true,fingerprint:entry.fingerprint};
+    }
+    const privateFile=path.join(folder,'audit-ed25519-private.pem');
     const publicFile=path.join(folder,'audit-ed25519-public.pem');
     if(fs.existsSync(privateFile))await statSafe(privateFile);
     if(fs.existsSync(publicFile))await statSafe(publicFile);
     if(fs.existsSync(privateFile)!==fs.existsSync(publicFile))
       throw Error('Signing identity is incomplete; do not regenerate over an existing key');
-    return {privateFile,publicFile,exists:fs.existsSync(privateFile)};
+    return {folder,privateFile,publicFile,exists:fs.existsSync(privateFile),versioned:false};
   }
   async status(){
     return this.audit._enqueue(async()=>{
@@ -215,7 +235,7 @@ class AuditSigning{
       if(fingerprint(localKey)!==q.keyFingerprint){
         // Rotation keeps only previous PUBLIC keys. Imported evidence is still
         // checked against the independently trusted historical fingerprint.
-        const retired=path.join(path.dirname(key.publicFile),'retired-signing-keys',q.keyFingerprint+'.pem');
+        const retired=path.join(key.folder,'retired-signing-keys',q.keyFingerprint+'.pem');
         let historicalKey;
         try{historicalKey=await readLimitedText(retired);}
         catch(_){throw Error('Evidence signed by a different local key; check trusted fingerprint');}
