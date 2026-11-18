@@ -67,3 +67,14 @@
 - [ ] Complete multi-GB encrypted backup/restore on real Android 14 AVD userdata, plus independent security review and signed production release artifacts.
 
 **CI is synthetic and read-only unless a tester explicitly invokes the live Windows harness on an appropriate host. A packaged EXE is not proof that Android installed or launched an APK.**
+
+## Pass 19 — APK Installation & Profile Isolation Hardening
+
+- [x] Require main-process native confirmation for GUI, Explorer, file-association and CLI APK installs; default Cancel, profile and SHA-256 revalidation before install.
+- [x] Reject wrong-profile AVD, unauthorized/offline ADB and unknown app catalog entries before an install/launch; require package-manager confirmation before writing installed-app catalog.
+- [x] Cover modified APK input, AVD mismatch, ADB authorization, changed Profile and approval cancellation with Windows regression tests.
+- [ ] Real Windows 10/11 validation: signed APK install/launch, update without data wipe, reboot/snapshot persistence and two secondary Android Profiles with different userdata.
+- [ ] Close source-file TOCTOU and NTFS junction/reparse-point race windows; ensure recovery after power loss during installs.
+- [ ] Validate real APK signature certificates, full split package compatibility and independent security review.
+
+**Synthetic Windows CI is NOT real Android installation validation. Pass 19 remains a Developer Preview.** See [Pass 19 hardening notes](APK_PROFILE_INSTALL_HARDENING.md).
