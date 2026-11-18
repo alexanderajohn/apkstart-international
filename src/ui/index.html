@@ -63,11 +63,18 @@
     </div>
     <div id="backupContent" class="asi-backup-body" hidden>
       <div class="asi-backup-notice" id="backupSafety">
-        Stop Android first. Backup folders contain sensitive app data and are NOT encrypted. No upload or automatic overwrite.
+        Stop Android first. New backups use AES-256-GCM encryption with a password. Legacy unencrypted backups can still be imported. No cloud upload or silent overwrite.
+      </div>
+      <div class="asi-backup-password-grid">
+        <label for="backupPassword" id="backupPasswordLabel">Backup password (minimum 12 UTF-8 bytes)</label>
+        <input id="backupPassword" type="password" autocomplete="new-password" maxlength="1024" spellcheck="false" placeholder="Password for encrypting or opening a backup" />
+        <label for="backupPasswordConfirm" id="backupPasswordConfirmLabel">Confirm password (only when creating a backup)</label>
+        <input id="backupPasswordConfirm" type="password" autocomplete="new-password" maxlength="1024" spellcheck="false" placeholder="Repeat password for new backup" />
+        <small id="backupPasswordHint">Passwords are never saved. Re-enter the password to verify or restore. Losing it means your encrypted backup cannot be recovered.</small>
       </div>
       <div class="asi-backup-actions">
-        <button class="btn primary sm" type="button" id="btnBackupCreate">Create verified backup</button>
-        <button class="btn ghost sm" type="button" id="btnBackupPick">Inspect a backup to restore</button>
+        <button class="btn primary sm" type="button" id="btnBackupCreate">Create encrypted backup</button>
+        <button class="btn ghost sm" type="button" id="btnBackupPick">Inspect encrypted / legacy backup</button>
       </div>
       <div id="backupProgress" class="asi-backup-progress" role="status" aria-live="polite">Ready. Choose an external folder for a backup.</div>
       <div id="backupPreview" class="asi-backup-preview" hidden>

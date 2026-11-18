@@ -5,8 +5,8 @@ const $=id=>document.getElementById(id),api=window.apkstart;
 const WORDS={
   en:{
     title:'Backup & Restore Center',profile:'Active profile: ',open:'Open backup tools',close:'Hide backup tools',
-    warning:'Stop Android first. Backup is a portable FOLDER, not a ZIP. It may contain passwords, app accounts and private data. It is NOT encrypted. Keep it in a secure location; no data is uploaded.',
-    create:'Create verified backup',inspect:'Inspect a backup to restore',
+    warning:'Stop Android first. New backups are encrypted folders (AES-256-GCM + scrypt), not ZIPs. Keep the password safe; it cannot be recovered. Older unencrypted backups remain importable. No data is uploaded.',
+    create:'Create encrypted backup',inspect:'Inspect encrypted or legacy backup',
     ready:'Ready. Choose an external destination for the backup folder.',
     working:'Processing offline data. Keep ApkStart open and do not launch Android.',
     canceled:'Selection cancelled; nothing was changed.',
@@ -20,13 +20,14 @@ const WORDS={
     restored:'Restore successful! Existing data was preserved in safety-copy paths. Restart ApkStart before launching Android.',
     preserved:'Original data preserved in: ',restart:'Restart ApkStart to use restored data',
     error:'Backup/Restore blocked: ',needStop:'Android must be stopped; open Settings and choose Stop Runtime.',
-    notEncrypted:'Not encrypted',
+    notEncrypted:'Legacy plaintext (not encrypted)',
+    encrypted:'AES-256-GCM encrypted',password:'Backup password (at least 12 UTF-8 bytes)',confirmPassword:'Repeat password (for new backup)',passwordHint:'Password is never saved. You must re-enter it to verify and restore; a lost password cannot be recovered.',passTooShort:'Enter a strong backup password of at least 12 UTF-8 bytes.',passMismatch:'Passwords do not match.',encryptedVerified:'Authenticated encrypted snapshot (AES-256-GCM)',legacyWarning:'Legacy backup: SHA-256 only; contents are not encrypted or authenticated.',
     phase:{backup:'Backing up',verify:'Verifying SHA-256', 'stage-restore':'Preparing verified restore','restore-complete':'Restore finished','backup-complete':'Backup finished'},
   },
   vi:{
     title:'Trung tâm Sao lưu & Khôi phục',profile:'Profile đang dùng: ',open:'Mở công cụ sao lưu',close:'Thu gọn',
-    warning:'Phải dừng Android trước. Bản sao lưu là THƯ MỤC, không phải ZIP. Có thể chứa mật khẩu, tài khoản và dữ liệu riêng tư; CHƯA ĐƯỢC MÃ HÓA. Hãy cất ở nơi an toàn, không có dữ liệu nào được tải lên server.',
-    create:'Tạo bản sao lưu đã xác minh',inspect:'Chọn và kiểm tra bản sao lưu',
+    warning:'Phải dừng Android trước. Bản sao lưu mới là THƯ MỤC đã mã hóa AES-256-GCM bằng mật khẩu, không phải ZIP. Phải giữ mật khẩu an toàn vì không thể khôi phục khi quên. Vẫn đọc được backup cũ chưa mã hóa. Không tải dữ liệu lên server.',
+    create:'Tạo bản sao lưu mã hóa',inspect:'Kiểm tra backup mã hóa hoặc backup cũ',
     ready:'Sẵn sàng. Chọn thư mục ở ngoài dữ liệu ApkStart để lưu bản sao.',
     working:'Đang xử lý dữ liệu nội bộ. Không đóng ApkStart hoặc bật Android.',
     canceled:'Đã hủy lựa chọn, không có dữ liệu nào bị thay đổi.',
@@ -40,13 +41,14 @@ const WORDS={
     restored:'Khôi phục thành công! Đã giữ dữ liệu cũ thành bản an toàn. Hãy khởi động lại ApkStart trước khi mở Android.',
     preserved:'Dữ liệu cũ được giữ tại: ',restart:'Khởi động lại ApkStart',
     error:'Không thể sao lưu/khôi phục: ',needStop:'Hãy dừng Android trong Settings -> Stop Runtime.',
-    notEncrypted:'Chưa mã hóa',
+    notEncrypted:'Backup cũ chưa mã hóa',
+    encrypted:'Đã mã hóa AES-256-GCM',password:'Mật khẩu backup (tối thiểu 12 byte UTF-8)',confirmPassword:'Nhập lại mật khẩu (chỉ khi tạo backup)',passwordHint:'Không lưu mật khẩu. Anh phải nhập lại khi kiểm tra và khôi phục; nếu quên sẽ không thể giải mã.',passTooShort:'Mật khẩu phải dài ít nhất 12 byte UTF-8.',passMismatch:'Hai mật khẩu không giống nhau.',encryptedVerified:'Backup mã hóa đã xác thực (AES-256-GCM)',legacyWarning:'Backup cũ: chỉ có SHA-256, chưa mã hóa hay xác thực.',
     phase:{backup:'Đang sao lưu',verify:'Đang kiểm tra SHA-256','stage-restore':'Đang chuẩn bị khôi phục','restore-complete':'Khôi phục xong','backup-complete':'Sao lưu xong'},
   },
   'zh-CN':{
     title:'备份与恢复中心',profile:'当前环境：',open:'打开备份工具',close:'收起',
-    warning:'先停止 Android。备份是文件夹，不是 ZIP，可能包含账户、密码和私有数据。未加密，请妥善保存。不会上传任何数据。',
-    create:'创建校验备份',inspect:'选择并检查备份',ready:'请选择 ApkStart 数据目录以外的文件夹。',
+    warning:'先停止 Android。新备份使用 AES-256-GCM 与密码加密，格式为文件夹而非 ZIP。请保存好密码，遗忘后无法找回。支持导入旧版未加密备份。不上传任何数据。',
+    create:'创建加密备份',inspect:'检查加密或旧备份',ready:'请选择 ApkStart 数据目录以外的文件夹。',
     working:'正在本地处理数据，请勿关闭软件或启动 Android。',canceled:'已取消，没有修改数据。',
     done:'备份已创建并验证：',verified:'备份通过 SHA-256 校验',
     current:'环境：',files:'文件：',bytes:'大小：',parts:'组件：',date:'创建：',
@@ -57,7 +59,8 @@ const WORDS={
     confirm:'现在恢复这个校验过的备份吗？必须先停止 Android。',
     restored:'恢复成功，原数据已保留，请重启 ApkStart。',preserved:'原数据保存于：',
     restart:'重启 ApkStart',error:'备份/恢复受阻：',needStop:'请先在设置中停止 Android。',
-    notEncrypted:'未加密',
+    notEncrypted:'旧版未加密备份',
+    encrypted:'已采用 AES-256-GCM 加密',password:'备份密码（至少 12 UTF-8 字节）',confirmPassword:'再次输入密码（仅创建新备份）',passwordHint:'不保存密码。检查或恢复时需要再次输入；密码丢失后无法恢复数据。',passTooShort:'密码至少需要 12 UTF-8 字节。',passMismatch:'两次密码不一致。',encryptedVerified:'认证通过的 AES-256-GCM 加密备份',legacyWarning:'旧版备份只校验 SHA-256，内容未加密也未认证。',
     phase:{backup:'备份中',verify:'SHA-256 校验中','stage-restore':'恢复准备中','restore-complete':'恢复完成','backup-complete':'备份完成'},
   }
 };
@@ -70,6 +73,8 @@ function lock(on){
   $('btnBackupCreate').disabled=on;
   $('btnBackupPick').disabled=on;
   $('btnBackupRestore').disabled=on||!preview;
+  $('backupPassword').disabled=on;
+  $('backupPasswordConfirm').disabled=on;
   $('btnBackupCancel').disabled=on;
 }
 function render(){
@@ -78,16 +83,19 @@ function render(){
   $('btnBackupToggle').textContent=opened?L.close:L.open;
   $('btnBackupToggle').setAttribute('aria-expanded',String(opened));
   $('backupSafety').textContent=L.warning;
+  $('backupPasswordLabel').textContent=L.password;
+  $('backupPasswordConfirmLabel').textContent=L.confirmPassword;
+  $('backupPasswordHint').textContent=L.passwordHint;
   $('btnBackupCreate').textContent=L.create;
   $('btnBackupPick').textContent=L.inspect;
   $('btnBackupRestore').textContent=L.restore;
   $('btnBackupCancel').textContent=L.cancel;
   $('btnBackupRestart').textContent=L.restart;
-  $('backupPreviewTitle').textContent=L.verified;
+  $('backupPreviewTitle').textContent=preview?.encrypted?L.encryptedVerified:L.verified;
   $('backupRestoreNotice').textContent=L.previewNote;
   api.backupStatus().then(s=>{
     const display=window.ASI_PROFILES?.isSecondary?.()?s.profileId:'Default';
-    $('backupProfileCaption').textContent=L.profile+display+' | '+L.notEncrypted;
+    $('backupProfileCaption').textContent=L.profile+display+' | '+(s.encrypted?L.encrypted:L.notEncrypted);
   }).catch(()=>{});
 }
 function setPreview(result){
@@ -95,39 +103,60 @@ function setPreview(result){
   preview=result;
   const L=locale();
   $('backupPreview').hidden=false;
+  $('backupPreviewTitle').textContent=result.encrypted?L.encryptedVerified:L.verified;
   $('backupPreviewDetails').textContent=
     L.current+result.profileId+'\n'+L.date+result.createdAt+'\n'+
     L.files+result.files+'\n'+L.bytes+fmt(result.bytes)+'\n'+
     L.parts+(result.components||[]).join(', ')+'\n'+
-    (result.space||[]).map(x=>'Free: '+fmt(x.availableBytes)+' / needed '+fmt(x.requiredBytes)).join('\n');
-  show(L.verified);
+    (result.space||[]).map(x=>'Free: '+fmt(x.availableBytes)+' / needed '+fmt(x.requiredBytes)).join('\n')+'\n'+
+    (result.encrypted?L.encrypted:L.legacyWarning);
+  show(result.encrypted?L.encryptedVerified:L.legacyWarning);
   lock(false);
+}
+function clearPasswords(){
+  $('backupPassword').value='';
+  $('backupPasswordConfirm').value='';
+}
+function validPassword(secret){
+  return typeof secret==='string'&&new TextEncoder().encode(secret).length>=12
+    &&new TextEncoder().encode(secret).length<=1024;
 }
 async function startBackup(){
   if(busy)return;
-  const L=locale();lock(true);show(L.working);
+  const L=locale();
+  let secret=$('backupPassword').value;
+  if(!validPassword(secret)){show(L.passTooShort,true);return;}
+  if(secret!==$('backupPasswordConfirm').value){show(L.passMismatch,true);return;}
+  lock(true);show(L.working);
   try{
-    const out=await api.backupCreate();
+    const request=api.backupCreate(secret);
+    clearPasswords();secret='';
+    const out=await request;
     if(out?.canceled){show(L.canceled);return;}
     preview=null;$('backupPreview').hidden=true;
-    show(L.done+out.path+'\n'+L.files+out.files+' | '+fmt(out.bytes));
+    show(L.done+out.path+'\n'+L.files+out.files+' | '+fmt(out.bytes)+'\n'+L.encrypted);
   }catch(e){show(L.error+String(e?.message||e),true);}
-  finally{lock(false);}
+  finally{secret='';clearPasswords();lock(false);}
 }
 async function inspect(){
   if(busy)return;
   const L=locale();lock(true);show(L.working);
+  let secret=$('backupPassword').value;
   preview=null;$('backupPreview').hidden=true;
   try{
-    const r=await api.backupPickRestore();
+    const request=api.backupPickRestore(secret);
+    clearPasswords();secret='';
+    const r=await request;
     if(r?.canceled)show(L.canceled);
     else setPreview(r);
   }catch(e){show(L.error+String(e?.message||e),true);}
-  finally{lock(false);}
+  finally{secret='';clearPasswords();lock(false);}
 }
 async function restore(){
   if(busy||!preview)return;
-  const L=locale();
+  const L=locale(),encrypted=!!preview.encrypted;
+  let secret=$('backupPassword').value;
+  if(encrypted&&!validPassword(secret)){show(L.passTooShort,true);return;}
   // A typed approval deliberately separates preview from destructive commit.
   if(window.prompt(L.ask)!=='RESTORE')return;
   if(!window.confirm(L.confirm))return;
@@ -135,14 +164,16 @@ async function restore(){
   preview=null;$('backupPreview').hidden=true;
   lock(true);show(L.working);
   try{
-    const result=await api.backupRestore(token);
+    const request=api.backupRestore(token,secret);
+    clearPasswords();secret='';
+    const result=await request;
     if(result?.canceled){show(L.canceled);return;}
     if(result?.ok){
       show(L.restored+'\n'+L.preserved+(result.preserved||[]).join('\n'));
       $('btnBackupRestart').hidden=false;
     }
   }catch(e){show(L.error+String(e?.message||e),true);}
-  finally{lock(false);}
+  finally{secret='';clearPasswords();lock(false);}
 }
 function init(){
   if(!$('backupCenter'))return;
