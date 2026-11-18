@@ -33,6 +33,8 @@ test('encrypted export/import recovers exactly the same signing identity without
 test('rotation retains original public-key fingerprint but changes active signer',()=>withFixture(async x=>{
  await x.signing.initialize(PASS);
  const before=await x.signing.status();
+ const oldEvidence=path.join(x.root,'old-evidence.json');
+ await x.signing.exportCheckpoint(oldEvidence,PASS);
  await assert.rejects(()=>x.keys.rotate('wrong signing password',NEW),/Incorrect signing-key passphrase/);
  assert.equal((await x.signing.status()).fingerprint,before.fingerprint);
  const r=await x.keys.rotate(PASS,NEW);
@@ -43,6 +45,7 @@ test('rotation retains original public-key fingerprint but changes active signer
  assert.equal((await p.readFile(archived,'utf8')).includes('PUBLIC KEY'),true);
  await assert.rejects(()=>x.signing.exportCheckpoint(path.join(x.root,'wrong.json'),PASS),/passphrase is invalid/);
  await x.signing.exportCheckpoint(path.join(x.root,'new.json'),NEW);
+ assert.equal((await x.signing.verifyExternal(oldEvidence)).signatureValid,true);
 }));
 test('key export disallows overwrite, application-data paths and cross-profile import',()=>withFixture(async x=>{
  await x.signing.initialize(PASS);
