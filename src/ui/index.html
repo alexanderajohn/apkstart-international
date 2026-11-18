@@ -77,6 +77,14 @@
         <button class="btn ghost sm" type="button" id="btnBackupPick">Inspect encrypted / legacy backup</button>
         <button class="btn ghost sm" type="button" id="btnBackupMigrate">Import encrypted profile from another Windows PC</button>
       </div>
+      <div class="asi-backup-actions">
+        <button class="btn ghost sm" type="button" id="btnBackupRecoveryFind">Find local recovery points</button>
+      </div>
+      <div id="backupRecoveryChoices" hidden>
+        <label for="backupRecoverySelect" id="backupRecoverySelectLabel">Saved profile recovery points</label>
+        <select id="backupRecoverySelect" aria-label="Choose local recovery point"></select>
+        <button class="btn ghost sm" type="button" id="btnBackupRecoveryInspect">Verify selected recovery point</button>
+      </div>
       <div id="backupProgress" class="asi-backup-progress" role="status" aria-live="polite">Ready. Choose an external folder for a backup.</div>
       <div id="backupPreview" class="asi-backup-preview" hidden>
         <strong id="backupPreviewTitle">Verified snapshot</strong>
