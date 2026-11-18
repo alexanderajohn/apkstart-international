@@ -134,7 +134,7 @@ function localVaultPath(dataDir,profileId){
   return path.join(dataDir,'safety-vault',profileId);
 }
 async function approvedLocalVault(parent,dataDir,profileId){
-  const expected=path.resolve(localVaultPath(dataDir,profileId));
+  const expected=path.resolve(localVaultPath(await p.realpath(dataDir),profileId));
   if(path.relative(path.resolve(parent),expected)!=='')return false;
   // Refuse a junction/symlink redirecting encrypted output to an unknown disk.
   return path.relative(await p.realpath(expected),expected)==='';
@@ -242,7 +242,7 @@ class EncryptedBackupCenter extends BackupCenter {
     if(requireIdentity){
       const data=await p.realpath(this.dataDir);
       const localRoot=path.dirname(folder);
-      const local=path.relative(path.resolve(localRoot),path.resolve(localVaultPath(this.dataDir,layout.id)))===''
+      const local=path.relative(path.resolve(localRoot),path.resolve(localVaultPath(data,layout.id)))===''
         &&await approvedLocalVault(localRoot,this.dataDir,layout.id);
       if((within(folder,data)||within(data,folder))&&!local)
         throw Error('Encrypted backup overlaps ApkStart profile data');
