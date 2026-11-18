@@ -95,3 +95,19 @@ test('production probe never asks adb to mutate guest data',async()=>{
  'shell getprop ro.build.version.sdk','shell getprop ro.product.cpu.abi','shell pm path android']);
  assert.ok(f.calls.every(c=>allowed.has(c)));
 });
+
+test('profile-scoped readiness is wired through IPC and an explicit button, never an automatic repair',()=>{
+ const fs=require('node:fs'),path=require('node:path'),base=path.join(__dirname,'..');
+ const main=fs.readFileSync(path.join(base,'src/main.js'),'utf8');
+ const preload=fs.readFileSync(path.join(base,'src/preload.js'),'utf8');
+ const html=fs.readFileSync(path.join(base,'src/ui/index.html'),'utf8');
+ const ui=fs.readFileSync(path.join(base,'src/ui/profiles-ui.js'),'utf8');
+ assert.ok(main.includes("ipcMain.handle('runtime:readiness'"));
+ assert.ok(main.includes('owned:runtime._profileOwnedRuntime===true'));
+ assert.ok(main.includes('profileId:store.profiles.currentId()'));
+ assert.ok(preload.includes("runtimeReadiness: () => invoke('runtime:readiness')"));
+ assert.ok(html.includes('id="btnRuntimeReadiness"'));
+ assert.ok(html.includes('id="runtimeReadinessDetails"'));
+ assert.ok(ui.includes("addEventListener('click',runReadiness)"));
+ assert.ok(!ui.includes('innerHTML'));
+});
