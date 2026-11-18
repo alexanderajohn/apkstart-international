@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const store = require('./store');
 const { autoGrantEnabled } = require('./permission-policy');
 const { parseApk } = require('./apk');
+const { assertProfileGuest, assertProfileUnchanged } = require('./profile-runtime-guard');
 const { ZipFile } = require('./zip');
 const { iconToIco, writeShortcut, removeShortcut, safeFileName, shortcutExt } = require('./shortcut');
 
@@ -152,6 +153,7 @@ class Installer {
   }
 
   async install(filePath, onProgress = () => {}) {
+    const expectedProfileId=store.profiles.currentId();
     onProgress({ stage: 'parse', message: '正在解析 APK…' });
     let meta;
     let bundle = null;
@@ -198,7 +200,8 @@ class Installer {
       if (isArmOnly(meta) && !this.runtime.provisioner.playImageInfo().ok) {
         await this.ensureCompatImage(onProgress);
         const switched = await this.switchToCompat(onProgress);
-        return this.finishInstall(switched, meta, filePath, bundle, onProgress);
+        assertProfileUnchanged(expectedProfileId,()=>store.profiles.currentId());
+        return this.finishInstall(switched, meta, filePath, bundle, onProgress,expectedProfileId);
       }
 
       onProgress({ stage: 'runtime', message: '正在准备安卓运行时…' });
@@ -208,15 +211,20 @@ class Installer {
         err.needsSetup = rt.needsSetup || 'provision';
         throw err;
       }
-      return await this.finishInstall(rt, meta, filePath, bundle, onProgress);
+      assertProfileUnchanged(expectedProfileId,()=>store.profiles.currentId());
+      return await this.finishInstall(rt, meta, filePath, bundle, onProgress,expectedProfileId);
     } finally {
       if (bundle) bundle.cleanup();
     }
   }
 
   /** 安装本体 + 落盘元数据 + 快捷方式；失败时带一次自动修复重试 */
-  async finishInstall(rt, meta, filePath, bundle, onProgress) {
-    const client = rt.client;
+  async finishInstall(rt, meta, filePath, bundle, onProgress,expectedProfileId=null) {
+    let client = rt.client;
+    if(expectedProfileId!==null){
+      await assertProfileGuest({expectedProfileId,getProfileId:()=>store.profiles.currentId(),
+        client,serial:client?.serial,engine:rt.engine});
+    }
     const existing = store.getApp(meta.package);
     // 装完之后旧 quickboot 快照里的磁盘状态就过期了，留着会导致「装好的应用重启后又不见了」
     try { this.runtime.emulator?.invalidateSnapshot(); } catch (_) { /* ignore */ }
@@ -232,9 +240,22 @@ class Installer {
         onProgress({ stage: 'install', message: '已切换兼容镜像，正在重新安装…' });
         if (bundle) await rt2.client.installMultiple(bundle.files);
         else await rt2.client.install(filePath);
+        client=rt2.client;
+        if(expectedProfileId!==null)
+          await assertProfileGuest({expectedProfileId,getProfileId:()=>store.profiles.currentId(),
+            client,serial:client?.serial,engine:rt2.engine});
       } else {
         throw e;
       }
+    }
+    // Android package-manager confirmation is stronger than trusting a
+    // successful-looking adb install exit code. Never persist a phantom app.
+    if(expectedProfileId!==null){
+      await assertProfileGuest({expectedProfileId,getProfileId:()=>store.profiles.currentId(),
+        client,serial:client?.serial,engine:rt.engine});
+      const installed=await client.exec(['shell','pm','path',meta.package],{timeout:15000});
+      if(!/^package:\/\S+/m.test(String(installed?.stdout||'')))
+        throw new Error('Android did not confirm the installed package; catalog was not updated');
     }
     this.runtime.touch();
 
@@ -305,6 +326,8 @@ class Installer {
       pinned: existing ? !!existing.pinned : false,
     };
 
+    if(expectedProfileId!==null)
+      assertProfileUnchanged(expectedProfileId,()=>store.profiles.currentId());
     store.upsertApp(app);
 
     const settings = store.getSettings();
@@ -447,7 +470,9 @@ class Installer {
   }
 
   async launch(pkg, { onLog = () => {}, beforeStart = null, onMark = () => {}, onAppUp = null } = {}) {
+    const expectedProfileId=store.profiles.currentId();
     const app = store.getApp(pkg);
+    if(!app)throw new Error('Cannot launch an app outside the active Android Profile');
     // 用 let：beforeStart 可能因为「面板方向和应用方向不一致」而重启运行时并
     // 返回一个新的 rt（旧 client 已随 stop 失效）。以前这里是 const，一旦真的
     // 走了重启分支就抛 "Assignment to constant variable."，把整个启动打断 ——
@@ -466,6 +491,8 @@ class Installer {
       // 后续全部用新的。不返回就继续用原来的。
       if (replaced && replaced.client) rt = replaced;
     }
+    await assertProfileGuest({expectedProfileId,getProfileId:()=>store.profiles.currentId(),
+      client:rt.client,serial:rt.client?.serial,engine:rt.engine});
     // 清掉旧版本可能残留在 /data 里的 wm size / density 覆盖与自动旋转设置。
     // 这些覆盖是持久化的，不清理的话每次启动画面都会被转 90° 躺倒、留黑边、
     // 鼠标点击也无法对应（用户反馈的「旋转黑边 / 未填满 / 点不动同意」）。
