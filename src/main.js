@@ -3717,6 +3717,46 @@ if (!gotLock) {
                 throw new Error('Recovery Audit Trail UI smoke did not render verified history');
               console.log('[smoke] Sanitized audit chain and JSON export verified with synthetic evidence only');
               await snap(out.replace(/\.png$/i,'-audit.png'));
+              // Feature #14: opt-in signing on disposable CI profile only;
+              // no private key, password or profile data in the screenshots.
+              const signIdentity=await auditSigning.initialize(smokeKey);
+              const signedCheckpoint=path.join(require('node:os').tmpdir(),
+                'asi-checkpoint-smoke-'+require('node:crypto').randomBytes(8).toString('hex')+'.json');
+              const signedReport=path.join(require('node:os').tmpdir(),
+                'asi-signed-report-smoke-'+require('node:crypto').randomBytes(8).toString('hex')+'.json');
+              try{
+                const outCheckpoint=await auditSigning.exportCheckpoint(signedCheckpoint,smokeKey);
+                const outReport=await auditSigning.exportSignedReport(signedReport,smokeKey);
+                const verified=await auditSigning.verifyExternal(signedCheckpoint);
+                const verifiedReport=await auditSigning.verifyExternal(signedReport);
+                const signingStatus=await auditSigning.status();
+                if(!outCheckpoint.ok||!outReport.ok||!verified.signatureValid
+                  ||!verified.localHistoryMatches||!verifiedReport.signatureValid
+                  ||!signingStatus.initialized||signIdentity.fingerprint!==signingStatus.fingerprint)
+                  throw new Error('Signed recovery checkpoint smoke verification failed');
+                const rawCheckpoint=fs.readFileSync(signedCheckpoint,'utf8');
+                const rawReport=fs.readFileSync(signedReport,'utf8');
+                if(rawCheckpoint.includes(smokeKey)||rawReport.includes(smokeKey)
+                   ||rawCheckpoint.includes(smokeData)||rawReport.includes(smokeData))
+                  throw new Error('Signing material leaked sensitive synthetic data into exported JSON');
+                const signedShown=await mainWindow.webContents.executeJavaScript(
+                  "(() => {" +
+                  "  window.ASI_BACKUP.renderSigningStatus("+JSON.stringify(signingStatus)+");" +
+                  "  window.ASI_BACKUP.renderSigningVerification("+JSON.stringify(verified)+");" +
+                  "  document.getElementById('backupAuditPanel').scrollIntoView({block:'center'});" +
+                  "  return {fingerprint:document.getElementById('backupSigningStatus').textContent," +
+                  "    valid:document.getElementById('backupSigningResult').textContent};" +
+                  "})()"
+                );
+                if(!signedShown?.fingerprint.includes(signIdentity.fingerprint)
+                   ||!signedShown?.valid.includes(signIdentity.fingerprint))
+                  throw new Error('Signed checkpoint verification UI did not render');
+                console.log('[smoke] Ed25519 signed checkpoint/report verified with synthetic audit history only');
+                await snap(out.replace(/\.png$/i,'-signed.png'));
+              }finally{
+                for(const f of [signedCheckpoint,signedReport])
+                  if(fs.existsSync(f))fs.unlinkSync(f);
+              }
             }
             if (process.argv.includes('--perf')) {
               // 拍一张「性能与资源占用」区（设置页里控件最多的一块）
