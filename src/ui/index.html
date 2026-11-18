@@ -200,6 +200,12 @@
             <button class="btn ghost sm" id="btnBackupSigningKeyImport" type="button">Import signing-key backup</button>
             <button class="btn ghost sm" id="btnBackupSigningKeyRotate" type="button">Rotate signing key</button>
           </div>
+          <div class="asi-backup-actions">
+            <button class="btn ghost sm" id="btnBackupTrustExport" type="button">Export public trust bundle</button>
+            <button class="btn ghost sm" id="btnBackupTrustVerify" type="button">Offline verify with pinned fingerprint</button>
+            <button class="btn ghost sm" id="btnBackupTrustHistory" type="button">Rotation history</button>
+            <button class="btn ghost sm" id="btnBackupTrustInventory" type="button">Review orphan keys (read-only)</button>
+          </div>
           <div id="backupSigningResult" class="asi-backup-progress" role="status" aria-live="polite">Do not disclose your signing passphrase. Check the fingerprint against a separately trusted copy.</div>
         </div>
       </div>
