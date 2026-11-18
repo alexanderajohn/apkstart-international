@@ -334,7 +334,13 @@ class EncryptedBackupCenter extends BackupCenter {
               const rel=c==='apps.json'?'':f.path.slice(c.length+1);
               const targetFile=rel?safe(stage,rel):stage;
               await p.mkdir(path.dirname(targetFile),{recursive:true});
-              await decryptFile(path.join(v.directory,'payload',f.blob+'.bin'),targetFile,key,f);
+              if(pending.migration&&f.path==='avd/config.ini'){
+                 // Keep the destination's system image and machine-specific AVD paths.
+                 // The encrypted source was authenticated during verification.
+                 await p.copyFile(path.join(layout.targets.avd,'config.ini'),targetFile,fs.constants.COPYFILE_EXCL);
+               }else{
+                 await decryptFile(path.join(v.directory,'payload',f.blob+'.bin'),targetFile,key,f);
+               }
               this.progress('decrypt-stage',f.size,m.totalBytes);
             }
           }
