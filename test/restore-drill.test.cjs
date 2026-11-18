@@ -139,7 +139,7 @@ test('isolated synthetic stage/rename rollback runs independently with no origin
   assert.deepEqual(result.componentsTested,['apps.json','apks','icons','avd']);
   const after=new Set((await p.readdir(tempRoot)).filter(v=>v.startsWith('asi-restore-drill-')));
   for(const entry of after)assert.ok(before.has(entry),'Synthetic sandbox leaked: '+entry);
-}));
+});
 test('unknown sealed archive, broken source and missing ciphertext fail closed',()=>fixture(async x=>{
   const entry=await sealed(x);
   await assert.rejects(()=>x.drill.preview('sealed','sealed:ASI-Sealed-2026-11-18-000000000000',PASS),/not found/);
