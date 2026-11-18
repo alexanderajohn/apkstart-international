@@ -163,6 +163,19 @@ class SigningKeyManagement{
         await p.unlink(f.privateFile);
       }
       catch(_){cleanupWarning='Old encrypted private key cleanup failed; manually remove the inactive private PEM after verifying the new key and retaining an external backup.';}
+      // Best-effort rotation timeline: operational metadata, NOT a notarized
+      // chain. Both fingerprints remain independently verifiable elsewhere.
+      try{
+        const history=path.join(folder,'rotation-history.jsonl');
+        const handle=await p.open(history,'a',0o600);
+        try{
+          await handle.writeFile(JSON.stringify({version:1,at:new Date().toISOString(),
+            oldFingerprint,newFingerprint,transition:'active-pointer-switched'})+'\\n'.replace('\\\\n','\\n'));
+          await handle.sync();
+        }finally{await handle.close();}
+      }catch(_){
+        cleanupWarning=(cleanupWarning||'')+' Rotation history could not be recorded; compare independently preserved fingerprints.';
+      }
       return {ok:true,oldFingerprint,newFingerprint,committed:true,
         warning:cleanupWarning||'New key activated atomically. Preserve external fingerprints. Rotation does not revoke prior signatures.'};
     });
