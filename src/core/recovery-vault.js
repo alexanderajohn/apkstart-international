@@ -46,12 +46,12 @@ class RecoveryVault extends BackupCenter{
     this.encryptedBackup=options.encryptedBackupCenter||null;
   }
   async sealedFolder(layout=this.layout(),create=false){
-    const root=path.resolve(localVaultPath(this.dataDir,layout.id));
+    // Resolve the app-selected data directory first. Windows TEMP/AppData may
+    // use legitimate junctions or short-name aliases outside our control.
+    const canonicalData=await p.realpath(this.dataDir);
+    const root=path.resolve(localVaultPath(canonicalData,layout.id));
     if(!fs.existsSync(root)){
       if(!create)return null;
-      const data=await p.realpath(this.dataDir);
-      if(path.relative(data,path.resolve(this.dataDir))!=='')
-        throw Error('Refusing to create Safety Vault through a redirected data folder');
       const parent=path.dirname(root);
       await p.mkdir(parent,{recursive:true,mode:0o700});
       if(path.relative(await p.realpath(parent),path.resolve(parent))!=='')
