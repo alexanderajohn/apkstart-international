@@ -17,6 +17,7 @@ const { SafetyRetention } = require('./core/safety-retention');
 const { DisasterHealth } = require('./core/disaster-health');
 const { RestoreDrill } = require('./core/restore-drill');
 const { RecoveryAudit, causeCode } = require('./core/recovery-audit');
+const { AuditSigning } = require('./core/audit-signing');
 const performance = require('./core/performance');
 const { validPackageName } = require('./core/pkgname');
 const { Installer } = require('./core/installer');
@@ -232,6 +233,7 @@ let safetyRetention = null;
 let disasterHealth = null;
 let restoreDrill = null;
 let recoveryAudit = null;
+let auditSigning = null;
 let backupBusy = false;
 let backupActiveCount = 0;
 // 「哪些窗口算我们的」由 whenReady 里赋值（见 agentScope）。放模块级是因为
@@ -1325,6 +1327,58 @@ function registerIpc() {
   }
   // History and reports are read-only unless the user requests an export.
   // No renderer-provided path is accepted by the export endpoint.
+  // Signing is opt-in, with passphrase-encrypted private key stored locally.
+  // Export or import paths are selected exclusively by OS dialogs.
+  ipcMain.handle('backup:signingStatus', async () => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    return auditSigning.status();
+  });
+  ipcMain.handle('backup:signingInitialize',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    validatePassword(request?.password);
+    if(request?.ack!=='CREATE SIGNING KEY')
+      throw Error('Explicit CREATE SIGNING KEY approval required');
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',
+      buttons:['Cancel','Create encrypted signing identity'],
+      defaultId:0,cancelId:0,noLink:true,
+      title:'Create local Ed25519 signing identity',
+      message:'Create a new passphrase-encrypted signing key for this profile?',
+      detail:'Private key is stored locally encrypted with your passphrase, not uploaded. Passphrase recovery and automatic key rotation are not available. Record the displayed public-key fingerprint independently.',
+    });
+    if(approval.response!==1)return {canceled:true};
+    return auditSigning.initialize(request.password);
+  });
+  ipcMain.handle('backup:signingExport',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    validatePassword(request?.password);
+    const kind=request?.kind;
+    if(kind!=='report'&&kind!=='checkpoint')
+      throw Error('Invalid signed audit export kind');
+    const status=await auditSigning.status();
+    if(!status.initialized)throw Error('Initialize encrypted signing identity first');
+    const chosen=await dialog.showSaveDialog(mainWindow,{
+      title:kind==='checkpoint'?'Save independent audit checkpoint':'Export signed audit verification report',
+      defaultPath:kind==='checkpoint'?'ApkStart-Audit-Checkpoint.json':'ApkStart-Signed-Recovery-Report.json',
+      buttonLabel:'Export signed JSON',
+      filters:[{name:'Signed JSON evidence',extensions:['json']}],
+    });
+    if(chosen.canceled||!chosen.filePath)return {canceled:true};
+    return kind==='checkpoint'
+      ?auditSigning.exportCheckpoint(chosen.filePath,request.password)
+      :auditSigning.exportSignedReport(chosen.filePath,request.password);
+  });
+  ipcMain.handle('backup:signingVerifyExternal',async ()=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    const chosen=await dialog.showOpenDialog(mainWindow,{
+      title:'Choose independently held signed audit checkpoint or report',
+      properties:['openFile'],
+      filters:[{name:'Signed JSON evidence',extensions:['json']}],
+      buttonLabel:'Verify signature and compare audit history',
+    });
+    if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
+    return auditSigning.verifyExternal(chosen.filePaths[0]);
+  });
   ipcMain.handle('backup:auditSummary', async () => {
     if(backupBusy)throw Error('Backup Center is busy');
     return recoveryAudit.summary();
@@ -2960,6 +3014,7 @@ if (!gotLock) {
     recoveryAudit = new RecoveryAudit({
       dataDir:store.DATA_DIR,getProfileId:()=>store.profiles.currentId(),
     });
+    auditSigning = new AuditSigning({audit:recoveryAudit});
     // 启动即留一行痕迹：出问题时用户把 app.log 发过来就能看到版本与数据目录
     appLog(`start v${app.getVersion()} data=${store.DATA_DIR} pid=${process.pid}`);
 
