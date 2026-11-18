@@ -102,6 +102,32 @@ function checkEncryptedManifest(m){
   }
   return m;
 }
+// AVD compatibility is authenticated inside the encrypted manifest, never
+// trusted from an unencrypted sidecar. Unknown or mismatched images fail closed.
+const AVD_KEYS=['image.sysdir.1','abi.type','hw.cpu.arch','tag.id','target'];
+function parseAvdConfig(raw){
+  const out={};
+  for(const line of raw.split(/\r?\n/)){
+    const match=/^([^#=]+)=(.*)$/.exec(line);
+    if(match&&AVD_KEYS.includes(match[1].trim()))out[match[1].trim()]=match[2].trim().replace(/\\/g,'/');
+  }
+  return out;
+}
+async function avdCompatibility(dir){
+  const file=path.join(dir,'config.ini');
+  if(!fs.existsSync(file))return null;
+  const stat=await safeStat(file);
+  if(!stat.isFile()||stat.size>1024*1024)throw Error('Invalid AVD config.ini');
+  const result=parseAvdConfig(await p.readFile(file,'utf8'));
+  return AVD_KEYS.every(k=>result[k]&&result[k].length<=512)?result:null;
+}
+function requireCompatible(source,target){
+  if(!source||!target)throw Error('AVD compatibility cannot be verified: config.ini or Android image metadata missing');
+  for(const k of AVD_KEYS){
+    if(typeof source[k]!=='string'||typeof target[k]!=='string'||source[k]!==target[k])
+      throw Error('Incompatible Android AVD '+k+': use matching SDK, ABI, architecture and system image');
+  }
+}
 function sourcePath(l,rel){
   const [component,...tail]=rel.split('/');
   return rel==='apps.json'?l.targets['apps.json']:path.join(l.targets[component],...tail);
@@ -144,7 +170,8 @@ class EncryptedBackupCenter extends BackupCenter {
         }
         const manifest={format:FORMAT,version:VERSION,profileId:layout.id,avdName:layout.avdName,
           createdAt:new Date().toISOString(),components:inv.components,directories:inv.directories,
-          files:records,totalBytes:inv.totalBytes};
+          files:records,totalBytes:inv.totalBytes,
+          avdCompatibility:await avdCompatibility(layout.targets.avd)};
         checkEncryptedManifest(manifest);
         const manifestRaw=Buffer.from(JSON.stringify(manifest),'utf8');
         if(manifestRaw.length>MANIFEST_LIMIT)throw Error('Encrypted manifest exceeds allowed size');
@@ -209,6 +236,37 @@ class EncryptedBackupCenter extends BackupCenter {
       return {directory:folder,manifest,fingerprint};
     }finally {plain?.fill(0);key?.fill(0);}
   }
+  async previewMigration(folder,password){
+    validatePassword(password);
+    return this.exclusive(async()=>{
+      await this.idle();
+      this.pending=null;
+      const layout=this.layout(),report=await this._verify(folder,password,layout,false);
+      // Cross-machine migration may change profile ID/AVD name but not Android
+      // image compatibility. Importing into the default profile is disallowed.
+      if(layout.id==='default')throw Error('Create and select a separate Android profile before migration');
+      const data=await p.realpath(this.dataDir);
+      if(within(report.directory,data)||within(data,report.directory))
+        throw Error('Migration source overlaps local profile data');
+      for(const target of Object.values(layout.targets))
+        if(within(report.directory,target)||within(target,report.directory))
+          throw Error('Migration source overlaps a live target');
+      const local=await avdCompatibility(layout.targets.avd);
+      requireCompatible(report.manifest.avdCompatibility,local);
+      const space=this.requirements(layout,report.manifest).map(v=>({
+        location:v.path,requiredBytes:v.bytes,availableBytes:checkSpace(v.path,v.bytes)
+      }));
+      const token=id(24);
+      this.pending={token,profileId:layout.id,directory:report.directory,
+        fingerprint:report.fingerprint,at:Date.now(),migration:true,
+        compatibility:JSON.stringify(local)};
+      return {token,migration:true,encrypted:true,cipher:'AES-256-GCM',
+        profileId:layout.id,sourceProfileId:report.manifest.profileId,
+        createdAt:report.manifest.createdAt,files:report.manifest.files.length,
+        bytes:report.manifest.totalBytes,components:report.manifest.components,
+        compatibility:local,space,warning:'Cross-machine import replaces target data only after typed MIGRATE and native confirmation; existing data retained in .before-restore copies.'};
+    });
+  }
   async previewRestore(folder,password){
     validatePassword(password);
     return this.exclusive(async()=>{
@@ -236,7 +294,19 @@ class EncryptedBackupCenter extends BackupCenter {
       await this.idle();
       const layout=this.layout();
       if(layout.id!==pending.profileId)throw Error('Profile changed since preview');
-      const v=await this._verify(pending.directory,password,layout);
+      const v=await this._verify(pending.directory,password,layout,!pending.migration);
+      if(pending.migration){
+        if(layout.id==='default')throw Error('Cannot migrate into Default');
+        const local=await avdCompatibility(layout.targets.avd);
+        requireCompatible(v.manifest.avdCompatibility,local);
+        if(JSON.stringify(local)!==pending.compatibility)throw Error('Target AVD compatibility changed since preview');
+        const data=await p.realpath(this.dataDir);
+        if(within(v.directory,data)||within(data,v.directory))
+          throw Error('Migration source overlaps local profile data');
+        for(const target of Object.values(layout.targets))
+          if(within(v.directory,target)||within(target,v.directory))
+            throw Error('Migration source overlaps live profile data');
+      }
       if(v.fingerprint!==pending.fingerprint)throw Error('Encrypted backup changed after preview');
       for(const disk of this.requirements(layout,v.manifest))checkSpace(disk.path,disk.bytes);
       // Key exists only during this restore, never across the preview/consent window.
@@ -276,7 +346,7 @@ class EncryptedBackupCenter extends BackupCenter {
           if(item.present){await p.rename(item.stage,item.target);state.newMoved=true;}
         }
         this.progress('restore-complete',m.totalBytes,m.totalBytes);
-        return {ok:true,encrypted:true,profileId:layout.id,files:m.files.length,
+        return {ok:true,encrypted:true,migration:!!pending.migration,profileId:layout.id,files:m.files.length,
           bytes:m.totalBytes,restartRequired:true,
           preserved:moved.filter(x=>x.oldMoved).map(x=>x.safety)};
       }catch(error){
@@ -296,4 +366,4 @@ class EncryptedBackupCenter extends BackupCenter {
     });
   }
 }
-module.exports={EncryptedBackupCenter,ENC_FORMAT,ENC_VERSION,validatePassword,checkHeader,checkEncryptedManifest};
+module.exports={EncryptedBackupCenter,ENC_FORMAT,ENC_VERSION,validatePassword,checkHeader,checkEncryptedManifest,parseAvdConfig,requireCompatible};
