@@ -53,6 +53,35 @@
     <button type="button" id="btnCreateProfile" class="btn ghost sm">+ New profile</button>
     <p id="profilesNotice" role="status" aria-live="polite">Profiles keep APKs and Android app data separate. Switching requires Android to be stopped and restarts ApkStart.</p>
   </section>
+  <section id="backupCenter" class="asi-backup" aria-labelledby="backupCenterTitle">
+    <div class="asi-backup-top">
+      <div class="asi-backup-headline">
+        <strong id="backupCenterTitle">Backup &amp; Restore Center</strong>
+        <span id="backupProfileCaption">Current Android profile: Default</span>
+      </div>
+      <button id="btnBackupToggle" class="btn ghost sm" type="button" aria-controls="backupContent" aria-expanded="false">Open backup tools</button>
+    </div>
+    <div id="backupContent" class="asi-backup-body" hidden>
+      <div class="asi-backup-notice" id="backupSafety">
+        Stop Android first. Backup folders contain sensitive app data and are NOT encrypted. No upload or automatic overwrite.
+      </div>
+      <div class="asi-backup-actions">
+        <button class="btn primary sm" type="button" id="btnBackupCreate">Create verified backup</button>
+        <button class="btn ghost sm" type="button" id="btnBackupPick">Inspect a backup to restore</button>
+      </div>
+      <div id="backupProgress" class="asi-backup-progress" role="status" aria-live="polite">Ready. Choose an external folder for a backup.</div>
+      <div id="backupPreview" class="asi-backup-preview" hidden>
+        <strong id="backupPreviewTitle">Verified snapshot</strong>
+        <div id="backupPreviewDetails"></div>
+        <p id="backupRestoreNotice">Restoring requires explicit approval. Current data will be preserved as safety copies; ApkStart must restart afterwards.</p>
+        <div class="asi-backup-actions">
+          <button class="btn primary sm" id="btnBackupRestore" type="button">Restore after confirmation</button>
+          <button class="btn ghost sm" id="btnBackupCancel" type="button">Cancel preview</button>
+        </div>
+      </div>
+      <button class="btn ghost sm" id="btnBackupRestart" type="button" hidden>Restart ApkStart to use restored data</button>
+    </div>
+  </section>
   <section class="toolbar">
     <div class="search">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -886,5 +915,6 @@
 <script src="auto-repair.js"></script>
 <script src="performance.js"></script>
 <script src="profiles-ui.js"></script>
+<script src="backup-ui.js"></script>
 </body>
 </html>

@@ -927,3 +927,23 @@ kbd {
 .asi-profiles p{flex-basis:100%;margin:0;font-size:10.5px;line-height:1.5;color:var(--muted)}
 .asi-profiles p.error{color:#c0392b}
 @media(max-width:560px){.asi-profiles-info{min-width:100%;}.asi-profiles select{flex:1;min-width:100px}}
+
+
+/* Backup & Restore Center - accessible, opt-in, data-preserving operations */
+.asi-backup{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:12px 15px;margin:0 0 11px}
+.asi-backup-top{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.asi-backup-headline{display:flex;flex-direction:column;gap:4px;min-width:0}
+.asi-backup-headline strong{font-size:12.5px}
+.asi-backup-headline span{font-size:10.5px;color:var(--muted)}
+.asi-backup-body{padding-top:12px;display:flex;flex-direction:column;gap:11px}
+.asi-backup-body[hidden],.asi-backup-preview[hidden]{display:none}
+.asi-backup-notice{padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2);font-size:11px;line-height:1.65}
+.asi-backup-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.asi-backup-actions button:disabled{opacity:.55;cursor:not-allowed}
+.asi-backup-progress{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere;line-height:1.6}
+.asi-backup-preview{border-radius:10px;border:1px solid var(--line);background:var(--panel-2);padding:12px;display:flex;flex-direction:column;gap:9px}
+.asi-backup-preview strong{font-size:12px}
+.asi-backup-preview p{font-size:11px;line-height:1.65;margin:0;color:var(--muted)}
+#backupPreviewDetails{font-size:11.5px;line-height:1.7;overflow-wrap:anywhere;white-space:pre-line}
+#btnBackupRestart{align-self:flex-start}
+@media(max-width:580px){.asi-backup-top{flex-direction:column;align-items:flex-start}.asi-backup-actions>*{flex:1;min-width:155px}}
