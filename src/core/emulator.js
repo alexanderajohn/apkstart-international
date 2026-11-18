@@ -428,7 +428,7 @@ class EmulatorEngine {
       const wantId = doctor.imageIdentity(wantImg);
       if ((prevTag && prevTag[1].trim() !== tag) || (prevId && prevId !== wantId)) {
         // 旧 userdata 与新镜像不兼容（APEX 引导循环），必须重建
-        this.wipePending = true;
+        throw Error('System image differs from this Profile. Select its original image or create a new Profile.');
       }
     }
 
@@ -559,12 +559,12 @@ class EmulatorEngine {
       }
     }
 
-    // 首次 / 旧版留下的全零占位 / 镜像损坏：全新造一个
+    // Only initialize an entirely new partition.
+    if (fs.existsSync(img) || fs.existsSync(img + '.qcow2'))
+        throw Error('Existing Android userdata could not be verified. Preserve it for recovery.');
     try {
-      fs.rmSync(img, { force: true });
-      fs.rmSync(`${img}.qcow2`, { force: true });
       // 先不带 encrypt 位（老 e2fsck/resize2fs 才肯干活）
-      fs.writeFileSync(img, userdata.buildEmptyExt4({ sizeMB: 64, encrypt: false }));
+      fs.writeFileSync(img, userdata.buildEmptyExt4({ sizeMB: 64, encrypt: false }), { flag: 'wx' });
       this._qemuImg('resize', img, wantBytes);
       this._resize2fs(img);
       userdata.setEncryptFlag(img);

@@ -29,7 +29,8 @@ const { Installer } = require('./core/installer');
 const { Sharer } = require('./core/sharer');
 const { parseApk } = require('./core/apk');
 const { inspectApk } = require('./core/smartcheck');
-const { prepareInstall, verifyInstallSource, approvalText } = require('./core/apk-install-guard');
+const { prepareInstall, approvalText } = require('./core/apk-install-guard');
+const { withApprovedCopy } = require('./core/install-staging');
 const { drawAppIcon } = require('./core/png');
 
 // 品牌 Logo（build/render-logo.js 生成）；缺失时回退到程序化绘制的旧版图标
@@ -460,7 +461,7 @@ async function restartForOrientation(landscape, { reloadApp = true } = {}) {
     if (reloadApp && pkg) {
       const app = store.getApp(pkg);
       if (app) {
-        await rt.client.install(app.apkPath).catch(() => {});
+        if (!await rt.client.isInstalled(pkg)) throw Error('Reinstall the missing package through SmartCheck');
         await rt.client.startApp(app.package, app.activity, {}).catch(() => {});
       }
       await new Promise((r) => setTimeout(r, 1500));
@@ -946,9 +947,9 @@ async function runInstall(filePath) {
       send('install:cancelled',{file:filePath});
       return {ok:false,canceled:true};
     }
-    const source=await verifyInstallSource(preview,store.profiles.currentId());
-    send('install:start', { file: source });
-    const result = await installer.install(source, (p) => send('install:progress', p));
+    send('install:start', { file: filePath });
+    const result = await withApprovedCopy(preview, store.profiles.currentId(), staged =>
+      installer.install(staged, existing, progress => send('install:progress', progress)));
     send('install:done', result);
     // 新建的桌面图标要让资源管理器立刻刷新，否则用户会以为「没创建快捷方式」
     windowctl.refreshShell().catch(() => {});

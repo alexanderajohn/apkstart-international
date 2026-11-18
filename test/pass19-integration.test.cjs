@@ -7,15 +7,15 @@ test('all APK entry points converge on main-process native approval',()=>{
  assert.match(s,/if \(args\.apk\) \{ runInstall\(args\.apk\)/);
  assert.match(s,/if \(args\.apk\) runInstall\(args\.apk\)/);
  assert.ok(s.includes("const preview=await prepareInstall(filePath,profileId);"));
- assert.ok(s.includes("const source=await verifyInstallSource(preview,store.profiles.currentId());"));
+ assert.ok(s.includes("await withApprovedCopy(preview, store.profiles.currentId()"));
  assert.ok(s.includes("defaultId:0,cancelId:0,noLink:true"));
- assert.ok(s.includes("await installer.install(source"));
+ assert.ok(s.includes("installer.install(staged, existing"));
 });
 test('installer verifies exact AVD and PM installation before catalog write',()=>{
  const s=read('src/core/installer.js');
  assert.ok(s.includes('const expectedProfileId=store.profiles.currentId();'));
- assert.ok(s.includes('await assertProfileGuest({expectedProfileId'));
- const p=s.indexOf("await client.exec(['shell','pm','path',meta.package]");
+ assert.ok(s.includes('assertProfileGuest({ expectedProfileId'));
+ const p=s.indexOf("await client.isInstalled(meta.package)");
  const catalog=s.indexOf('store.upsertApp(app);');
  assert.ok(p>0&&catalog>p);
  assert.ok(s.includes('assertProfileUnchanged(expectedProfileId'));

@@ -6,7 +6,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const crypto = require('crypto');
+const { sha256File } = require('./smartcheck');
+const { installSession } = require('./install-session');
 const store = require('./store');
 const { autoGrantEnabled } = require('./permission-policy');
 const { parseApk } = require('./apk');
@@ -16,11 +17,6 @@ const { iconToIco, writeShortcut, removeShortcut, safeFileName, shortcutExt } = 
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** APK 只有 ARM 原生库（国产 App 绝大多数如此） */
-function isArmOnly(meta) {
-  return !!(meta && meta.abis && meta.abis.length && !meta.abis.some((a) => /x86/i.test(a)));
-}
-
 /**
  * 拆分安装包（.apks / .xapk）：解出里面的分片 APK 到纯 ASCII 临时目录。
  * 用文件版 ZIP 读取器 + 流式落盘：拆分包动辄 2GB+，整包读内存会失败。
@@ -28,19 +24,18 @@ function isArmOnly(meta) {
  */
 async function parseBundle(filePath) {
   const zip = new ZipFile(filePath);
-  const dir = path.join(os.tmpdir(), 'apkstart-bundle', crypto.createHash('sha1')
-    .update(filePath).digest('hex').slice(0, 12));
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'asi-splits-'));
   const cleanup = () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* ignore */ } };
   try {
     const apkNames = zip.names().filter((n) => /\.apk$/i.test(n));
     if (!apkNames.length) throw new Error('这个安装包里没有找到 APK 分片（可能不是 .apks/.xapk）');
-    fs.mkdirSync(dir, { recursive: true });
+    if (apkNames.length > 128) throw Error('Too many APK splits');
     const files = [];
     for (let i = 0; i < apkNames.length; i++) {
       const target = path.join(dir, `split-${i}.apk`);
       // 单个分片也可能是几百 MB：流式解压，不经过 Buffer
       // eslint-disable-next-line no-await-in-loop
-      await zip.pipeTo(apkNames[i], fs.createWriteStream(target));
+      await zip.pipeTo(apkNames[i], fs.createWriteStream(target, { flags: 'wx', mode: 0o600 }));
       files.push(target);
     }
     let meta = null;
@@ -103,105 +98,45 @@ class Installer {
     return [...new Set(out)];
   }
 
-  /** 兼容镜像按「首次遇到 ARM 应用」按需下载，作为共享只读基础层只下一次 */
-  async ensureCompatImage(onProgress) {
-    const prov = this.runtime.provisioner;
-    if (prov.playImageInfo().ok) return true;
-    onProgress({ stage: 'runtime', message: '首次安装 ARM 应用：正在下载兼容镜像（约 1.5GB，只需一次）…' });
-    await prov.installPlayImage((p) => onProgress({ stage: 'runtime', message: p.message, percent: p.percent }));
-    if (!prov.playImageInfo().ok) throw new Error('兼容镜像下载失败，请检查网络后重试');
-    return true;
-  }
-
-  /** 切换镜像必须重启运行时；重启后把已装应用从本地 APK 备份重新灌回去 */
-  async switchToCompat(onProgress) {
-    const apps = store.getApps();
-    store.saveSettings({ runtime: { compatImage: true } });
-    onProgress({ stage: 'runtime', message: '正在切换到兼容镜像并重启运行时…' });
-    try { await this.runtime.stop(); } catch (_) { /* ignore */ }
-    // 等旧设备从 adb 列表里消失，避免被 ensure() 当成可复用实例
-    for (let i = 0; i < 12; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      const ds = await this.runtime.client().devices().catch(() => []);
-      if (!ds.some((d) => /^emulator-\d+$/.test(d.serial))) break;
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(1000);
-    }
-    const rt = await this.runtime.ensure({ onLog: (m) => onProgress({ stage: 'runtime', message: m }) });
-    if (!rt.ok) {
-      const err = new Error(rt.error || '切换兼容镜像后运行时不可用');
-      err.needsSetup = rt.needsSetup || 'provision';
-      throw err;
-    }
-    for (const app of apps) {
-      if (!app.apkPath || !fs.existsSync(app.apkPath)) continue;
-      try {
-        if (app.bundle) {
-          // eslint-disable-next-line no-await-in-loop
-          const b = await parseBundle(app.apkPath);
-          // eslint-disable-next-line no-await-in-loop
-          await rt.client.installMultiple(b.files);
-          b.cleanup();
-        } else {
-          // eslint-disable-next-line no-await-in-loop
-          await rt.client.install(app.apkPath);
-        }
-        onProgress({ stage: 'runtime', message: `正在恢复已装应用 ${app.label}…` });
-      } catch (_) { /* 单个应用恢复失败不阻塞 */ }
-    }
-    return rt;
-  }
-
-  async install(filePath, onProgress = () => {}) {
+  async install(staged, replace, onProgress = () => {}) {
     const expectedProfileId=store.profiles.currentId();
-    onProgress({ stage: 'parse', message: '正在解析 APK…' });
-    let meta;
-    let bundle = null;
-    if (/\.(apks|xapk)$/i.test(filePath)) {
-      bundle = await parseBundle(filePath);
-      meta = bundle.meta;
-    } else {
-      meta = parseApk(filePath);
-    }
-    onProgress({
-      stage: 'parse-done',
-      message: `已识别 ${meta.label}（${meta.package}）`,
-      meta: { label: meta.label, package: meta.package, versionName: meta.versionName },
-    });
-
-    // 50GB 级游戏：先核对模拟器数据盘剩余空间，而不是装到一半才报
-    // INSTALL_INSUFFICIENT_STORAGE（用户看到的是「装了很久然后失败」）。
+    assertProfileUnchanged(staged.profileId, () => expectedProfileId);
+    const filePath = staged.path;
+    const bundle = staged.format === 'apk' ? null : await parseBundle(filePath);
     try {
-      const backend = this.runtime && this.runtime.backend;
-      if (backend && typeof backend.checkDiskFor === 'function') {
-        let bytes = 0;
-        if (bundle && bundle.files) {
-          for (const f of bundle.files) {
-            try { bytes += fs.statSync(f).size; } catch (_) { /* 忽略临时文件 */ }
+      const meta = bundle ? bundle.meta : parseApk(filePath);
+      if (staged.package && (meta.package !== staged.package || meta.versionName !== staged.version))
+        throw Error('APK package identity changed after approval');
+      onProgress({
+        stage: 'parse-done',
+        message: `已识别 ${meta.label}（${meta.package}）`,
+        meta: { label: meta.label, package: meta.package, versionName: meta.versionName },
+      });
+
+      // 50GB 级游戏：先核对模拟器数据盘剩余空间，而不是装到一半才报
+      // INSTALL_INSUFFICIENT_STORAGE（用户看到的是「装了很久然后失败」）。
+      try {
+        const backend = this.runtime && this.runtime.backend;
+        if (backend && typeof backend.checkDiskFor === 'function') {
+          let bytes = 0;
+          if (bundle && bundle.files) {
+            for (const f of bundle.files) {
+              try { bytes += fs.statSync(f).size; } catch (_) { /* 忽略临时文件 */ }
+            }
+          } else {
+            try { bytes = fs.statSync(filePath).size; } catch (_) { /* 用 0 兜底 */ }
           }
-        } else {
-          try { bytes = fs.statSync(filePath).size; } catch (_) { /* 用 0 兜底 */ }
+          const verdict = backend.checkDiskFor(bytes);
+          if (!verdict.ok) {
+            onProgress({ stage: 'error', message: verdict.message });
+            const err = new Error(verdict.message);
+            err.needsSetup = 'disk';
+            throw err;
+          }
         }
-        const verdict = backend.checkDiskFor(bytes);
-        if (!verdict.ok) {
-          onProgress({ stage: 'error', message: verdict.message });
-          const err = new Error(verdict.message);
-          err.needsSetup = 'disk';
-          throw err;
-        }
-      }
-    } catch (e) {
-      if (e && e.needsSetup === 'disk') throw e;
-      // 容量探测失败不能挡住安装
-    }
-
-    try {
-      // 零配置：仅含 ARM 库的应用自动补齐带 ARM 翻译层的镜像，用户不用开任何开关
-      if (isArmOnly(meta) && !this.runtime.provisioner.playImageInfo().ok) {
-        await this.ensureCompatImage(onProgress);
-        const switched = await this.switchToCompat(onProgress);
-        assertProfileUnchanged(expectedProfileId,()=>store.profiles.currentId());
-        return this.finishInstall(switched, meta, filePath, bundle, onProgress,expectedProfileId);
+      } catch (e) {
+        if (e && e.needsSetup === 'disk') throw e;
+        // 容量探测失败不能挡住安装
       }
 
       onProgress({ stage: 'runtime', message: '正在准备安卓运行时…' });
@@ -212,51 +147,33 @@ class Installer {
         throw err;
       }
       assertProfileUnchanged(expectedProfileId,()=>store.profiles.currentId());
-      return await this.finishInstall(rt, meta, filePath, bundle, onProgress,expectedProfileId);
+      return await this.finishInstall(rt, meta, staged, bundle, onProgress, expectedProfileId, replace);
     } finally {
       if (bundle) bundle.cleanup();
     }
   }
 
-  /** 安装本体 + 落盘元数据 + 快捷方式；失败时带一次自动修复重试 */
-  async finishInstall(rt, meta, filePath, bundle, onProgress,expectedProfileId=null) {
-    let client = rt.client;
-    if(expectedProfileId!==null){
-      await assertProfileGuest({expectedProfileId,getProfileId:()=>store.profiles.currentId(),
-        client,serial:client?.serial,engine:rt.engine});
-    }
+  async finishInstall(rt, meta, staged, bundle, onProgress, expectedProfileId, replace) {
+    const filePath = staged.path;
+    const client = rt.client;
+    const serial = client.serial;
+    const checkGuest = () => assertProfileGuest({ expectedProfileId,
+      getProfileId: () => store.profiles.currentId(), client, serial, engine: rt.engine });
+    await checkGuest();
     const existing = store.getApp(meta.package);
-    // 装完之后旧 quickboot 快照里的磁盘状态就过期了，留着会导致「装好的应用重启后又不见了」
-    try { this.runtime.emulator?.invalidateSnapshot(); } catch (_) { /* ignore */ }
-    onProgress({ stage: 'install', message: existing ? '正在更新应用…' : '正在安装应用…' });
-    try {
-      if (bundle) await client.installMultiple(bundle.files);
-      else await client.install(filePath);
-    } catch (e) {
-      // 到了这一步还报 ABI 不匹配：说明当前运行时是 AOSP 镜像，自动切兼容镜像再装一次
-      if (e.code === 'NO_MATCHING_ABIS' && !this.runtime.provisioner.playImageInfo().ok) {
-        await this.ensureCompatImage(onProgress);
-        const rt2 = await this.switchToCompat(onProgress);
-        onProgress({ stage: 'install', message: '已切换兼容镜像，正在重新安装…' });
-        if (bundle) await rt2.client.installMultiple(bundle.files);
-        else await rt2.client.install(filePath);
-        client=rt2.client;
-        if(expectedProfileId!==null)
-          await assertProfileGuest({expectedProfileId,getProfileId:()=>store.profiles.currentId(),
-            client,serial:client?.serial,engine:rt2.engine});
-      } else {
-        throw e;
-      }
+    const parts = [];
+    for (const file of bundle ? bundle.files : [filePath]) {
+      if (bundle && parseApk(file).package !== meta.package) throw Error('Bundle contains different Android packages');
+      parts.push({ path: file, bytes: fs.statSync(file).size, sha256: bundle ? await sha256File(file) : staged.sha256 });
     }
-    // Android package-manager confirmation is stronger than trusting a
-    // successful-looking adb install exit code. Never persist a phantom app.
-    if(expectedProfileId!==null){
-      await assertProfileGuest({expectedProfileId,getProfileId:()=>store.profiles.currentId(),
-        client,serial:client?.serial,engine:rt.engine});
-      const installed=await client.exec(['shell','pm','path',meta.package],{timeout:15000});
-      if(!/^package:\/\S+/m.test(String(installed?.stdout||'')))
-        throw new Error('Android did not confirm the installed package; catalog was not updated');
-    }
+    onProgress({ stage: 'install', message: replace ? 'Updating Android app…' : 'Installing Android app…' });
+    await installSession(client, parts, { pkg: meta.package, replace: replace && staged.package === meta.package,
+      grant: autoGrantEnabled(store.getSettings()), checkGuest });
+    await checkGuest();
+    if (!await client.isInstalled(meta.package))
+      throw Error('Android committed the install but package files could not be confirmed. Check this Profile before retrying.');
+    await checkGuest();
+    this.runtime.emulator?.invalidateSnapshot();
     this.runtime.touch();
 
     // 图标落盘。APK 图标大量是 WebP，nativeImage 解不了，交给渲染进程解码 +
@@ -286,9 +203,12 @@ class Installer {
     // 备份 APK，便于日后重装/找回
     let apkCopy = null;
     try {
-      apkCopy = store.apkPath(meta.package, meta.versionCode.toString(36));
-      fs.copyFileSync(filePath, apkCopy);
-    } catch (_) { /* ignore */ }
+      const cache = store.apkPath(meta.package, staged.sha256);
+      try {
+        fs.copyFileSync(filePath, cache, fs.constants.COPYFILE_EXCL);
+      } catch (error) { if (error.code !== 'EEXIST') throw error; }
+      if (await sha256File(cache) === staged.sha256) apkCopy = cache;
+    } catch { /* Android already committed. Report the missing local cache below. */ }
 
     // 启动入口以系统解析结果为准：APK 里解析到的「主 Activity」经常不是
     // 真正的 LAUNCHER 入口，直接用它启动会跳过应用的初始化页导致闪退。
@@ -345,6 +265,7 @@ class Installer {
 
     // 兼容性提示：只有 ARM 原生库时，x86 运行时需要转译层
     const warnings = [];
+    if (!apkCopy) warnings.push('Installed on Android. The local APK backup could not be verified.');
     if (meta.minSdk && meta.minSdk > 34) {
       warnings.push(`此应用要求 Android ${meta.minSdk}+，高于当前运行时，可能无法正常运行。`);
     }
@@ -547,22 +468,8 @@ class Installer {
       freeform: settings.freeform,
       bounds: app ? app.bounds : null,
     });
-    // 应用可能还没装进当前运行时（镜像重建 / 清过数据 / 首次），直接拉起会报
-    // "Invalid packageName"。先在本地缓存里把它装上再启动，这样「点开应用」永远能进，
-    // 不用先手动装一遍——这正是「点击已安装应用直接进入系统」想要的体验。
-    // 关键：用 isInstalled()（pm path + 逐个核对 APK 文件真实存在）而不是
-    // `pm list packages`。快照与数据分区不一致时 PackageManager 仍报 installed=true，
-    // 但 /data/app 下文件已被回滚掉 —— 这时 am start 必然失败。文件校验不通过就重装。
-    if (app && app.apkPath && fs.existsSync(app.apkPath)) {
-      let installed = false;
-      try { installed = await rt.client.isInstalled(pkg); } catch (_) { /* 当作未安装，走重装 */ }
-      if (!installed) {
-        onLog('应用文件缺失（快照与数据不一致），正在用本地备份自动重装…');
-        // 重装前作废快照：否则旧快照的 packages.xml 仍说「已装」，下次又不对
-        try { this.runtime.emulator?.invalidateSnapshot(); } catch (_) { /* ignore */ }
-        await rt.client.install(app.apkPath).catch((e) => onLog(`自动安装失败：${e.message}`));
-      }
-    }
+    if (!await rt.client.isInstalled(pkg))
+      throw Error('Android package files are missing. Select the APK in SmartCheck to reinstall.');
     // 观察 25 秒并要求「连续存活 5 秒」才算启动成功。
     // 关键：进程"还没起来"和"起来过又没了"必须分开看。以前一看到 pidof 为空就判失败，
     // 结果大型应用（红果这种首启要十几秒的）在加载途中就被 force-stop 重启，
@@ -595,7 +502,7 @@ class Installer {
       }
       return seen; // 一直没见过进程才算失败
     };
-    try {
+    {
       // Default: preserve Android's normal permission prompts.
       // Advanced users may explicitly opt into runtime permission grants.
       if (autoGrant) {
@@ -648,22 +555,6 @@ class Installer {
         const err = new Error('应用启动后立即退出，已自动重试；未清除应用数据，请检查兼容性或手动排障');
         err.code = 'APP_UNSTABLE';
         throw err;
-      }
-    } catch (e) {
-      if (e.code === 'APP_CRASHED' && !this.runtime.provisioner.playImageInfo().ok) {
-        // 崩溃来自 ARM 翻译层：自动切镜像、重装备份 APK、再启动一次
-        onLog('检测到 ARM 翻译层崩溃，正在自动切换兼容镜像…');
-        await this.ensureCompatImage(onLog ? (m) => onLog(m.message || '') : () => {});
-        const rt2 = await this.switchToCompat((m) => onLog(m.message || ''));
-        if (app && app.apkPath && fs.existsSync(app.apkPath)) {
-          try { await rt2.client.install(app.apkPath); } catch (_) { /* 保留原包 */ }
-        }
-        await rt2.client.startApp(app ? app.package : pkg, app ? app.activity : null, {
-          freeform: settings.freeform,
-          bounds: app ? app.bounds : null,
-        });
-      } else {
-        throw e;
       }
     }
     this.runtime.touch();
