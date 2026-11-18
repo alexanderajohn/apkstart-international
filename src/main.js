@@ -3351,6 +3351,32 @@ if (!gotLock) {
                 throw new Error('Encrypted Safety Vault UI preview did not render');
               console.log('[smoke] Encrypted Safety Vault authenticated; plaintext source preserved; no restore');
               await snap(out.replace(/\.png$/i,'-sealed.png'));
+              // Feature #10 smoke is READ-ONLY: report is advisory, preview
+              // authenticates both inputs, but no cleanup IPC/apply executes.
+              const retentionReport=await safetyRetention.report(30);
+              const cleanupPreview=await safetyRetention.preview(recoveryPoint.id,sealedEntry.id,smokeKey);
+              if(!cleanupPreview.authenticated||retentionReport.automaticCleanup
+                ||retentionReport.totals.plaintextPoints!==1)
+                throw new Error('Safety retention verification failed');
+              const retentionShown=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  const pane=document.getElementById('backupRetentionPanel');pane.hidden=false;" +
+                "  window.ASI_BACKUP.renderRetention("+JSON.stringify(retentionReport)+");" +
+                "  window.ASI_BACKUP.renderCleanupPreview("+JSON.stringify(cleanupPreview)+");" +
+                "  pane.scrollIntoView({block:'center'});" +
+                "  return {summary:document.getElementById('backupRetentionSummary').textContent," +
+                "    shown:!document.getElementById('backupCleanupPreviewPanel').hidden," +
+                "    button:!document.getElementById('btnBackupCleanupApply').disabled," +
+                "    details:document.getElementById('backupCleanupDetails').textContent};" +
+                "})()"
+              );
+              if(!retentionShown?.shown||!retentionShown?.button
+                 ||!retentionShown?.summary||!retentionShown?.details.includes(sealedEntry.id))
+                throw new Error('Safety Vault retention UI smoke did not render');
+              if(!fs.existsSync(recoveryPath)||!fs.existsSync(sealed.path))
+                throw new Error('Safety retention smoke unexpectedly removed test data');
+              console.log('[smoke] Safety retention advisory and verified cleanup preview only; no deletion executed');
+              await snap(out.replace(/\.png$/i,'-retention.png'));
             }
             if (process.argv.includes('--perf')) {
               // 拍一张「性能与资源占用」区（设置页里控件最多的一块）
