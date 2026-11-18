@@ -1317,6 +1317,17 @@ function registerIpc() {
     if (typeof token !== 'string' || !/^[a-f0-9]{48}$/.test(token))
       throw new Error('Invalid restore approval token');
     await backupIdleCheck();
+    // Native dialog protects against renderer/UI mistakes or bypassed prompt.
+    // Default action is Cancel; the main process never silently overwrites data.
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',
+      buttons:['Cancel','Restore verified profile'],
+      defaultId:0,cancelId:0,noLink:true,
+      title:'Confirm Android profile restore',
+      message:'Replace the selected Android profile with the verified backup?',
+      detail:'Android must be stopped. Current APK data and Android userdata are renamed to .before-restore safety copies, not deleted. A restart is required.',
+    });
+    if(approval.response!==1)return {canceled:true};
     return backupCenter.restore(token);
   });
   ipcMain.handle('profiles:list', () => store.profiles.list());

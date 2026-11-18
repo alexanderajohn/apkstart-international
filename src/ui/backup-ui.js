@@ -136,6 +136,7 @@ async function restore(){
   lock(true);show(L.working);
   try{
     const result=await api.backupRestore(token);
+    if(result?.canceled){show(L.canceled);return;}
     if(result?.ok){
       show(L.restored+'\n'+L.preserved+(result.preserved||[]).join('\n'));
       $('btnBackupRestart').hidden=false;

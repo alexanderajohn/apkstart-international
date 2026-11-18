@@ -124,3 +124,11 @@ test('Windows CI starts verified snapshot UI but never runs restore against live
   assert.ok(ci.includes("'--backup'"));
   assert.ok(ci.includes('asi-backup-smoke.png'));
 });
+
+test('Final restore action requires a native main-process confirmation',()=>{
+  const main=fs.readFileSync(path.join(__dirname,'../src/main.js'),'utf8');
+  assert.ok(main.includes("title:'Confirm Android profile restore'"));
+  assert.ok(main.includes("cancelId:0"));
+  assert.ok(main.includes("if(approval.response!==1)return {canceled:true}"));
+  assert.ok(main.includes('return backupCenter.restore(token)'));
+});
