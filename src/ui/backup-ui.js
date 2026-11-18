@@ -32,6 +32,22 @@ const WORDS={
     sealedDone:'Encrypted safety point verified and created: ',
     plaintextRemains:'IMPORTANT: Original plaintext safety files are still present and unprotected. Sealing does not erase them.',
     sealedTitle:'Encrypted Safety Vault — authenticated archive',sealedPreviewNote:'AES-256-GCM authenticated encrypted safety copy. RESTORE and native confirmation are required; current live data will be preserved.',
+    retentionToggle:'Retention & Cleanup tools',retentionTitle:'Safety Vault Retention & Cleanup',
+    retentionNotice:'Read-only age and disk usage report. No automatic deletion; archive authenticity is checked only during a passworded cleanup preview.',
+    retentionDays:'Flag plaintext points older than (days)',retentionReport:'Inspect storage usage',
+    retentionEmpty:'Read-only inventory, no automatic cleanup is scheduled.',
+    retentionPlain:'Plaintext recovery points: ',retentionSealed:'Encrypted vault archives (not yet authenticated): ',
+    retentionOld:'Plaintext older than threshold: ',retentionAdvisory:'Days threshold is advisory only. No files were deleted.',
+    cleanupVerify:'Authenticate selected plaintext point against selected encrypted archive',
+    cleanupTitle:'Authenticated plaintext cleanup preview',
+    cleanupNotice:'WARNING: permanently delete ONLY the selected plaintext safety point. The encrypted archive and live profile stay untouched. Not secure erase; password needed for recovery. Interrupted deletion may leave fragments.',
+    cleanupButton:'Delete plaintext after confirmation',cleanupCancel:'Cancel cleanup preview',
+    cleanupSelect:'Select a plaintext recovery point AND its matching encrypted archive first.',
+    cleanupAsk:'Type DELETE PLAINTEXT to permanently remove the selected local safety point. This cannot be undone without the encrypted password.',
+    cleanupConfirm:'Remove the verified plaintext recovery point now? The encrypted archive and live data will stay intact. This is not secure erasure.',
+    cleanupDone:'Plaintext cleanup finished. Estimated removed data: ',cleanupCanceled:'Cleanup cancelled; no deletion requested.',
+    cleanupExpired:'Verify the encrypted archive again before deleting.',
+
 
     ask:'Type RESTORE to confirm replacing the active Android profile data. The original data will remain as safety copies. This cannot be undone automatically.',
     confirm:'Restore verified snapshot now? Current apps and userdata will be moved to safety copies. Android must remain stopped.',
@@ -71,6 +87,22 @@ const WORDS={
     sealedDone:'Đã tạo và xác thực bản an toàn mã hóa: ',
     plaintextRemains:'QUAN TRỌNG: Bản an toàn plaintext gốc vẫn tồn tại và chưa được bảo vệ. Mã hóa không tự xóa chúng.',
     sealedTitle:'Encrypted Safety Vault — bản lưu đã xác thực',sealedPreviewNote:'Bản an toàn AES-256-GCM đã xác thực. Cần nhập RESTORE và xác nhận Windows; dữ liệu hiện tại vẫn được giữ lại.',
+    retentionToggle:'Quản lý thời hạn & dọn dẹp',retentionTitle:'Safety Vault — Thời hạn & dọn dẹp',
+    retentionNotice:'Chỉ thống kê tuổi và dung lượng. Không tự xóa; phải xác thực bản mã hóa bằng mật khẩu khi xem trước dọn dẹp.',
+    retentionDays:'Đánh dấu điểm plaintext cũ hơn (ngày)',retentionReport:'Kiểm tra dung lượng',
+    retentionEmpty:'Chỉ kiểm kê, không có lịch tự động xóa.',
+    retentionPlain:'Điểm khôi phục plaintext: ',retentionSealed:'Kho mã hóa (chưa xác thực): ',
+    retentionOld:'Plaintext quá ngưỡng ngày: ',retentionAdvisory:'Ngưỡng ngày chỉ để gợi ý. Không xóa dữ liệu.',
+    cleanupVerify:'Xác thực điểm plaintext với bản mã hóa đã chọn',
+    cleanupTitle:'Xem trước dọn dẹp plaintext đã xác thực',
+    cleanupNotice:'CẢNH BÁO: chỉ xóa vĩnh viễn điểm plaintext đã chọn. Bản mã hóa và dữ liệu đang dùng không bị xóa. Không phải xóa an toàn trên SSD; cần mật khẩu để khôi phục. Gián đoạn có thể còn file.',
+    cleanupButton:'Xóa plaintext sau khi xác nhận',cleanupCancel:'Hủy xem trước dọn dẹp',
+    cleanupSelect:'Anh cần chọn cả điểm plaintext lẫn bản mã hóa tương ứng trước.',
+    cleanupAsk:'Nhập DELETE PLAINTEXT để xóa vĩnh viễn điểm an toàn plaintext đã chọn. Không thể hoàn tác nếu không có mật khẩu bản mã hóa.',
+    cleanupConfirm:'Xóa điểm plaintext đã xác thực ngay? Bản mã hóa và dữ liệu đang dùng sẽ được giữ nguyên. Không phải xóa an toàn.',
+    cleanupDone:'Đã dọn bản plaintext. Dung lượng ước tính: ',cleanupCanceled:'Đã hủy, không xóa dữ liệu.',
+    cleanupExpired:'Hãy xác thực lại bản mã hóa trước khi dọn.',
+
 
     ask:'Nhập RESTORE để xác nhận thay thế dữ liệu Android của profile đang dùng. Dữ liệu cũ được giữ lại làm bản an toàn. Không có chức năng tự hoàn tác.',
     confirm:'Khôi phục bản sao đã xác minh ngay? Ứng dụng và dữ liệu cũ sẽ được đổi tên thành bản an toàn. Android phải đang tắt.',
@@ -108,6 +140,22 @@ const WORDS={
     sealedDone:'已创建并验证加密安全副本：',
     plaintextRemains:'重要：原始明文安全文件仍存在且未受加密保护。加密操作不会自动删除它们。',
     sealedTitle:'加密安全保险库 — 已认证存档',sealedPreviewNote:'AES-256-GCM 认证加密副本。恢复需输入 RESTORE 并经原生系统确认；当前数据会保留。',
+    retentionToggle:'保留与清理工具',retentionTitle:'安全保险库 — 保留与清理',
+    retentionNotice:'只读统计保存时间和占用空间。不会自动删除；只有输入密码后才能验证加密存档用于清理。',
+    retentionDays:'标记超过天数的明文恢复点',retentionReport:'查看存储占用',
+    retentionEmpty:'只读清单，不执行自动清理。',
+    retentionPlain:'明文恢复点：',retentionSealed:'加密存档（尚未认证）：',
+    retentionOld:'超过保留天数的明文：',retentionAdvisory:'天数仅用于提示。未删除任何文件。',
+    cleanupVerify:'根据选定加密存档验证明文恢复点',
+    cleanupTitle:'已认证明文清理预览',
+    cleanupNotice:'警告：仅永久删除所选明文恢复点，不触碰加密存档或活动环境。这不是安全擦除；恢复需要密码。意外中断可能遗留文件。',
+    cleanupButton:'确认后删除明文',cleanupCancel:'取消清理预览',
+    cleanupSelect:'请先选择明文恢复点及其匹配的加密存档。',
+    cleanupAsk:'输入 DELETE PLAINTEXT 永久删除所选明文安全副本。没有加密密码则无法恢复。',
+    cleanupConfirm:'现在删除经验证的明文恢复点吗？加密存档和当前数据将保留，这不是安全擦除。',
+    cleanupDone:'明文清理完成。估计移除数据：',cleanupCanceled:'清理取消，没有执行删除。',
+    cleanupExpired:'请重新验证加密存档后再清理。',
+
 
     ask:'输入 RESTORE 确认替换当前 Android 环境数据。原数据保留为安全副本，无法自动撤销。',
     confirm:'现在恢复这个校验过的备份吗？必须先停止 Android。',
@@ -120,7 +168,7 @@ const WORDS={
 };
 const fmt=(n)=>n>=1024**3?(n/1024**3).toFixed(2)+' GB':n>=1024**2?(n/1024**2).toFixed(1)+' MB':n>=1024?(n/1024).toFixed(1)+' KB':String(n)+' B';
 const locale=()=>{const lang=window.ASI_I18N?.getLanguage?.()||navigator.language||'en';return /^vi/i.test(lang)?WORDS.vi:/^zh/i.test(lang)?WORDS['zh-CN']:WORDS.en;};
-let preview=null,busy=false;
+let preview=null,cleanupPreview=null,busy=false;
 function show(msg,error=false){$('backupProgress').textContent=msg;$('backupProgress').style.color=error?'#c0392b':'';}
 function lock(on){
   busy=on;
@@ -131,6 +179,12 @@ function lock(on){
   $('btnBackupSealPoint').disabled=on||$('backupRecoveryChoices').hidden;
   $('btnBackupSealedList').disabled=on;
   $('btnBackupSealedOpen').disabled=on||$('backupSealedChoices').hidden;
+  $('btnBackupRetentionToggle').disabled=on;
+  $('btnBackupRetentionReport').disabled=on;
+  $('backupRetentionDays').disabled=on;
+  $('btnBackupCleanupPreview').disabled=on||$('backupRecoveryChoices').hidden||$('backupSealedChoices').hidden;
+  $('btnBackupCleanupApply').disabled=on||!cleanupPreview;
+  $('btnBackupCleanupCancel').disabled=on||!cleanupPreview;
   $('backupSealedSelect').disabled=on;
   $('btnBackupRecoveryInspect').disabled=on||$('backupRecoveryChoices').hidden;
   $('backupRecoverySelect').disabled=on;
@@ -158,6 +212,18 @@ function render(){
   $('btnBackupSealedList').textContent=L.sealedList;
   $('backupSealedLabel').textContent=L.sealedLabel;
   $('btnBackupSealedOpen').textContent=L.sealedOpen;
+  const retentionOpen=!$('backupRetentionPanel').hidden;
+  $('btnBackupRetentionToggle').textContent=L.retentionToggle;
+  $('btnBackupRetentionToggle').setAttribute('aria-expanded',String(retentionOpen));
+  $('backupRetentionTitle').textContent=L.retentionTitle;
+  $('backupRetentionNotice').textContent=L.retentionNotice;
+  $('backupRetentionDaysLabel').textContent=L.retentionDays;
+  $('btnBackupRetentionReport').textContent=L.retentionReport;
+  $('btnBackupCleanupPreview').textContent=L.cleanupVerify;
+  $('backupCleanupTitle').textContent=L.cleanupTitle;
+  $('backupCleanupNotice').textContent=L.cleanupNotice;
+  $('btnBackupCleanupApply').textContent=L.cleanupButton;
+  $('btnBackupCleanupCancel').textContent=L.cleanupCancel;
   $('btnBackupRestore').textContent=preview?.recovery?L.recoveryButton:L.restore;
   $('btnBackupCancel').textContent=L.cancel;
   $('btnBackupRestart').textContent=L.restart;
@@ -239,9 +305,94 @@ async function migrate(){
   }catch(e){show(L.error+String(e?.message||e),true);}
   finally{secret='';clearPasswords();lock(false);}
 }
+function resetCleanup(){
+  const token=cleanupPreview?.token;
+  cleanupPreview=null;
+  $('backupCleanupPreviewPanel').hidden=true;
+  if(token)api.cleanupCancel(token).catch(()=>{});
+  lock(false);
+}
+function renderRetention(result){
+  const L=locale(),t=result.totals||{};
+  $('backupRetentionSummary').textContent=[
+    L.current+result.profileId,
+    L.retentionPlain+(t.plaintextPoints||0)+' / '+fmt(t.plaintextBytes||0),
+    L.retentionSealed+(t.encryptedArchives||0)+' / '+fmt(t.encryptedBytes||0),
+    L.retentionOld+fmt(t.oldPlaintextBytes||0)+' ('+result.retentionDays+' days)',
+    ...(result.plaintext||[]).slice(0,20).map(pt=>
+      (pt.oldEnough?'[age] ':'')+pt.id+' · '+pt.ageDays+' days · '+fmt(pt.bytes)),
+    L.retentionAdvisory
+  ].join('\n');
+}
+function renderCleanupPreview(result){
+  if(!result||!result.token)return;
+  cleanupPreview=result;
+  const L=locale();
+  $('backupCleanupPreviewPanel').hidden=false;
+  $('backupCleanupDetails').textContent=
+    L.current+result.profileId+'\n'+result.pointId+'\n'+result.archiveId+'\n'+
+    L.files+result.files+'\n'+L.bytes+fmt(result.bytes)+'\n'+
+    L.parts+result.components.join(', ')+'\nValid until: '+result.expiresAt;
+  $('backupCleanupNotice').textContent=L.cleanupNotice;
+  show(L.cleanupTitle);
+  lock(false);
+}
+async function reportRetention(){
+  if(busy)return;
+  const L=locale(),days=Number($('backupRetentionDays').value);
+  if(!Number.isInteger(days)||days<1||days>3650){
+    show(L.error+'Days must be from 1 to 3650',true);return;
+  }
+  lock(true);show(L.working);
+  try{renderRetention(await api.retentionReport(days));}
+  catch(e){show(L.error+String(e?.message||e),true);}
+  finally{lock(false);}
+}
+async function inspectCleanup(){
+  if(busy)return;
+  const L=locale();
+  if($('backupRecoveryChoices').hidden||$('backupSealedChoices').hidden){
+    show(L.cleanupSelect,true);return;
+  }
+  let secret=$('backupPassword').value;
+  if(!validPassword(secret)){show(L.passTooShort,true);return;}
+  resetCleanup();lock(true);show(L.working);
+  try{
+    const request=api.cleanupPreview($('backupRecoverySelect').value,$('backupSealedSelect').value,secret);
+    clearPasswords();secret='';
+    renderCleanupPreview(await request);
+  }catch(e){show(L.error+String(e?.message||e),true);}
+  finally{secret='';clearPasswords();lock(false);}
+}
+async function applyCleanup(){
+  if(busy||!cleanupPreview)return;
+  const L=locale();
+  let secret=$('backupPassword').value;
+  if(!validPassword(secret)){show(L.passTooShort,true);return;}
+  if(window.prompt(L.cleanupAsk)!=='DELETE PLAINTEXT')return;
+  if(!window.confirm(L.cleanupConfirm))return;
+  const token=cleanupPreview.token;
+  cleanupPreview=null;$('backupCleanupPreviewPanel').hidden=true;
+  lock(true);show(L.working);
+  try{
+    const request=api.cleanupApply(token,secret,'DELETE PLAINTEXT');
+    clearPasswords();secret='';
+    const result=await request;
+    if(result?.canceled){show(L.cleanupCanceled);return;}
+    if(result?.ok){
+      $('backupRecoveryChoices').hidden=true;
+      show(L.cleanupDone+fmt(result.estimatedReclaimedBytes)+'\n'+
+        'Encrypted archive preserved: '+result.archiveId);
+      const days=Number($('backupRetentionDays').value)||30;
+      renderRetention(await api.retentionReport(days));
+    }
+  }catch(e){show(L.error+String(e?.message||e),true);}
+  finally{secret='';clearPasswords();lock(false);}
+}
 async function findRecovery(){
   if(busy)return;
-  const L=locale();lock(true);show(L.working);
+  const L=locale();
+  resetCleanup();lock(true);show(L.working);
   preview=null;$('backupPreview').hidden=true;
   $('backupRecoveryChoices').hidden=true;
   try{
@@ -288,7 +439,7 @@ async function sealPoint(){
 }
 async function listSealed(){
   if(busy)return;
-  const L=locale();lock(true);show(L.working);
+  const L=locale();resetCleanup();lock(true);show(L.working);
   preview=null;$('backupPreview').hidden=true;
   $('backupSealedChoices').hidden=true;
   try{
@@ -361,6 +512,17 @@ function init(){
   $('btnBackupSealPoint').addEventListener('click',sealPoint);
   $('btnBackupSealedList').addEventListener('click',listSealed);
   $('btnBackupSealedOpen').addEventListener('click',inspectSealed);
+  $('btnBackupRetentionToggle').addEventListener('click',()=>{
+    $('backupRetentionPanel').hidden=!$('backupRetentionPanel').hidden;render();
+  });
+  $('btnBackupRetentionReport').addEventListener('click',reportRetention);
+  $('btnBackupCleanupPreview').addEventListener('click',inspectCleanup);
+  $('btnBackupCleanupApply').addEventListener('click',applyCleanup);
+  $('btnBackupCleanupCancel').addEventListener('click',()=>{
+    resetCleanup();show(locale().cleanupCanceled);
+  });
+  $('backupRecoverySelect').addEventListener('change',resetCleanup);
+  $('backupSealedSelect').addEventListener('change',resetCleanup);
   $('btnBackupRestore').addEventListener('click',restore);
   $('btnBackupCancel').addEventListener('click',()=>{preview=null;$('backupPreview').hidden=true;show(locale().ready);lock(false);});
   $('btnBackupRestart').addEventListener('click',()=>api.restartApp());
@@ -371,7 +533,8 @@ function init(){
   });
   show(locale().ready);
 }
-window.ASI_BACKUP={renderPreview:setPreview,open:()=>{
+window.ASI_BACKUP={renderPreview:setPreview,renderRetention,
+  renderCleanupPreview,open:()=>{
   $('backupContent').hidden=false;render();$('backupCenter').scrollIntoView({block:'center'});
 }};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
