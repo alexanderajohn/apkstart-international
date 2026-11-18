@@ -47,6 +47,21 @@ const WORDS={
     cleanupConfirm:'Remove the verified plaintext recovery point now? The encrypted archive and live data will stay intact. This is not secure erasure.',
     cleanupDone:'Plaintext cleanup finished. Estimated removed data: ',cleanupCanceled:'Cleanup cancelled; no deletion requested.',
     cleanupExpired:'Verify the encrypted archive again before deleting.',
+    healthToggle:'Disaster Recovery & Integrity Health Check',healthTitle:'Disaster Recovery & Integrity Health Check',
+    healthNotice:'Offline read-only scan. Encrypted archives are NOT authenticated until you verify one with its password. No automatic repair or deletion.',
+    healthRun:'Scan local recovery health',healthEmpty:'Run a local scan. No file changes will be made.',
+    healthArchiveLabel:'Encrypted archives',healthVerify:'Authenticate selected archive with password',
+    healthQuarantineLabel:'Interrupted cleanup fragments',healthPreview:'Inspect selected rescue',
+    healthRescueTitle:'Manual fragment rescue preview',
+    healthRescueNotice:'RESCUE only returns remaining .cleanup-pending files to original safety-copy names. Missing parts are NOT rebuilt; active Android data and encrypted archives stay unchanged.',
+    healthRescueApply:'Rescue fragments after confirmation',healthRescueCancel:'Cancel rescue preview',
+    healthAsk:'Type RESCUE to move surviving cleanup fragments back to their safety-copy names. It does not recreate deleted data.',
+    healthConfirm:'Rescue ONLY surviving cleanup fragments? Live Android data and encrypted archives will not be changed.',
+    healthResult:'Local health scan completed (read-only).',healthArchiveOk:'Encrypted archive authenticated. Files: ',
+    healthRescueDone:'Remaining fragments moved back into safety copies. This may still be a partial recovery.',
+    healthRescueNone:'No orphaned cleanup fragments available for rescue.',
+    healthNoArchive:'Choose a listed encrypted archive before verifying it.',
+
 
 
     ask:'Type RESTORE to confirm replacing the active Android profile data. The original data will remain as safety copies. This cannot be undone automatically.',
@@ -102,6 +117,21 @@ const WORDS={
     cleanupConfirm:'Xóa điểm plaintext đã xác thực ngay? Bản mã hóa và dữ liệu đang dùng sẽ được giữ nguyên. Không phải xóa an toàn.',
     cleanupDone:'Đã dọn bản plaintext. Dung lượng ước tính: ',cleanupCanceled:'Đã hủy, không xóa dữ liệu.',
     cleanupExpired:'Hãy xác thực lại bản mã hóa trước khi dọn.',
+    healthToggle:'Kiểm tra sức khỏe & Khôi phục sự cố',healthTitle:'Disaster Recovery & Integrity Health Check',
+    healthNotice:'Chỉ kiểm tra offline. Bản mã hóa CHƯA được xác thực cho đến khi nhập mật khẩu để kiểm tra riêng. Không tự sửa hay xóa.',
+    healthRun:'Quét tình trạng khôi phục',healthEmpty:'Hãy chạy kiểm tra cục bộ. Không thay đổi dữ liệu.',
+    healthArchiveLabel:'Các bản mã hóa',healthVerify:'Xác thực bản mã hóa bằng mật khẩu',
+    healthQuarantineLabel:'Mảnh dữ liệu dọn dẹp bị gián đoạn',healthPreview:'Xem trước RESCUE',
+    healthRescueTitle:'Xem trước khôi phục các mảnh dữ liệu',
+    healthRescueNotice:'RESCUE chỉ trả các file .cleanup-pending còn lại về tên bản an toàn cũ. KHÔNG dựng lại file đã xóa, không thay đổi Android đang dùng hoặc backup mã hóa.',
+    healthRescueApply:'RESCUE sau khi xác nhận',healthRescueCancel:'Hủy xem trước',
+    healthAsk:'Nhập RESCUE để trả những mảnh còn sót về tên bản an toàn. File đã xóa không thể tự dựng lại.',
+    healthConfirm:'Chỉ đưa các mảnh còn lại về bản an toàn? Không sửa dữ liệu Android hoặc backup mã hóa.',
+    healthResult:'Quét sức khỏe xong (chỉ đọc).',healthArchiveOk:'Bản mã hóa đã xác thực. Số file: ',
+    healthRescueDone:'Đã đưa những mảnh còn lại về bản an toàn. Có thể vẫn thiếu file đã xóa.',
+    healthRescueNone:'Không có phần dữ liệu dọn dẹp bị gián đoạn có thể RESCUE.',
+    healthNoArchive:'Chọn bản mã hóa trước khi xác thực.',
+
 
 
     ask:'Nhập RESTORE để xác nhận thay thế dữ liệu Android của profile đang dùng. Dữ liệu cũ được giữ lại làm bản an toàn. Không có chức năng tự hoàn tác.',
@@ -155,6 +185,21 @@ const WORDS={
     cleanupConfirm:'现在删除经验证的明文恢复点吗？加密存档和当前数据将保留，这不是安全擦除。',
     cleanupDone:'明文清理完成。估计移除数据：',cleanupCanceled:'清理取消，没有执行删除。',
     cleanupExpired:'请重新验证加密存档后再清理。',
+    healthToggle:'灾难恢复与完整性健康检查',healthTitle:'灾难恢复与完整性健康检查',
+    healthNotice:'仅进行离线只读扫描。加密存档在输入密码完整验证前不能视为已认证。不会自动修复或删除。',
+    healthRun:'扫描本地恢复健康状态',healthEmpty:'运行本地扫描，不会修改文件。',
+    healthArchiveLabel:'加密存档',healthVerify:'输入密码认证所选存档',
+    healthQuarantineLabel:'清理中断遗留文件',healthPreview:'预览 RESCUE',
+    healthRescueTitle:'手动恢复残留文件预览',
+    healthRescueNotice:'RESCUE 仅将剩余的 .cleanup-pending 文件返回原安全副本名称。不能重建已删除数据，不触碰当前 Android 和加密存档。',
+    healthRescueApply:'确认后恢复残留文件',healthRescueCancel:'取消预览',
+    healthAsk:'输入 RESCUE 将剩余文件恢复为原安全副本名称，已删除的数据不会重建。',
+    healthConfirm:'仅恢复剩余的安全副本片段？不会修改当前 Android 或加密存档。',
+    healthResult:'只读健康扫描完成。',healthArchiveOk:'加密存档验证通过。文件数：',
+    healthRescueDone:'残留文件已返回安全副本位置，但可能缺少已删除部分。',
+    healthRescueNone:'没有可恢复的清理中断残留文件。',
+    healthNoArchive:'先选择一个加密存档。',
+
 
 
     ask:'输入 RESTORE 确认替换当前 Android 环境数据。原数据保留为安全副本，无法自动撤销。',
@@ -168,7 +213,7 @@ const WORDS={
 };
 const fmt=(n)=>n>=1024**3?(n/1024**3).toFixed(2)+' GB':n>=1024**2?(n/1024**2).toFixed(1)+' MB':n>=1024?(n/1024).toFixed(1)+' KB':String(n)+' B';
 const locale=()=>{const lang=window.ASI_I18N?.getLanguage?.()||navigator.language||'en';return /^vi/i.test(lang)?WORDS.vi:/^zh/i.test(lang)?WORDS['zh-CN']:WORDS.en;};
-let preview=null,cleanupPreview=null,busy=false;
+let preview=null,cleanupPreview=null,healthRescuePreview=null,busy=false;
 function show(msg,error=false){$('backupProgress').textContent=msg;$('backupProgress').style.color=error?'#c0392b':'';}
 function lock(on){
   busy=on;
@@ -185,6 +230,14 @@ function lock(on){
   $('btnBackupCleanupPreview').disabled=on||$('backupRecoveryChoices').hidden||$('backupSealedChoices').hidden;
   $('btnBackupCleanupApply').disabled=on||!cleanupPreview;
   $('btnBackupCleanupCancel').disabled=on||!cleanupPreview;
+  $('btnBackupHealthToggle').disabled=on;
+  $('btnBackupHealthRun').disabled=on;
+  $('btnBackupHealthVerify').disabled=on||!$('backupHealthArchiveSelect').value;
+  $('backupHealthArchiveSelect').disabled=on;
+  $('backupHealthQuarantineSelect').disabled=on;
+  $('btnBackupRescuePreview').disabled=on||!$('backupHealthQuarantineSelect').value;
+  $('btnBackupRescueApply').disabled=on||!healthRescuePreview;
+  $('btnBackupRescueCancel').disabled=on||!healthRescuePreview;
   $('backupSealedSelect').disabled=on;
   $('btnBackupRecoveryInspect').disabled=on||$('backupRecoveryChoices').hidden;
   $('backupRecoverySelect').disabled=on;
@@ -224,6 +277,19 @@ function render(){
   $('backupCleanupNotice').textContent=L.cleanupNotice;
   $('btnBackupCleanupApply').textContent=L.cleanupButton;
   $('btnBackupCleanupCancel').textContent=L.cleanupCancel;
+  $('btnBackupHealthToggle').textContent=L.healthToggle;
+  $('btnBackupHealthToggle').setAttribute('aria-expanded',String(!$('backupHealthPanel').hidden));
+  $('backupHealthTitle').textContent=L.healthTitle;
+  $('backupHealthNotice').textContent=L.healthNotice;
+  $('btnBackupHealthRun').textContent=L.healthRun;
+  $('backupHealthArchiveLabel').textContent=L.healthArchiveLabel;
+  $('btnBackupHealthVerify').textContent=L.healthVerify;
+  $('backupHealthQuarantineLabel').textContent=L.healthQuarantineLabel;
+  $('btnBackupRescuePreview').textContent=L.healthPreview;
+  $('backupRescueTitle').textContent=L.healthRescueTitle;
+  $('backupRescueNotice').textContent=L.healthRescueNotice;
+  $('btnBackupRescueApply').textContent=L.healthRescueApply;
+  $('btnBackupRescueCancel').textContent=L.healthRescueCancel;
   $('btnBackupRestore').textContent=preview?.recovery?L.recoveryButton:L.restore;
   $('btnBackupCancel').textContent=L.cancel;
   $('btnBackupRestart').textContent=L.restart;
@@ -304,6 +370,113 @@ async function migrate(){
     if(r?.canceled)show(L.canceled);else setPreview(r);
   }catch(e){show(L.error+String(e?.message||e),true);}
   finally{secret='';clearPasswords();lock(false);}
+}
+function resetHealthRescue(){
+  const token=healthRescuePreview?.token;
+  healthRescuePreview=null;
+  $('backupRescuePreviewPanel').hidden=true;
+  if(token)api.rescueCancel(token).catch(()=>{});
+  lock(false);
+}
+function renderHealthReport(report){
+  if(!report)return;
+  resetHealthRescue();
+  const L=locale();
+  const archives=$('backupHealthArchiveSelect'),quarantines=$('backupHealthQuarantineSelect');
+  archives.replaceChildren();quarantines.replaceChildren();
+  for(const archive of report.archives||[]){
+    const o=document.createElement('option');
+    o.value=archive.id;o.textContent=archive.createdAt+' · '+archive.id.slice(7);
+    archives.appendChild(o);
+  }
+  for(const fragment of report.quarantine||[]){
+    const o=document.createElement('option');
+    o.value=fragment.id;
+    o.textContent=fragment.pointId+' · '+fragment.components.join(', ')+
+      (fragment.rescuable?'':' · REVIEW ONLY');
+    o.disabled=!fragment.rescuable;
+    quarantines.appendChild(o);
+  }
+  const rows=[
+    L.healthResult,
+    L.current+report.profileId,
+    'Plaintext points: '+report.localRecoveryPoints,
+    'Encrypted archive entries (not authenticated): '+report.encryptedArchives,
+    'Cleanup-pending groups: '+(report.quarantine||[]).length,
+    'Interrupted restore stages: '+(report.stages||[]).length,
+    'Unpublished encrypted folders: '+(report.partialArchives||[]).length,
+    'Issues: '+(report.issues||[]).length,
+    ...(report.quarantine||[]).slice(0,15).map(q=>
+      (q.rescuable?'FRAGMENT':'REVIEW')+' · '+q.pointId+' · '+fmt(q.bytes||0)),
+    ...(report.stages||[]).slice(0,10).map(q=>'RESTORE STAGE · '+q.component),
+    ...(report.partialArchives||[]).slice(0,10).map(q=>'PARTIAL · '+q.name),
+    ...(report.issues||[]).slice(0,10).map(q=>'ATTENTION · '+(q.type||'unknown')+': '+q.reason),
+    'No automatic repair or deletion. Fragment rescue does not reconstruct lost files.'
+  ];
+  $('backupHealthSummary').textContent=rows.join('\n');
+  lock(false);
+}
+function renderRescuePreview(result){
+  if(!result?.token)return;
+  healthRescuePreview=result;
+  $('backupRescuePreviewPanel').hidden=false;
+  $('backupRescueDetails').textContent=
+    locale().current+result.profileId+'\n'+result.id+'\n'+
+    locale().files+result.files+'\n'+locale().bytes+fmt(result.bytes)+'\n'+
+    locale().parts+result.components.join(', ')+'\nExpires: '+result.expiresAt;
+  lock(false);
+}
+async function runHealth(){
+  if(busy)return;
+  const L=locale();resetHealthRescue();lock(true);show(L.working);
+  try{
+    const report=await api.healthReport();renderHealthReport(report);show(L.healthResult);
+  }catch(e){show(L.error+String(e?.message||e),true);}
+  finally{lock(false);}
+}
+async function verifyHealthArchive(){
+  if(busy)return;
+  const L=locale(),id=$('backupHealthArchiveSelect').value;
+  if(!id){show(L.healthNoArchive,true);return;}
+  let password=$('backupPassword').value;
+  if(!validPassword(password)){show(L.passTooShort,true);return;}
+  lock(true);show(L.working);
+  try{
+    const request=api.healthVerify(id,password);
+    clearPasswords();password='';
+    const result=await request;
+    $('backupHealthSummary').textContent+=
+      '\n'+L.healthArchiveOk+result.files+' · '+fmt(result.bytes)+' · '+id;
+    show(L.healthArchiveOk+result.files);
+  }catch(e){show(L.error+String(e?.message||e),true);}
+  finally{password='';clearPasswords();lock(false);}
+}
+async function previewHealthRescue(){
+  if(busy)return;
+  const id=$('backupHealthQuarantineSelect').value;
+  if(!id){show(locale().healthRescueNone,true);return;}
+  resetHealthRescue();lock(true);show(locale().working);
+  try{renderRescuePreview(await api.rescuePreview(id));}
+  catch(e){show(locale().error+String(e?.message||e),true);}
+  finally{lock(false);}
+}
+async function applyHealthRescue(){
+  if(busy||!healthRescuePreview)return;
+  const L=locale();
+  if(window.prompt(L.healthAsk)!=='RESCUE')return;
+  if(!window.confirm(L.healthConfirm))return;
+  const token=healthRescuePreview.token;
+  healthRescuePreview=null;$('backupRescuePreviewPanel').hidden=true;
+  lock(true);show(L.working);
+  try{
+    const result=await api.rescueApply(token,'RESCUE');
+    if(result?.canceled){show(L.canceled);return;}
+    if(result?.ok){
+      renderHealthReport(await api.healthReport());
+      show(L.healthRescueDone);
+    }
+  }catch(e){show(L.error+String(e?.message||e),true);}
+  finally{lock(false);}
 }
 function resetCleanup(){
   const token=cleanupPreview?.token;
@@ -516,6 +689,18 @@ function init(){
     $('backupRetentionPanel').hidden=!$('backupRetentionPanel').hidden;render();
   });
   $('btnBackupRetentionReport').addEventListener('click',reportRetention);
+  $('btnBackupHealthToggle').addEventListener('click',()=>{
+    $('backupHealthPanel').hidden=!$('backupHealthPanel').hidden;render();
+  });
+  $('btnBackupHealthRun').addEventListener('click',runHealth);
+  $('btnBackupHealthVerify').addEventListener('click',verifyHealthArchive);
+  $('btnBackupRescuePreview').addEventListener('click',previewHealthRescue);
+  $('btnBackupRescueApply').addEventListener('click',applyHealthRescue);
+  $('btnBackupRescueCancel').addEventListener('click',()=>{
+    resetHealthRescue();show(locale().canceled);
+  });
+  $('backupHealthQuarantineSelect').addEventListener('change',resetHealthRescue);
+  $('backupHealthArchiveSelect').addEventListener('change',resetHealthRescue);
   $('btnBackupCleanupPreview').addEventListener('click',inspectCleanup);
   $('btnBackupCleanupApply').addEventListener('click',applyCleanup);
   $('btnBackupCleanupCancel').addEventListener('click',()=>{
@@ -534,7 +719,7 @@ function init(){
   show(locale().ready);
 }
 window.ASI_BACKUP={renderPreview:setPreview,renderRetention,
-  renderCleanupPreview,open:()=>{
+  renderCleanupPreview,renderHealthReport,renderRescuePreview,open:()=>{
   $('backupContent').hidden=false;render();$('backupCenter').scrollIntoView({block:'center'});
 }};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
