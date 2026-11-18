@@ -56,3 +56,31 @@ test('key export disallows overwrite, application-data paths and cross-profile i
  x.registry.activate(another.id);
  await assert.rejects(()=>x.keys.importEncrypted(target,BACKUP,PASS),/another profile/);
 }));
+
+test('interrupted rotation before pointer commit preserves old identity across restart',()=>withFixture(async x=>{
+ await x.signing.initialize(PASS);
+ const initial=(await x.signing.status()).fingerprint;
+ const injected=new SigningKeyManagement({signing:x.signing,hooks:{beforeCommit:()=>{throw Error('SIMULATED_CRASH_BEFORE_COMMIT');}}});
+ await assert.rejects(()=>injected.rotate(PASS,NEW),/SIMULATED_CRASH_BEFORE_COMMIT/);
+ assert.equal((await x.signing.status()).fingerprint,initial);
+ const fresh=new AuditSigning({audit:x.audit});
+ assert.equal((await fresh.status()).fingerprint,initial);
+ const dest=path.join(x.root,'old-valid.json');
+ await fresh.exportCheckpoint(dest,PASS);
+ assert.equal((await fresh.verifyExternal(dest)).ok,true);
+}));
+test('atomic pointer survives re-instantiation and a second rotation',()=>withFixture(async x=>{
+ await x.signing.initialize(PASS);
+ const first=await x.keys.rotate(PASS,NEW);
+ const pointer=path.join(x.data,'recovery-audit','default','active-key.json');
+ assert.equal(JSON.parse(await p.readFile(pointer,'utf8')).fingerprint,first.newFingerprint);
+ const resumed=new AuditSigning({audit:x.audit});
+ assert.equal((await resumed.status()).fingerprint,first.newFingerprint);
+ const nextPassword='Third distinct signing password 2026';
+ const second=await new SigningKeyManagement({signing:resumed}).rotate(NEW,nextPassword);
+ assert.equal(second.oldFingerprint,first.newFingerprint);
+ assert.equal((await resumed.status()).fingerprint,second.newFingerprint);
+ const originalPub=path.join(x.data,'recovery-audit','default','retired-signing-keys',first.oldFingerprint+'.pem');
+ const middlePub=path.join(x.data,'recovery-audit','default','retired-signing-keys',first.newFingerprint+'.pem');
+ assert.ok(fs.existsSync(originalPub));assert.ok(fs.existsSync(middlePub));
+}));
