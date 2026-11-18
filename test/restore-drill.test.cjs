@@ -162,7 +162,8 @@ test('IPC and renderer enforce typed DRILL + native approval; no restore on dril
   assert.ok(main.includes("request?.ack!=='DRILL'"));
   assert.ok(main.includes("title:'Confirm safe restore drill'"));
   assert.ok(main.includes('defaultId:0,cancelId:0'));
-  assert.ok(main.includes("return restoreDrill.run(request.token,request.password)"));
+  assert.ok(main.includes("restoreDrill.run(request.token,request.password)"));
+  assert.ok(main.includes("audited('restore-drill'"), 'Drill must be audited');
   assert.ok(preload.includes("drillRun: (token,password,ack)"));
   assert.ok(ui.includes("window.prompt(L.drillAsk)!=='DRILL'"));
   assert.ok(!ui.includes('innerHTML'));
