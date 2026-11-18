@@ -105,7 +105,7 @@ test('IPC is fixed to selected directories and two-phase explicit consent',()=>{
   assert.ok(main.includes('backupIdleCheck()'));
   assert.ok(main.includes('backupCenter.previewRestore('));
   assert.ok(main.includes('backupCenter.restore(token)'));
-  assert.ok(preload.includes("backupRestore: (token)"));
+  assert.ok(preload.includes("backupRestore: (token, password"));
   assert.ok(ui.includes("window.prompt(L.ask)!=='RESTORE'"));
   assert.ok(ui.includes('window.confirm(L.confirm)'));
   assert.ok(!ui.includes('innerHTML'),'Renderer must display backup paths via textContent');
