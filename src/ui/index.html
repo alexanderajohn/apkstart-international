@@ -170,6 +170,19 @@
           </div>
         </div>
       </div>
+      <div class="asi-backup-actions">
+        <button class="btn ghost sm" type="button" id="btnBackupAuditToggle" aria-expanded="false" aria-controls="backupAuditPanel">Recovery Audit Trail &amp; Verification Reports</button>
+      </div>
+      <div id="backupAuditPanel" class="asi-backup-preview" hidden>
+        <strong id="backupAuditTitle">Recovery Audit Trail &amp; Verification Reports</strong>
+        <p id="backupAuditNotice">Profile-specific offline audit. Only event types, results, counts and SHA-256 evidence IDs are saved. No passwords, raw backup paths, approval tokens or private Android file names.</p>
+        <div class="asi-backup-actions">
+          <button class="btn ghost sm" type="button" id="btnBackupAuditView">Check event-chain integrity and view history</button>
+          <button class="btn ghost sm" type="button" id="btnBackupAuditExport">Export sanitized JSON verification report</button>
+        </div>
+        <div id="backupAuditSummary" class="asi-backup-progress" role="status" aria-live="polite">History is not verified until opened. Hash chaining detects many edits but is not a digital signature.</div>
+        <div id="backupAuditEvents" class="asi-backup-progress"></div>
+      </div>
       <div id="backupProgress" class="asi-backup-progress" role="status" aria-live="polite">Ready. Choose an external folder for a backup.</div>
       <div id="backupPreview" class="asi-backup-preview" hidden>
         <strong id="backupPreviewTitle">Verified snapshot</strong>
