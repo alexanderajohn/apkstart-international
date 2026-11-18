@@ -308,7 +308,9 @@ class Installer {
     store.upsertApp(app);
 
     const settings = store.getSettings();
-    if (settings.createShortcutOnInstall) {
+    // Secondary profile shortcuts need profile-qualified CLI routing first.
+    // Never create a plain --launch shortcut that could target Default by accident.
+    if (settings.createShortcutOnInstall && store.profiles.currentId() === 'default') {
       onProgress({ stage: 'shortcut', message: '正在创建桌面快捷方式…' });
       try {
         app.shortcutPath = this.createShortcut(app);
@@ -338,6 +340,8 @@ class Installer {
   }
 
   createShortcut(app) {
+    if (store.profiles.currentId() !== 'default')
+      throw new Error('Secondary-profile shortcuts are disabled until profile-qualified launch routing is implemented.');
     const { target, baseArgs } = this.shortcutTarget();
     const args = `${baseArgs ? baseArgs + ' ' : ''}--launch "${app.package}"`.trim();
     const ico = app.icoPath && fs.existsSync(app.icoPath) ? app.icoPath : undefined;
@@ -392,6 +396,8 @@ class Installer {
 
   /** 补全缺失的快捷方式与图标：老版本只建了桌面那份，且 WebP 图标当时没转成功 */
   async ensureShortcuts() {
+    // Avoid rewriting Default's Start Menu and desktop links from a secondary profile.
+    if (store.profiles.currentId() !== 'default') return [];
     const made = [];
     // 用户明确关掉「安装后自动创建」、且这个应用本来就没有任何入口时不要擅自补，
     // 否则开关关掉了也挡不住启动时被重建。

@@ -49,6 +49,9 @@ class Runtime {
     this.emulator = new EmulatorEngine(appRoot);
     this.vmProc = null;
     this.vmStarting = false;
+    // Once more than one profile exists, never adopt an unverified emulator
+    // that may belong to another profile, Android Studio or another app.
+    this._profileOwnedRuntime = false;
     this.installing = false;
     this.lastActivity = Date.now();
     this._watchdog = null;
@@ -437,6 +440,7 @@ class Runtime {
       this.emuSerial = st.serial || this.emulator.serial;
       const client = this.client(this.emuSerial);
       await this.prepare(client);
+      this._profileOwnedRuntime = true;
       // 快照改成「空闲时再存」：立刻存要写 1~3GB，会和用户刚点开的应用抢磁盘 I/O
       this._armSnapshotSave(20000);
       return { ok: true, client, engine: 'emulator', serial: this.emuSerial, profile: st.profile, network: st.network || null };
@@ -713,6 +717,10 @@ class Runtime {
 
   /** 优雅停止：emulator 走控制台关机，QEMU 走 monitor */
   async stop({ graceful = true } = {}) {
+    if (store.profiles.list().profiles.length > 1 && !this._profileOwnedRuntime) {
+      const ports = await this.emulatorPorts();
+      if (ports.length) throw new Error('Unmanaged Android emulator detected. Close it manually before switching profiles.');
+    }
     const adbPath = this.adbPath();
     if (this.emulator.running()) {
       await this.emulator.stop({ adbPath });
@@ -976,6 +984,13 @@ class Runtime {
   }
 
   async _ensureInner({ onLog = () => {} } = {}) {
+    // Before this process boots its own guest, fail closed if another emulator
+    // is already listening. Otherwise the upstream adoption path may attach
+    // one profile's apps to another profile's running Android device.
+    if (store.profiles.list().profiles.length > 1 && !this._profileOwnedRuntime) {
+      const ports = await this.emulatorPorts();
+      if (ports.length) return { ok:false, error:'Another Android emulator is running. Stop it before launching a different profile.' };
+    }
     const client = this.client();
     if (await client.isOnline()) {
       await this.prepare(client);
@@ -1019,6 +1034,9 @@ class Runtime {
       this.log(`materialize failed: ${e.message}`);
     });
     const env = await this.provisioner.checkEnv();
+    if (store.profiles.currentId() !== 'default' && (!env.emulator.ok || !env.sysimg.ok)) {
+      return {ok:false,error:'Secondary Android profiles require an official Android Emulator and system image. Shared QEMU/ISO disks are not supported.'};
+    }
 
     // emulator 路径：镜像即系统，没有"安装到磁盘"这一步
     if (env.emulator.ok && env.sysimg.ok) {

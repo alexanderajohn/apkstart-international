@@ -2499,6 +2499,11 @@ if (!gotLock) {
 } else {
   app.on('second-instance', (_evt, argv) => {
     const args = parseArgs(argv);
+    if (args.launch && store.profiles.currentId() !== 'default') {
+      showWindow();
+      send('toast',{type:'error',message:'This shortcut belongs to Default profile. Switch to Default before launching it.'});
+      return;
+    }
     if (args.launch) { runLaunch(args.launch); return; }
     if (args.apk) { runInstall(args.apk).catch(() => {}); return; }
     showWindow();
@@ -2762,6 +2767,10 @@ if (!gotLock) {
 
     const args = parseArgs(process.argv);
     if (args.apk) runInstall(args.apk).catch(() => {});
+    else if (args.launch && store.profiles.currentId() !== 'default') {
+      showWindow();
+      send('toast',{type:'error',message:'Default-profile shortcut cannot be launched in a different Android profile.'});
+    }
     else if (args.launch) await runLaunch(args.launch);
     else {
       // 没有直接启动应用：splash 在主窗口 ready 后淡出
