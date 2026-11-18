@@ -23,4 +23,4 @@ Important: a key backup containing the previous private key remains usable for h
 
 ## Verification
 
-`node --test test/signing-key-management.test.cjs` tests encrypted backup, reimport, wrong passwords, overwrite rejection, profile isolation, pre-commit failure injection, restart after pointer commit and repeated rotation. `npm run test:international` includes the suite. Tests use synthetic signing identities; real user keys must never be supplied to CI.
+`node --test test/signing-key-management.test.cjs` tests encrypted backup, reimport, wrong passwords, overwrite rejection, profile isolation, pre-commit failure injection, post-commit cleanup interruption, restart after pointer commit and repeated rotation. `npm run test:international` includes the suite. Tests use synthetic signing identities; real user keys must never be supplied to CI.
