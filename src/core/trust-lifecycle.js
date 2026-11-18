@@ -105,7 +105,7 @@ class TrustLifecycle{
     return this.audit._enqueue(async()=>{
       const f=await this._folder(),file=path.join(f.folder,'rotation-history.jsonl');
       if(!fs.existsSync(file))return {entries:[],warning:'No local rotation history. Fingerprints require independent verification.'};
-      const raw=await safeRead(file,256*1024),lines=raw.trim().split('\\n');
+      const raw=await safeRead(file,256*1024),lines=raw.trim().split(String.fromCharCode(10));
       if(lines.length>500)throw Error('Rotation history too large');
       const entries=lines.map(line=>{
         const e=JSON.parse(line);
