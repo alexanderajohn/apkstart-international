@@ -52,7 +52,8 @@ function validatePayload(q){
     throw Error('Malformed signed checkpoint payload');
 }
 function verifyEnvelope(e){
-  assertShape(e,['payload','publicKey','signature']);
+  const isReport=e?.payload?.kind==='report';
+  assertShape(e,isReport?['payload','publicKey','signature','report']:['payload','publicKey','signature']);
   validatePayload(e.payload);
   if(typeof e.publicKey!=='string'||e.publicKey.length>1024||typeof e.signature!=='string'
     ||!/^[A-Za-z0-9+/]{86}==$/.test(e.signature))
