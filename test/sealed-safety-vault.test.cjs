@@ -56,7 +56,7 @@ test('seal creates authenticated ciphertext without plaintext export or source d
   ]);
   for(const word of ['RECOVERY_APPS_SECRET','RECOVERY_APK_SECRET','secret.apk','apps.json'])
     assert.equal(cipher.includes(Buffer.from(word)),false,word+' leaked into archive');
-  assert.equal(JSON.stringify(x.encrypted.pending),undefined);
+  assert.ok(!x.encrypted.pending);
 }));
 test('sealed local point previews and restores only after password and preserves old live data',()=>fixture(async x=>{
   await x.vault.sealPoint(POINT,PASS);
