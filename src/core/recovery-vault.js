@@ -50,15 +50,15 @@ class RecoveryVault extends BackupCenter{
     if(!fs.existsSync(root)){
       if(!create)return null;
       const data=await p.realpath(this.dataDir);
-      if(data!==path.resolve(this.dataDir))
+      if(path.relative(data,path.resolve(this.dataDir))!=='')
         throw Error('Refusing to create Safety Vault through a redirected data folder');
       const parent=path.dirname(root);
       await p.mkdir(parent,{recursive:true,mode:0o700});
-      if(await p.realpath(parent)!==path.resolve(parent))
+      if(path.relative(await p.realpath(parent),path.resolve(parent))!=='')
         throw Error('Safety Vault parent is a junction');
       await p.mkdir(root,{mode:0o700});
     }
-    if(!(await safeStat(root)).isDirectory()||await p.realpath(root)!==root)
+    if(!(await safeStat(root)).isDirectory()||path.relative(await p.realpath(root),root)!=='')
       throw Error('Safety Vault folder is a junction or invalid directory');
     return root;
   }
