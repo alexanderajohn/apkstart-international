@@ -62,6 +62,8 @@ nsis:
   # （装到非系统盘可减轻 C 盘压力；运行时数据目录另在设置里单独指定）。
   oneClick: false
   perMachine: false
+  deleteAppDataOnUninstall: false
+  runAfterFinish: false
   allowToChangeInstallationDirectory: true
   displayLanguageSelector: false
   # always：即使桌面上已有同名 .lnk 也重建一次。

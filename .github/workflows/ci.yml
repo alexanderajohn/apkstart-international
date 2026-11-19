@@ -152,6 +152,29 @@ jobs:
           $signedShot = $shot -replace '\.png$', '-signed.png'
           if (!(Test-Path $signedShot)) { throw 'Signed checkpoint verification screenshot was not saved' }
           Copy-Item $signedShot (Join-Path $PWD 'asi-signed-smoke.png') -Force
+      - name: Build unsigned Windows Setup from the smoke-tested portable tree
+        run: npm run pack:setup
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Install, reinstall and uninstall with a disposable Profile
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        shell: pwsh
+        run: |
+          $setup = @(Get-ChildItem 'dist/release/*-Setup.exe')
+          if ($setup.Count -ne 1) { throw 'Expected one Setup executable' }
+          ./scripts/asi/setup-smoke.ps1 -Setup $setup[0].FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $hash = (Get-FileHash $setup[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($setup[0].Name)" | Set-Content -Encoding ascii dist/release/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ApkStart-International-Windows-Setup-preview
+          path: |
+            dist/release/*-Setup.exe
+            dist/release/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 3
       - uses: actions/upload-artifact@v4
         with:
           name: ApkStart-International-Windows-dev-preview

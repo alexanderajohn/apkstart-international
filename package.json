@@ -50,7 +50,8 @@
     "test:international": "node --test test/international.test.cjs test/smartcheck.test.cjs test/auto-repair.test.cjs test/performance.test.cjs test/profiles.test.cjs test/backup-center.test.cjs test/encrypted-backup.test.cjs test/portable-migration.test.cjs test/recovery-vault.test.cjs test/sealed-safety-vault.test.cjs test/safety-retention.test.cjs test/disaster-health.test.cjs test/restore-drill.test.cjs test/recovery-audit.test.cjs test/audit-signing.test.cjs test/signing-key-management.test.cjs test/trust-lifecycle.test.cjs test/trust-hardening.test.cjs test/runtime-readiness.test.cjs test/apk-install-guard.test.cjs test/profile-runtime-guard.test.cjs test/adb-authentication.test.cjs test/pass19-integration.test.cjs test/install-session.test.cjs test/runtime-owner.test.cjs test/guest-evidence.test.cjs",
     "audit:international": "node scripts/asi/audit.cjs",
     "i18n:build": "node scripts/asi/build-catalogs.cjs",
-    "test:runtime:live": "node scripts/asi/live-runtime-smoke.cjs"
+    "test:runtime:live": "node scripts/asi/live-runtime-smoke.cjs",
+    "pack:setup": "electron-builder --prepackaged dist/ApkStart-International-win64-portable --win nsis --x64 --config electron-builder.yml --publish never"
   },
   "devDependencies": {
     "electron": "^33.4.11",

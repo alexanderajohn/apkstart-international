@@ -26,12 +26,5 @@
   Delete "$SMPROGRAMS\ApkStart International\ApkStart International.lnk"
   RMDir "$SMPROGRAMS\ApkStart International"
 
-  DetailPrint "正在结束 ApkStart 残留进程…"
-  ; /F 强杀 /T 连带子进程。进程不存在时 taskkill 返回 128，忽略即可。
-  nsExec::Exec 'taskkill.exe /F /T /IM "ApkStart International.exe"'
-  ; Never globally terminate adb.exe, emulator.exe or qemu.exe here.
-  ; Those processes may belong to Android Studio, ApkStart upstream or other tools.
-  ; A locked runtime file should fail gracefully instead of shutting down unrelated work.
-  ; 给一点时间让进程真正退出、释放文件句柄
-  Sleep 1500
+  ; Electron Builder handles running installed instances. Preserve all Profile data.
 !macroend

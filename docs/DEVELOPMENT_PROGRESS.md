@@ -50,3 +50,9 @@ Snapshot writes share one in-flight save. A stale marker survives process restar
 | 26 | International UX improvements; Beta sign-off pending | This revision | Pending | Pending | Native dialogs, dynamic setup guidance, three-language manual workflow and layout review |
 
 Added EN/VI/ZH entries for 70 settings actions, options and fields. Profile, backup, repair and performance panels refresh their labels when the selected language changes. Windows Preview smoke changes the actual language selector and checks the Runtime Manager start action in all three languages. Destructive operations and real provisioning are outside this smoke. Feature Complete Beta has not been signed off.
+
+| Pass | Status | Commit | Windows CI | Preview | Remaining work |
+| --- | --- | --- | --- | --- | --- |
+| 27 | Unsigned installer build and host lifecycle gate | This revision | Pending | Pending | Signed delivery, MSIX identity, verified production update channel |
+
+Setup packages the same runtime-free portable tree that passes UI smoke. The hosted Windows gate installs twice, verifies the installed source, uninstalls and checks a disposable Profile sentinel. The artifact includes its SHA-256 file. MSIX requires a fork-owned publisher identity. The production updater stays disabled pending an independently managed release key and verified update channel.
