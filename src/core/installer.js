@@ -7,6 +7,7 @@ const fs = require('fs');
 const { parseBundle } = require('./apk-bundle');
 const path = require('path');
 const { sha256File } = require('./smartcheck');
+const { shortcutIdentity } = require('./shortcut-profile');
 const { verifyOwner } = require('./runtime-owner');
 const { installSession } = require('./install-session');
 const store = require('./store');
@@ -39,10 +40,15 @@ class Installer {
 
   icoFile(pkg) { return path.join(store.ICON_DIR, `${pkg}.ico`); }
 
+  shortcutFileName(app) {
+    const key = shortcutIdentity(app.package,store.profiles.currentId()).suffix;
+    return safeFileName(app.label) + ' [' + key + ']' + shortcutExt();
+  }
+
   shortcutPath(app) {
     const s = store.getSettings();
     const dir = s.shortcutDir && s.shortcutDir.trim() ? s.shortcutDir : this.ctx.desktopDir;
-    return path.join(dir, `${safeFileName(app.label)}${shortcutExt()}`);
+    return path.join(dir, this.shortcutFileName(app));
   }
 
   /**
@@ -58,7 +64,7 @@ class Installer {
     if (this.ctx.startMenuDir && store.getSettings().createStartMenuShortcut !== false) {
       // 放在独立子目录：既能被 Windows 搜索索引到，又不会覆盖同名第三方应用的快捷方式
       // （实测「红果免费短剧」在开始菜单里已被另一个桌面助手占用）
-      out.push(path.join(this.ctx.startMenuDir, 'ApkStart International', `${safeFileName(app.label)}${shortcutExt()}`));
+      out.push(path.join(this.ctx.startMenuDir, 'ApkStart International', this.shortcutFileName(app)));
     }
     return [...new Set(out)];
   }
@@ -224,7 +230,7 @@ class Installer {
     const settings = store.getSettings();
     // Secondary profile shortcuts need profile-qualified CLI routing first.
     // Never create a plain --launch shortcut that could target Default by accident.
-    if (settings.createShortcutOnInstall && store.profiles.currentId() === 'default') {
+    if (settings.createShortcutOnInstall) {
       onProgress({ stage: 'shortcut', message: '正在创建桌面快捷方式…' });
       try {
         app.shortcutPath = this.createShortcut(app);
@@ -255,10 +261,9 @@ class Installer {
   }
 
   createShortcut(app) {
-    if (store.profiles.currentId() !== 'default')
-      throw new Error('Secondary-profile shortcuts are disabled until profile-qualified launch routing is implemented.');
+    const identity = shortcutIdentity(app.package,store.profiles.currentId());
     const { target, baseArgs } = this.shortcutTarget();
-    const args = `${baseArgs ? baseArgs + ' ' : ''}--launch "${app.package}"`.trim();
+    const args = `${baseArgs ? baseArgs + ' ' : ''}${identity.args}`.trim();
     const ico = app.icoPath && fs.existsSync(app.icoPath) ? app.icoPath : undefined;
     // Linux 的 .desktop 只认 PNG/SVG 绝对路径，ICO 无效 —— 所以两条路径都传下去，
     // 由 writeShortcut 按平台挑。（Windows 用 ico，FydeOS 用 png）
@@ -274,7 +279,7 @@ class Installer {
       description: `${app.label} — 由 ApkStart 运行`,
       cwd: this.ctx.cwd,
       // 每个应用一个 AUMID：任务栏上按应用分组，不会全挤到 ApkStart 里
-      appUserModelId: `ApkStartInternational.Desktop.${app.package}`.slice(0, 128),
+      appUserModelId: identity.aumid,
     });
 
     let first = null;
@@ -293,7 +298,7 @@ class Installer {
     // 主路径全失败（自定义快捷方式目录不可写 / 被安全软件拦截）：
     // 退回桌面再试一次——桌面上有图标，用户才找得到应用。
     if (!first) {
-      const fallback = path.join(this.ctx.desktopDir, `${safeFileName(app.label)}${shortcutExt()}`);
+      const fallback = path.join(this.ctx.desktopDir, this.shortcutFileName(app));
       try {
         write(fallback);
         first = fallback;
@@ -312,7 +317,7 @@ class Installer {
   /** 补全缺失的快捷方式与图标：老版本只建了桌面那份，且 WebP 图标当时没转成功 */
   async ensureShortcuts() {
     // Avoid rewriting Default's Start Menu and desktop links from a secondary profile.
-    if (store.profiles.currentId() !== 'default') return [];
+    const profileId = store.profiles.currentId();
     const made = [];
     // 用户明确关掉「安装后自动创建」、且这个应用本来就没有任何入口时不要擅自补，
     // 否则开关关掉了也挡不住启动时被重建。
@@ -332,6 +337,7 @@ class Installer {
           }
         } catch (_) { /* 图标补建失败不影响入口 */ }
       }
+      if (profileId !== store.profiles.currentId() || store.profileSwitching) return made;
       const missing = this.shortcutPaths(app).filter((p) => !fs.existsSync(p));
       if (!missing.length && !dirty) continue;
       try {

@@ -32,3 +32,9 @@ The harness tests install, launch, close and relaunch in a disposable Android Pr
 | 23 | Device-specific APK set support | This revision | Pending | Pending | Real signed APK/APKS/XAPK, store variants, device ABI combinations |
 
 SmartCheck now requires one base manifest, consistent package/version and unique split IDs, and binds each payload digest to approval. File names are generated locally, extraction checks output size, and install compares native libraries with live guest ABIs. Android enforces signing, downgrade policy and package commit. OBB assets and multi-variant archives need a device-targeted export. Hardware Validation Pending.
+
+| Pass | Status | Commit | Windows CI | Preview | Remaining work |
+| --- | --- | --- | --- | --- | --- |
+| 24 | Profile-qualified desktop launch | This revision | Pending | Pending | Physical Windows shortcut launch after restart and window lifecycle |
+
+New shortcuts encode the Profile ID, have separate names per package/Profile and use the same Windows app identity as their window. Unqualified legacy links resolve to Default. Opening a shortcut in a different Profile reports the mismatch. Launches queue across concurrent requests, await their actual display attachment, and report a window failure if both attachment attempts fail.

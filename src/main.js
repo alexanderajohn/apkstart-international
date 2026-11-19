@@ -25,6 +25,7 @@ const { signedExport,verifySignedFile,exportRotationCheckpoint,verifyCheckpointF
 const { SafeKeyQuarantine } = require('./core/safe-key-quarantine');
 const performance = require('./core/performance');
 const { validPackageName } = require('./core/pkgname');
+const { shortcutProfile, shortcutIdentity } = require('./core/shortcut-profile');
 const { Installer } = require('./core/installer');
 const { Sharer } = require('./core/sharer');
 const { parseApk } = require('./core/apk');
@@ -277,7 +278,7 @@ let splashDone = () => {};
 
 function parseArgs(argv) {
   const args = argv.slice(IS_DEV ? 2 : 1).filter((a) => !a.startsWith('--allow-file-access'));
-  const out = { apk: null, launch: null, silent: false };
+  const out = { apk: null, launch: null, profile:shortcutProfile(args), silent:false };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--launch') {
@@ -489,12 +490,7 @@ async function attachAppWindow() {
     // 独立窗口不需要标题栏里那块区域了，直接让模拟器窗口自己露出来
     return appWin.openDetached().catch(() => false);
   }
-  const ok = await appWin.embed().catch(() => false);
-  if (!ok) {
-    setTimeout(() => { if (appWin.isOpen) appWin.embed().catch(() => {}); }, 1500);
-    setTimeout(() => { if (appWin.isOpen) appWin.embed().catch(() => {}); }, 4000);
-  }
-  return ok;
+  return appWin.embed().catch(() => false);
 }
 
 /**
@@ -540,7 +536,7 @@ async function openAppWindow(pkg, tip) {
   const splashVisible = !!(splashWin && !splashWin.isDestroyed());
   const label = (rec && rec.label) || pkg;
   // 先把这个应用的身份切过去，再开窗口：任务栏才会沿用快捷方式里那个应用的图标
-  setAumid(`${APP_AUMID}.${pkg}`);
+  setAumid(shortcutIdentity(pkg,store.profiles.currentId()).aumid);
   appWin.open({
     pkg,
     label,
@@ -1035,7 +1031,8 @@ async function runLaunch(pkg) {
   // application that is not in the selected Profile's own catalog.
   if(!validPackageName(pkg)||!store.getApp(pkg))
     throw new Error('App is not installed in the active Android Profile');
-  if (launchInFlight) {
+  const selected = store.profiles.currentId();
+  while (launchInFlight) {
     if (launchInFlight.pkg === pkg) {
       appLog(`launch reused in-flight ${pkg}`);
       return launchInFlight.promise;
@@ -1043,6 +1040,7 @@ async function runLaunch(pkg) {
     appLog(`launch queued ${pkg}（等待 ${launchInFlight.pkg} 启动完成）`);
     await launchInFlight.promise.catch(() => {});
   }
+  if (store.profileSwitching || store.profiles.currentId() !== selected) throw Error('Android Profile changed while waiting to launch');
   const entry = { pkg };
   entry.promise = launchOne(pkg).finally(() => {
     if (launchInFlight === entry) launchInFlight = null;
@@ -1056,8 +1054,7 @@ async function launchOne(pkg) {
   const mark = (s) => appLog(`launch ${pkg} ${s} +${Date.now() - t0}ms`);
   // 「提前接画面」的状态：进程一出现就接，但最终成败要等回调回来才知道。
   // 放在函数作用域，供后面的最终判定使用。
-  let attachDoneEarly = false;
-  let earlyAttachOk = false;
+  let pendingAttach = null;
   appLog(`launch start ${pkg}`);
   try {
     // 0) 先把管理窗口收起来，再去开应用窗口。
@@ -1084,19 +1081,20 @@ async function launchOne(pkg) {
       // 观感差别很大（实测点开到出画面 7.2s → 约 3s）。
       // 这里故意不 await：接画面和存活判定并行，谁先完成都不影响另一边。
       onAppUp: () => {
-        attachDoneEarly = true;
+        if (pendingAttach) return;
         mark('app up (提前接画面)');
-        attachAppWindow()
+        pendingAttach = attachAppWindow()
           .then((ok) => {
-            earlyAttachOk = ok;
+
             mark(`early attach=${ok}`);
             // 画面已接到用户眼前 → 开机动画可以淡出了。
             // 放在这里而不是 launch ok 之后，是因为 early attach 时模拟器窗口
             // 已经 show 出来了；如果等 launch ok（还要再等 4 秒存活确认），
             // splash 和模拟器窗口会同时可见好几秒，用户看到 splash 被「顶上去」。
             if (ok && typeof splashDone === 'function') splashDone();
+            return ok;
           })
-          .catch(() => { earlyAttachOk = false; });
+          .catch(() => false);
         // 应用刚起来时 Activity 还在重建，会按自己声明的方向（portrait）再转一次，
         // 把刚锁好的方向覆盖掉 —— 这就是「平板/横屏模式下画面总是 90 度躺着」。
         // 等它稳定后补一次方向自愈（读 init/cur，只有真躺倒才写）。
@@ -1143,13 +1141,8 @@ async function launchOne(pkg) {
     // 2) 应用真的活下来了，才把画面接到用户眼前（否则用户会看到闪一下的桌面/崩溃页）
     // 但如果 onAppUp 已经把画面接上了（提前接管），这里只做一次「确认」，不重复接 ——
     // 重复接在独立窗口模式下会把刚摆好的窗口再隐藏/显示一遍，画面会闪。
-    let embedded;
-    if (attachDoneEarly) {
-      embedded = !!earlyAttachOk;
-      mark(`early attached already (${embedded})`);
-    } else {
-      embedded = await attachAppWindow();
-    }
+    const embedded = (pendingAttach && await pendingAttach) || await attachAppWindow();
+    if (!embedded) throw Error('Android started, but its display window could not be attached. Reopen the app window.');
     // 日志措辞要分清两种模式：独立窗口模式下 embedded=true 的意思是
     // 「画面已经接到用户眼前（在模拟器原生窗口里）」，而不是「嵌进我们的窗口」。
     // 否则看日志的人会以为设置没生效。
@@ -3133,9 +3126,9 @@ if (!gotLock) {
 } else {
   app.on('second-instance', (_evt, argv) => {
     const args = parseArgs(argv);
-    if (args.launch && store.profiles.currentId() !== 'default') {
+    if (args.launch && args.profile !== store.profiles.currentId()) {
       showWindow();
-      send('toast',{type:'error',message:'This shortcut belongs to Default profile. Switch to Default before launching it.'});
+      send('toast',{type:'error',message:'Switch to the Android Profile named in this shortcut before launching it.'});
       return;
     }
     if (args.launch) { runLaunch(args.launch).catch(e=>{
@@ -3444,9 +3437,9 @@ if (!gotLock) {
 
     const args = parseArgs(process.argv);
     if (args.apk) runInstall(args.apk).catch(() => {});
-    else if (args.launch && store.profiles.currentId() !== 'default') {
+    else if (args.launch && args.profile !== store.profiles.currentId()) {
       showWindow();
-      send('toast',{type:'error',message:'Default-profile shortcut cannot be launched in a different Android profile.'});
+      send('toast',{type:'error',message:'Select the matching Android Profile, then open this shortcut again.'});
     }
     else if (args.launch) await runLaunch(args.launch);
     else {

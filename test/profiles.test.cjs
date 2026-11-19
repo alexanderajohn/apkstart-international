@@ -106,7 +106,7 @@ test('AVD boot, reset and installer paths are profile-aware',()=>{
   assert.ok(engine.includes("store.profiles.avdName() + '.avd'"));
   assert.ok(engine.includes('Unmanaged Android emulator detected'));
   assert.ok(engine.includes('Another Android emulator is running'));
-  assert.ok(installer.includes("store.profiles.currentId() !== 'default'"));
+  assert.ok(installer.includes("shortcutIdentity(app.package,store.profiles.currentId())"));
 });
 test('Switching profiles only via explicit, idle-state, restart-bound IPC',()=>{
   const root=path.join(__dirname,'..');
@@ -121,7 +121,7 @@ test('Switching profiles only via explicit, idle-state, restart-bound IPC',()=>{
   assert.ok(main.includes('runtime.client().isOnline()'));
   assert.ok(main.includes('app.relaunch()'));
   assert.ok(main.includes('store.profiles.activate(result.previousId)'));
-  assert.ok(main.includes("store.profiles.currentId() !== 'default'"));
+  assert.ok(main.includes("args.profile !== store.profiles.currentId()"));
   for(const name of ['profilesList','profilesCreate','profilesSwitch'])
     assert.ok(preload.includes(name));
   for(const id of ['profilePicker','btnSwitchProfile','btnCreateProfile','profilesNotice'])
@@ -142,12 +142,14 @@ test('Windows UI smoke covers creating a second profile without changing active 
   assert.ok(ci.includes('asi-profiles-smoke.png'));
 });
 
-test('Secondary profiles cannot be advertised as supporting unsafe unqualified shortcuts',()=>{
-  const root=path.join(__dirname,'..');
-  const app=fs.readFileSync(path.join(root,'src/ui/app.js'),'utf8');
-  const html=fs.readFileSync(path.join(root,'src/ui/index.html'),'utf8');
-  const ui=fs.readFileSync(path.join(root,'src/ui/profiles-ui.js'),'utf8');
-  assert.ok(app.includes("it.key !== 'shortcut' || !window.ASI_PROFILES?.isSecondary?.()"));
-  assert.ok(html.includes('桌面快捷方式目前仅适用于默认环境'));
-  assert.ok(ui.includes("index.activeId!=='default'"));
+test('shortcut identity survives restart and unqualified legacy links belong to Default',()=>{
+  const {shortcutProfile,shortcutIdentity}=require('../src/core/shortcut-profile');
+  const p='p_0123456789abcdef', pkg='com.example.app';
+  const secondary=shortcutIdentity(pkg,p), primary=shortcutIdentity(pkg,'default');
+  assert.notEqual(secondary.suffix,primary.suffix);
+  assert.notEqual(secondary.aumid,primary.aumid);
+  assert.equal(shortcutProfile(['--launch',pkg]),'default');
+  assert.equal(shortcutProfile(secondary.args.split(' ')),p);
+  assert.equal(shortcutProfile(['--profile','bogus']),null);
+  assert.equal(shortcutProfile(['--profile',p,'--profile','default']),null);
 });

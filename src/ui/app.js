@@ -533,7 +533,7 @@ async function installFiles(paths) {
         t.dismiss();installToast=null;break;
       }
       t.update({ title: `${r.app.label} 已安装`, body: r.app.shortcutPath ? '桌面快捷方式已创建，双击即可直接打开。'
-        : (window.ASI_PROFILES?.isSecondary?.() ? '二级环境不创建桌面快捷方式，请从 ApkStart 的应用列表打开。' : '可在应用卡片右键创建桌面快捷方式。'), progress: 100, type: 'ok' });
+        : '可在应用卡片右键创建桌面快捷方式。', progress: 100, type: 'ok' });
       t.el.querySelector('.spinner')?.remove();
       setTimeout(t.dismiss, 3600);
       if (r.warnings && r.warnings.length) {
@@ -631,8 +631,7 @@ function showMenu(x, y, pkg) {
   state.menuPkg = pkg;
   const app = state.apps.find((a) => a.package === pkg);
   const items = MENU_ITEMS.filter((it) =>
-    (!it.onlyRunning || (app && app.running))
-    && (it.key !== 'shortcut' || !window.ASI_PROFILES?.isSecondary?.()));
+    !it.onlyRunning || (app && app.running));
   menu.innerHTML = items.map((it) => {
     if (it.divider) return '<div class="divider"></div>';
     const label = it.key === 'pin' ? (app && app.pinned ? '取消固定' : '固定到顶部') : it.label;

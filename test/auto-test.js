@@ -1265,8 +1265,8 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
 
     // 提前接过了就不能再在后面重复接一次 —— 独立窗口模式下会把刚摆好的窗口
     // 再隐藏/显示一遍，画面会闪。
-    assert(/attachDoneEarly/.test(mainJs), '要记住是否已经提前接过画面');
-    assert(/if \(attachDoneEarly\)/.test(mainJs), '最终判定要跳过重复接画面');
+    assert(/pendingAttach = attachAppWindow/.test(mainJs), '要记住是否已经提前接过画面');
+    assert(/await pendingAttach/.test(mainJs), '最终判定要跳过重复接画面');
 
     // 存活观察期本身不能删：它是防「闪一下就崩」的兜底
     assert(/aliveSince >= 4000/.test(instJs), '4 秒存活观察期要保留（防闪崩）');
@@ -2324,8 +2324,8 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
   await test('多窗口：启动应用要先收起管理窗口再开应用窗口', () => {
     const root = path.join(__dirname, '..');
     const mainJs = fs.readFileSync(path.join(root, 'src', 'main.js'), 'utf8');
-    const launchIdx = mainJs.indexOf('async function runLaunch(');
-    const body = mainJs.slice(launchIdx, launchIdx + 1600);
+    const launchIdx = mainJs.indexOf('async function launchOne(');
+    const body = mainJs.slice(launchIdx, mainJs.indexOf('const r = await installer.launch', launchIdx));
     const hideIdx = body.indexOf('mainWindow.hide()');
     const openIdx = body.indexOf('openAppWindow(pkg');
     assert(hideIdx > 0 && openIdx > 0, '两个调用都要在 runLaunch 里');
@@ -2553,12 +2553,8 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     assert(/iconIcoPath: ico/.test(installerJs), 'writeShortcut 要拿到应用图标');
     assert(!/iconIcoPath:\s*(APPICON|appicon|brandIcon)/.test(installerJs), '不能用 ApkStart 的品牌图标');
     // 每个应用一个 AUMID：任务栏按应用分组，固定项才认得出是哪个应用
-    assert(/appUserModelId: `ApkStartInternational\.Desktop\.\$\{app\.package\}`/.test(installerJs),
-      '每个应用要有自己的 AUMID');
-    // Windows 只在「进程 AUMID == 快捷方式 AUMID」时沿用快捷方式图标，
-    // 所以打开某个应用时要把进程身份切过去，回管理窗口再切回 ApkStart。
-    assert(/const APP_AUMID = 'ApkStartInternational\.Desktop';/.test(mainJs), '要有统一的 AUMID 前缀');
-    assert(/setAumid\(`\$\{APP_AUMID\}\.\$\{pkg\}`\)/.test(mainJs), '开应用窗口前要切到该应用的 AUMID');
+    assert(installerJs.includes('appUserModelId: identity.aumid'), 'shortcut uses the Profile AUMID');
+    assert(mainJs.includes('setAumid(shortcutIdentity(pkg,store.profiles.currentId()).aumid)'), 'window and shortcut share the same identity');
     assert(/function showWindow\(\) \{\s*\n\s*\/\/[^\n]*\n\s*setAumid\(APP_AUMID\);/.test(mainJs),
       '回管理窗口要切回 ApkStart 的 AUMID');
     // writeShortcut 必须把 iconIndex 设成 0（ico 里第 0 帧），否则某些尺寸会取错

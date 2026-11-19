@@ -178,9 +178,9 @@ window.ASI_CATALOGS = {
     "诊断报告只保存在本机，会遮盖常见敏感信息；分享前仍请检查内容。重建会补齐桌面 + 开始菜单入口。": "Reports stay on your computer and mask common sensitive details. Review before sharing. Rebuild restores missing desktop and Start Menu shortcuts.",
     "隐私保护报告已导出": "Privacy-safe report exported",
     "报告已保存在本机。分享前请检查是否仍有敏感信息。": "Report saved locally. Review it for any remaining sensitive information before sharing.",
-    "安装的应用可直接从 ApkStart 独立窗口打开。桌面快捷方式目前仅适用于默认环境。": "Installed apps open in their own windows from ApkStart. Desktop shortcuts are currently supported for Default only.",
-    "其他 Android 环境暂不创建桌面快捷方式，避免打开错误的应用数据。": "Other Android profiles do not create desktop shortcuts yet to avoid opening apps with the wrong data.",
-    "二级环境不创建桌面快捷方式，请从 ApkStart 的应用列表打开。": "Desktop shortcuts are disabled for secondary profiles. Launch the app from the ApkStart library."
+    "二级环境不创建桌面快捷方式，请从 ApkStart 的应用列表打开。": "Desktop shortcuts are disabled for secondary profiles. Launch the app from the ApkStart library.",
+    "快捷方式与创建它的 Android 环境绑定。": "Shortcuts open apps in the Android Profile that created them.",
+    "先选择对应的环境，再打开桌面快捷方式。": "Select the matching Profile before opening its desktop shortcut."
   },
   "vi": {
     "设置": "Cài đặt",
@@ -361,9 +361,9 @@ window.ASI_CATALOGS = {
     "诊断报告只保存在本机，会遮盖常见敏感信息；分享前仍请检查内容。重建会补齐桌面 + 开始菜单入口。": "Báo cáo chỉ lưu trên máy và che những thông tin nhạy cảm thường gặp. Hãy kiểm tra trước khi chia sẻ. Tạo lại lối tắt sẽ khôi phục các biểu tượng bị thiếu.",
     "隐私保护报告已导出": "Đã xuất báo cáo bảo vệ riêng tư",
     "报告已保存在本机。分享前请检查是否仍有敏感信息。": "Báo cáo đã lưu trên máy. Hãy kiểm tra lại thông tin nhạy cảm trước khi chia sẻ.",
-    "安装的应用可直接从 ApkStart 独立窗口打开。桌面快捷方式目前仅适用于默认环境。": "Ứng dụng đã cài mở trong cửa sổ riêng từ ApkStart. Shortcut Desktop hiện chỉ hỗ trợ profile Mặc định.",
-    "其他 Android 环境暂不创建桌面快捷方式，避免打开错误的应用数据。": "Các profile Android khác chưa tạo shortcut Desktop nhằm tránh mở nhầm dữ liệu ứng dụng.",
-    "二级环境不创建桌面快捷方式，请从 ApkStart 的应用列表打开。": "Shortcut Desktop đã tắt ở profile phụ. Hãy mở ứng dụng từ danh sách trong ApkStart."
+    "二级环境不创建桌面快捷方式，请从 ApkStart 的应用列表打开。": "Shortcut Desktop đã tắt ở profile phụ. Hãy mở ứng dụng từ danh sách trong ApkStart.",
+    "快捷方式与创建它的 Android 环境绑定。": "Lối tắt được gắn với profile Android đã tạo nó.",
+    "先选择对应的环境，再打开桌面快捷方式。": "Chọn đúng profile trước khi mở lối tắt trên màn hình."
   },
   "zh-CN": {
     "设置": "设置",
@@ -544,8 +544,8 @@ window.ASI_CATALOGS = {
     "诊断报告只保存在本机，会遮盖常见敏感信息；分享前仍请检查内容。重建会补齐桌面 + 开始菜单入口。": "诊断报告只保存在本机，会遮盖常见敏感信息；分享前仍请检查内容。重建会补齐桌面 + 开始菜单入口。",
     "隐私保护报告已导出": "隐私保护报告已导出",
     "报告已保存在本机。分享前请检查是否仍有敏感信息。": "报告已保存在本机。分享前请检查是否仍有敏感信息。",
-    "安装的应用可直接从 ApkStart 独立窗口打开。桌面快捷方式目前仅适用于默认环境。": "安装的应用可直接从 ApkStart 独立窗口打开。桌面快捷方式目前仅适用于默认环境。",
-    "其他 Android 环境暂不创建桌面快捷方式，避免打开错误的应用数据。": "其他 Android 环境暂不创建桌面快捷方式，避免打开错误的应用数据。",
-    "二级环境不创建桌面快捷方式，请从 ApkStart 的应用列表打开。": "二级环境不创建桌面快捷方式，请从 ApkStart 的应用列表打开。"
+    "二级环境不创建桌面快捷方式，请从 ApkStart 的应用列表打开。": "二级环境不创建桌面快捷方式，请从 ApkStart 的应用列表打开。",
+    "快捷方式与创建它的 Android 环境绑定。": "快捷方式与创建它的 Android 环境绑定。",
+    "先选择对应的环境，再打开桌面快捷方式。": "先选择对应的环境，再打开桌面快捷方式。"
   }
 };
