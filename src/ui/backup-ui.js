@@ -1121,6 +1121,7 @@ async function restore(){
   finally{secret='';clearPasswords();lock(false);}
 }
 function init(){
+  window.addEventListener('asi-language-change', render);
   if(!$('backupCenter'))return;
   render();
   $('btnBackupToggle').addEventListener('click',()=>{$('backupContent').hidden=!$('backupContent').hidden;render();});

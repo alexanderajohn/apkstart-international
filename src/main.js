@@ -3532,6 +3532,25 @@ if (!gotLock) {
       mainWindow.webContents.once('did-finish-load', () => {
         setTimeout(async () => {
           try {
+            if (process.argv.includes('--profiles')) {
+              const passed = await mainWindow.webContents.executeJavaScript(`
+                (async () => {
+                  const picker = document.getElementById('asi-language');
+                  const initial = picker.value;
+                  try {
+                    for (const [code, expected] of [['vi','Khởi động Android'],['zh-CN','启动运行时'],['en','Start Android runtime']]) {
+                      picker.value = code;
+                      picker.dispatchEvent(new Event('change'));
+                      await new Promise(resolve => requestAnimationFrame(resolve));
+                      if (document.documentElement.lang !== code ||
+                          document.getElementById('btnRuntimeStart').textContent.trim() !== expected) return false;
+                    }
+                    return true;
+                  } finally { window.ASI_I18N.setLanguage(initial); }
+                })()
+              `);
+              if (!passed) throw Error('Language switch smoke failed');
+            }
             if (process.argv.includes('--setup')) {
               // 运行时面板已并入设置：--setup 与 --settings 等价，直接打开设置截图
               await mainWindow.webContents.executeJavaScript(

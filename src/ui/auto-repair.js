@@ -203,6 +203,13 @@ async function applyRequested(actions,L) {
 function init() {
   const btn=$('btnAutoRepairScan'),box=$('autoRepairResults');
   if(!btn||!box)return;
+  window.addEventListener('asi-language-change', () => {
+    const L=language();
+    btn.textContent=L.scan;
+    $('autoRepairCaption').textContent=L.subtitle;
+    if (latest) render(latest);
+    else if (!busy) box.replaceChildren(el('p','asi-ar-msg',L.empty));
+  });
   btn.addEventListener('click',scan);
   box.append(el('p','asi-ar-msg',language().empty));
 }

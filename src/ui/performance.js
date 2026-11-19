@@ -191,6 +191,7 @@ async function openFor(pkg){
   $('smartPerformanceCenter').scrollIntoView({block:'center'});
 }
 function init(){
+  window.addEventListener('asi-language-change', labels);
   if(!$('smartPerformanceCenter'))return;
   labels();
   $('btnPerfStart').addEventListener('click',start);

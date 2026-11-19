@@ -127,6 +127,7 @@ async function runReadiness(){
   finally{readinessBusy=false;render();}
 }
 function init(){
+  window.addEventListener('asi-language-change', () => { render(); if (!busy) notice(strings().hint); });
   if(!$('profilePicker'))return;
   $('profilePicker').addEventListener('change',render);
   $('btnSwitchProfile').addEventListener('click',change);

@@ -52,6 +52,7 @@ function setLanguage(value) {
   locale = util.normalize(value);
   try {localStorage.setItem(localeKey,locale);} catch (_) {}
   schedule();
+  window.dispatchEvent(new CustomEvent('asi-language-change', {detail:locale}));
 }
 function init() {
   const picker = document.createElement('select');

@@ -173,3 +173,15 @@ test('diagnostic export UI communicates local storage and manual review', () => 
   assert.ok(html.includes('导出隐私保护诊断报告'));
   assert.ok(app.includes("title: '隐私保护报告已导出'"));
 });
+
+test('settings action labels and option text have usable translations', () => {
+  const html=fs.readFileSync(path.join(root,'src/ui/index.html'),'utf8');
+  for(const m of html.matchAll(/<(button|option)\b[^>]*>([^<>]+)<\/\1>/g)){
+    const key=m[2].trim();
+    if (!/[\u3400-\u9fff]/.test(key)) continue;
+    for(const lang of ['en','vi','zh-CN']){
+      assert.ok(dict[lang][key]?.trim(),lang+' missing '+key);
+      assert.ok(!dict[lang][key].includes('\ufffd'),lang+' has invalid text for '+key);
+    }
+  }
+});
