@@ -14,8 +14,8 @@ Release decision: **Release Blocked**. No physical Windows Android test host is 
 | 26 | Three-language UI; review pending | [ed4493fe](https://github.com/alexanderajohn/apkstart-international/commit/ed4493fe03e8af27d98903929ae53c05f403d362) | [3/3](https://github.com/alexanderajohn/apkstart-international/actions/runs/44467790354) | [Portable](https://github.com/alexanderajohn/apkstart-international/actions/runs/44467790354/artifacts/14502673306) | Native dialogs, dynamic setup guidance, three-language manual workflow and layout review |
 | 27 | Windows Setup | [c6fb2268](https://github.com/alexanderajohn/apkstart-international/commit/c6fb2268bb03681a349a6d8bb788431d002a190c) | [3/3](https://github.com/alexanderajohn/apkstart-international/actions/runs/44468195349) | [Portable](https://github.com/alexanderajohn/apkstart-international/actions/runs/44468195349/artifacts/14502639943) · [Setup](https://github.com/alexanderajohn/apkstart-international/actions/runs/44468195349/artifacts/14502694813) | Signed delivery, MSIX identity, verified production update channel |
 | 28 | Restore verification | [af494b7c](https://github.com/alexanderajohn/apkstart-international/commit/af494b7cfed07d3b9d36a1350ce5b272d7f3531c) | [3/3](https://github.com/alexanderajohn/apkstart-international/actions/runs/44468683387) | [Portable](https://github.com/alexanderajohn/apkstart-international/actions/runs/44468683387/artifacts/14502844254) · [Setup](https://github.com/alexanderajohn/apkstart-international/actions/runs/44468683387/artifacts/14503815779) | Physical power-loss and multi-GB AVD recovery |
-| 29 | Security review | Awaiting recorded run | Pending | Pending | Independent review, third-party notices, production signing |
-| 30 | Candidate; Release Blocked | Awaiting recorded run | Pending | Pending | Physical Android 14, signed distribution and full international UX |
+| 29 | Security review | [56f90f4e](https://github.com/alexanderajohn/apkstart-international/commit/56f90f4ec19f2ba0a2da418243e5e430a65f649f) | [3/3](https://github.com/alexanderajohn/apkstart-international/actions/runs/44522403089) | [Portable](https://github.com/alexanderajohn/apkstart-international/actions/runs/44522403089/artifacts/14529730231) · [Setup](https://github.com/alexanderajohn/apkstart-international/actions/runs/44522403089/artifacts/14529530736) | Independent review, third-party notices, production signing |
+| 30 | Candidate; Release Blocked | [1155f5dc](https://github.com/alexanderajohn/apkstart-international/commit/1155f5dc7ab481ff02e6b61831586b5add4e8fd3) | [3/3](https://github.com/alexanderajohn/apkstart-international/actions/runs/44523365169) | [Portable](https://github.com/alexanderajohn/apkstart-international/actions/runs/44523365169/artifacts/14529571946) · [Setup](https://github.com/alexanderajohn/apkstart-international/actions/runs/44523365169/artifacts/14529786071) | Physical Android 14, signed distribution and full international UX |
 
 ## Pass 20
 
@@ -62,3 +62,17 @@ Security review, trust decisions and outstanding release gates are recorded in [
 ## Pass 30
 
 The unsigned 1.0.0-rc.1 build has a complete portable file inventory, candidate identity and an upgrade/rollback exercise against the exact Pass 27 implementation. [Candidate evaluation and upstream comparison](CANDIDATE_VALIDATION.md) records the remaining Stable requirements. Windows CI links belong to the code revision that generated each artifact.
+
+### Verified candidate artifacts
+
+The 1.0.0-rc.1 code revision is `1155f5dc7ab481ff02e6b61831586b5add4e8fd3`. All eleven pass revisions completed their three Windows CI jobs. On the candidate, the international suite passed 215/215 on **each** of Node 20 and Node 22. The packaged UI smoke passed, the gate inventoried and rechecked 163 portable files, and the hosted Windows runner installed the earlier Setup, upgraded, rolled back, upgraded again and uninstalled. The catalog and userdata test files retained their contents throughout. The test did not boot their AVD.
+
+| Output | GitHub artifact bytes | GitHub archive SHA-256 |
+| --- | ---: | --- |
+| [RC Portable](https://github.com/alexanderajohn/apkstart-international/actions/runs/44523365169/artifacts/14529571946) | 148,779,653 | `d389bf349f133ccede75b5e10943852dcb59da7b91830bf6cec674f013fbd738` |
+| [RC Setup, checksums, inventory and SBOM](https://github.com/alexanderajohn/apkstart-international/actions/runs/44523365169/artifacts/14529786071) | 113,137,265 | `fe1b9f0ffed8dc2941e600457f608aa10180131f3f12071081f76d373e79d0dc` |
+| [UI smoke screenshots](https://github.com/alexanderajohn/apkstart-international/actions/runs/44523365169/artifacts/14528837933) | 1,340,071 | `2b9bc67c8937d11e8bf40cb9537a161673e2887977f978117eca249d25405f6f` |
+
+GitHub reports that these short-lived evaluation artifacts expire on 2026-11-22 at approximately 12:26 UTC. Setup's separate `SHA256SUMS` applies to the EXE inside its archive.
+
+**Next validation milestone.** On physical Windows hosts, run the [Android test procedure](LIVE_ANDROID_VALIDATION.md) with a signed test application in disposable Profiles. Record cold/Quick Boot, ADB ownership and actual app-private persistence before and after an offline restore. Attach the resulting observations and benchmark samples to Draft PR #1. The [remaining release gates](CANDIDATE_VALIDATION.md) include power loss, full international UX, signing and redistribution review. Release Blocked.
