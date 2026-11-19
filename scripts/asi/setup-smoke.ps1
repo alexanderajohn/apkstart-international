@@ -7,15 +7,19 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hoste
 }
 $root = Join-Path $env:RUNNER_TEMP ("asi-setup-" + [guid]::NewGuid().ToString('N'))
 $target = Join-Path $root 'program'
-$env:APPDATA = Join-Path $root 'roaming'
-$env:LOCALAPPDATA = Join-Path $root 'local'
-$profile = Join-Path $env:APPDATA 'apkstart-international/profiles/p_0123456789abcdef'
-New-Item -ItemType Directory -Path $profile,$env:LOCALAPPDATA | Out-Null
+$appdata = [Environment]::GetFolderPath('ApplicationData')
+$profile = Join-Path $appdata ('apkstart-international/profiles/p_' + [guid]::NewGuid().ToString('N').Substring(0,16))
+if (Test-Path -LiteralPath $profile) {throw 'Disposable Profile path already exists'}
+$avd = Join-Path $profile 'avd/qa.avd'
+New-Item -ItemType Directory -Path $avd | Out-Null
 $sentinel = Join-Path $profile 'apps.json'
+$userdata = Join-Path $avd 'userdata-qemu.img'
 $expected = '{"apps":[{"package":"org.example.canary"}]}'
 [IO.File]::WriteAllText($sentinel,$expected)
+[IO.File]::WriteAllBytes($userdata,[guid]::NewGuid().ToByteArray())
+$digest = (Get-FileHash $userdata -Algorithm SHA256).Hash
 function Test-Data {
-    if ([IO.File]::ReadAllText($sentinel) -cne $expected) {throw 'Profile data changed'}
+    if ([IO.File]::ReadAllText($sentinel) -cne $expected -or (Get-FileHash $userdata -Algorithm SHA256).Hash -ne $digest) {throw 'Profile data changed'}
 }
 function Install-Candidate([string]$File) {
     $path = (Resolve-Path $File).Path
@@ -33,6 +37,7 @@ if ($PreviousSetup) {
 $current = Install-Candidate $Setup
 if ($current -ne (Get-FileHash 'src/main.js' -Algorithm SHA256).Hash) {throw 'Installed source differs from this checkout'}
 if ($PreviousSetup) {
+    if ($before -eq $current) {throw 'Upgrade inputs contain identical application code'}
     if ((Install-Candidate $PreviousSetup) -ne $before) {throw 'Rollback did not restore the previous program'}
     if ((Install-Candidate $Setup) -ne $current) {throw 'Re-upgrade changed the program'}
 } elseif ((Install-Candidate $Setup) -ne $current) {throw 'Reinstallation changed the program'}

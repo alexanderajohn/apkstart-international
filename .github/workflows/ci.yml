@@ -75,10 +75,12 @@ jobs:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/feature/international-foundation'
     needs: test
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -124,6 +126,7 @@ jobs:
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
             throw 'UI smoke timed out (Windows CI may not provide a desktop session)'
           }
+          if ($p.ExitCode -ne 0) {throw "Packaged smoke exited with $($p.ExitCode)"}
           if (!(Test-Path $shot)) { throw 'No UI smoke screenshot was saved' }
           Copy-Item $shot (Join-Path $PWD 'asi-preview-smoke.png') -Force
           $arShot = $shot -replace '\.png$', '-auto-repair.png'
@@ -166,14 +169,30 @@ jobs:
         run: npm run pack:setup
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - name: Install, reinstall and uninstall with a disposable Profile
+      - name: Read and recheck the complete candidate inventory
+        shell: pwsh
+        env:
+          HEAD_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $portable = 'dist/ApkStart-International-win64-portable'
+          node scripts/asi/candidate-files.cjs create $portable candidate-files.json $env:HEAD_REVISION
+          if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
+          node scripts/asi/candidate-files.cjs verify $portable candidate-files.json $env:HEAD_REVISION
+          if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
+      - name: Resolve verified Pass 27 Setup for upgrade and rollback
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ./scripts/asi/previous-setup.ps1 -Revision 'c6fb2268bb03681a349a6d8bb788431d002a190c'
+      - name: Install, upgrade, roll back and uninstall with a disposable Profile
         env:
           RUNNER_ENVIRONMENT: ${{ runner.environment }}
         shell: pwsh
         run: |
           $setup = @(Get-ChildItem 'dist/release/*-Setup.exe')
           if ($setup.Count -ne 1) { throw 'Expected one Setup executable' }
-          ./scripts/asi/setup-smoke.ps1 -Setup $setup[0].FullName
+          ./scripts/asi/setup-smoke.ps1 -Setup $setup[0].FullName -PreviousSetup $env:ASI_PREVIOUS_SETUP
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $hash = (Get-FileHash $setup[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $($setup[0].Name)" | Set-Content -Encoding ascii dist/release/SHA256SUMS
@@ -184,6 +203,7 @@ jobs:
             dist/release/*-Setup.exe
             dist/release/SHA256SUMS
             sbom.cdx.json
+            candidate-files.json
           if-no-files-found: error
           retention-days: 3
       - uses: actions/upload-artifact@v4

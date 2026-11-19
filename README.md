@@ -3,21 +3,13 @@
 > **Unofficial, independent community fork** of [RoutineMiku/ApkStart](https://github.com/RoutineMiku/apkstart).
 > Android apps in desktop-like Windows windows — with English, Vietnamese, and Simplified Chinese UI support.
 
-**Development status:** Early technical preview. This fork does **not** yet claim complete localization, Windows compatibility, a safe updater, or a production installer. Please do not publish bundled Android/Google components before reviewing their redistribution terms.
+**Stable 1.0 status — Release Blocked.** Version `1.0.0-rc.1` is an unsigned Windows evaluation build. Physical Android 14 results, the full international UX review and production signing are outstanding.
 
+## Try the Windows candidate
 
-## Windows developer preview (not a production release)
+Download the Portable or Setup artifact for a **verified revision** in the [build and verification table](docs/DEVELOPMENT_PROGRESS.md). Extract the Portable ZIP into its own directory and open `ApkStart International.exe`. For Setup, verify the executable against its included SHA-256 file first. Back up existing Profiles and AVDs before testing upgrades.
 
-The international feature branch now includes a GitHub Actions job that builds a **Windows portable application shell** after its test matrix passes. The preview includes the Electron UI, not a preinstalled Android runtime, proprietary system image or Chinese Pinyin IME APK. On first setup, Android components are downloaded from the configured official SDK sources.
-
-1. Open [Actions](https://github.com/alexanderajohn/apkstart-international/actions) and choose the latest successful CI run for Pull Request #1.
-2. Download the artifact named `ApkStart-International-Windows-dev-preview`.
-3. Extract the archive and run `ApkStart International.exe` on a Windows test machine.
-4. Do not install it over the upstream project; use a separate folder and back up important data first.
-
-**Not yet validated:** full Android app launch, crash recovery, release integrity/signatures, third-party license distribution, and Windows installer/uninstaller. No public binary release is authorized by this preview build.
-
-See [preview build notes](docs/PREVIEW_BUILD.md) and [release gates](docs/RELEASE_BLOCKERS.md).
+See the [installation, rollback and comparison guide](docs/CANDIDATE_VALIDATION.md), [Android hardware procedure](docs/LIVE_ANDROID_VALIDATION.md) and [release blockers](docs/RELEASE_BLOCKERS.md). The Windows packages contain the launcher. Android SDK components are downloaded separately from Google's indexes.
 
 ## Why this fork?
 
@@ -28,11 +20,12 @@ See [preview build notes](docs/PREVIEW_BUILD.md) and [release gates](docs/RELEAS
 
 ## Developer quick start
 
-Clone the international fork and use Node.js 20+ on Windows 10/11:
+Clone the international fork and use Node.js 22.12 or newer to develop and package on Windows x64. The Windows unit matrix also exercises Node.js 20.
 
 ```powershell
 git clone https://github.com/alexanderajohn/apkstart-international.git
 cd apkstart-international
+git switch feature/international-foundation
 npm ci
 npm run test:international
 npm run audit:international

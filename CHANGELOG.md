@@ -1,3 +1,12 @@
+## 1.0.0-rc.1 · Unreleased
+
+- Verify approved APK and split payloads in private staging and stream verified bytes into an Android package-manager session.
+- Bind desktop launches, ADB connections and emulator reuse to the selected Profile. Preserve previous installations, userdata and snapshots during recovery and runtime cleanup.
+- Add a real-device harness for signed APKs, app-private persistence and repeated launch timings. Physical Windows/Android results are pending.
+- Verify plain and encrypted restores after the final renames. Persist an interruption journal, preserve original data and roll back failed verification.
+- Add Windows Setup lifecycle tests, a portable inventory, dependency SBOM and offline release-manifest verification. Keep production distribution gated.
+- Extend three-language settings coverage and pin Electron 45.3.4. See the [quality gates](docs/CANDIDATE_VALIDATION.md) for the current release decision.
+
 ## Unreleased — Encrypted Backup & Recovery
 
 - Export authenticated, encrypted-by-default Android profile snapshots with scrypt-derived AES-256-GCM keys and per-file random 96-bit nonces.

@@ -229,3 +229,15 @@ test('offline update and rollback verification requires the separately trusted s
   fs.writeFileSync(fixture.key,crypto.generateKeyPairSync('ed25519').publicKey.export({format:'pem',type:'spki'}));
   await assert.rejects(verifyUpdate(fixture),/signature/);
 });
+
+test('candidate inventory detects a same-size file replacement',async t=>{
+  const {inventory,validatePayload}=require('../scripts/asi/candidate-files.cjs');
+  const tmp=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'asi-rc-files-'));
+  t.after(()=>fs.rmSync(tmp,{recursive:true,force:true}));
+  const file=path.join(tmp,'probe.dll');
+  fs.writeFileSync(file,'1234');const first=await inventory(tmp);
+  fs.writeFileSync(file,'4321');const second=await inventory(tmp);
+  assert.equal(first[0].size,second[0].size);
+  assert.notEqual(first[0].sha256,second[0].sha256);
+  assert.throws(()=>validatePayload(second),/missing/);
+});

@@ -60,3 +60,21 @@ test('loss of guest ownership blocks commit and cleanup on an unknown guest', as
   }), /lost ownership/);
   assert.equal(cmds.length,1);
 });
+
+test('host approval stages the imported binary Android manifest and the exact IME bytes',async()=>{
+  const file=require('node:path').join(__dirname,'../assets/PinyinIME.apk');
+  const {prepareInstall}=require('../src/core/apk-install-guard');
+  const {withApprovedCopy}=require('../src/core/install-staging');
+  const approved=await prepareInstall(file,'default');
+  assert.equal(approved.package,'com.android.inputmethod.pinyin');
+  assert.equal(approved.sha256,'9cc5fd7c39b4f9e02739d5a0d7be34caa893fe7634b543ee3ffecd949f11b1a6');
+  let copy;
+  await withApprovedCopy(approved,'default',stage=>{
+    copy=stage.path;
+    assert.notEqual(copy,file);
+    assert.equal(stage.version,'1.0.0');
+    assert.equal(stage.bytes,1668276);
+    assert.equal(stage.sha256,approved.sha256);
+  });
+  assert.equal(require('node:fs').existsSync(copy),false);
+});

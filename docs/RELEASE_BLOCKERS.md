@@ -1,4 +1,10 @@
-# Release blockers — source preview only
+# Stable 1.0 release blockers
+
+**Release Blocked.** The engineering candidate is `1.0.0-rc.1`. See [current gates](CANDIDATE_VALIDATION.md), [security review](SECURITY_REVIEW.md) and [revision-specific Windows build evidence](DEVELOPMENT_PROGRESS.md). Physical Android 14 install/boot/isolation, real Profile migration and power loss, full international workflows, signed upgrades and distribution rights are still open.
+
+## Historical gate checklist
+
+Entries below record the requirements of earlier passes. Use the candidate gate table above for the consolidated release decision.
 
 - [ ] Translate all renderer and backend strings. The current catalog is deliberately partial.
 - [x] Disable executable self-update and interrupted-job resume until integrity checks exist.

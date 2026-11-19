@@ -153,8 +153,8 @@ fs.renameSync(path.join(OUT, 'electron.exe'), exePath);
 function numericFileVersion(version) {
   const nums = String(version).match(/^(\d+)\.(\d+)\.(\d+)/);
   if (!nums) throw new Error('Invalid release version: ' + version);
-  const beta = /beta[.-]?(\d+)/i.exec(String(version));
-  return [nums[1],nums[2],nums[3],beta ? beta[1] : '0'].join('.');
+  const ordinal = /(?:beta|rc)[.-]?(\d+)/i.exec(String(version));
+  return [nums[1],nums[2],nums[3],ordinal ? ordinal[1] : '0'].join('.');
 }
 function embedExeMeta(exe) {
   const rcedit = [
@@ -192,7 +192,7 @@ function embedExeMeta(exe) {
     return false;
   }
 }
-embedExeMeta(exePath);
+if (!embedExeMeta(exePath)) throw Error('Cannot embed Windows candidate identity');
 
 // 5. 版本信息
 const pkg = PKG;
