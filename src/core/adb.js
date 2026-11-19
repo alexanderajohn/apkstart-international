@@ -520,12 +520,9 @@ class AdbClient {
   }
 
   async uninstall(pkg) {
-    try {
-      await this.exec(['uninstall', pkg], { timeout: 60000 });
-    } catch (e) {
-      // 部分设备需要指定 user
-      await this.exec(['shell', 'pm', 'uninstall', '--user', '0', pkg], { timeout: 60000 });
-    }
+    if (!require('./pkgname').validPackageName(pkg)) throw Error('Invalid package');
+    const result = await this.exec(['uninstall',pkg],{timeout:60000});
+    if (result.stdout.trim() !== 'Success') throw Error('Android did not confirm uninstall');
   }
 
   /**
@@ -791,7 +788,9 @@ class AdbClient {
 
   /** 清除应用数据 */
   async clearData(pkg) {
-    await this.shell(`pm clear ${pkg}`);
+    if (!require('./pkgname').validPackageName(pkg)) throw Error('Invalid package');
+    const result = await this.exec(['shell','pm','clear',pkg],{timeout:60000});
+    if (result.stdout.trim() !== 'Success') throw Error('Android did not confirm data removal');
   }
 
   /** 导出应用数据（Windows/调试版可用 run-as；否则走 adb backup 兜底） */

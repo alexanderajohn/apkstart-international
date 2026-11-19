@@ -3,9 +3,23 @@
  * ApkStart 主进程
  * 职责：窗口 / 托盘 / 单实例 / 命令行分发（双击 apk、桌面快捷方式启动）/ IPC
  */
-const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, shell, nativeImage, screen, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain: electronIpc, dialog, Tray, Menu, shell, nativeImage, screen, globalShortcut } = require('electron');
 const fs = require('fs');
 const path = require('path');
+
+const {authorizeSender,externalWebUrl} = require('./core/ipc-origin');
+function trustedHandler(channel, listener) {
+  return (event, ...args) => {
+    authorizeSender(event, channel, {index:mainWindow, shell:appWin?.win, splash:splashWin});
+    return listener(event,...args);
+  };
+}
+const ipcMain = {
+  handle(channel,listener){electronIpc.handle(channel,trustedHandler(channel,listener));},
+  on(channel,listener){electronIpc.on(channel,(event,...args)=>{
+    try { trustedHandler(channel,listener)(event,...args); } catch(error) { appLog(error.message); }
+  });},
+};
 
 const store = require('./core/store');
 const { Runtime } = require('./core/engine');
@@ -607,36 +621,6 @@ async function autoDeploy({ force = false } = {}) {
   let succeeded = false;
   try {
     const env = await runtime.provisioner.checkEnv();
-    const needEngine = !env.emulator.ok || !env.sysimg.ok;
-    // 随包自带运行时（完整版安装包 / 微软商店版）：**一律不联网**。
-    // 镜像已经在包里（压缩形态），第一次开机由 engine.ensure() 就地展开；
-    // 这里再下一套 1.5GB 纯属浪费，也正是用户抱怨的「装完还在下镜像」。
-    if (bundledRuntimeDir && env.adb.ok && env.emulator.ok && env.sysimg.ok) {
-      appLog(`autoDeploy 跳过：运行时随包内置（${bundledRuntimeDir}），无需联网`
-        + (env.needsExtract ? '，镜像将在首次启动时本地展开' : ''));
-      return { ok: true, source: 'bundled', needsExtract: !!env.needsExtract };
-    }
-    if (bundledRuntimeDir && !env.emulator.ok) {
-      appLog(`autoDeploy 跳过联网下载：运行时目录随包内置（${bundledRuntimeDir}），交给诊断流程`);
-      return { ok: false, error: 'bundled', bundled: true };
-    }
-    // 轻量版优先用「本项目 GitHub 的运行时整包」：一个文件搞定 emulator + 系统镜像，
-    // 下载源和更新源统一在 GitHub 上（国内比 dl.google.com 稳得多）。
-    // 整包拿不到（没网 / 还没发过该资产 / 被限流）再逐个从官方源装。
-    if (needEngine && store.getSettings().runtime.preferGithubRuntime !== false) {
-      try {
-        progress({ message: '正在从 GitHub 下载运行时…' });
-        await runtime.provisioner.installRuntimePack(progress);
-        const afterPack = await runtime.provisioner.checkEnv();
-        if (afterPack.emulator.ok && afterPack.sysimg.ok) {
-          succeeded = true;
-          return { ok: true, source: 'github' };
-        }
-        progress({ message: '运行时整包不完整，改用官方源补齐…' });
-      } catch (e) {
-        progress({ message: `GitHub 运行时不可用（${e.message}），改用官方源…` });
-      }
-    }
     if (!env.adb.ok) {
       progress({ message: '正在准备 adb…' });
       await runtime.provisioner.installAdb(progress);
@@ -752,7 +736,7 @@ function createWindow({ show = true } = {}) {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       spellcheck: false,
     },
   });
@@ -774,7 +758,7 @@ function createWindow({ show = true } = {}) {
     return { action: 'deny' };
   });
   mainWindow.webContents.on('will-navigate', (e, url) => {
-    if (url.startsWith('file://')) return;
+
     e.preventDefault();
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
   });
@@ -1944,11 +1928,21 @@ function registerIpc() {
    */
   ipcMain.handle('app:stop', async (_e, pkg, opts = {}) => stopApp(pkg, opts));
 
-  ipcMain.handle('app:uninstall', async (_e, pkg) => {
-    if (backupBusy) throw new Error('Backup or restore in progress');
-    await installer.uninstall(pkg);
-    return { ok: true };
-  });
+  async function changePackage(pkg, action) {
+    if (installBusy || backupBusy || store.profileSwitching) throw Error('Profile is busy');
+    const id = store.profiles.currentId();
+    if (!validPackageName(pkg) || !store.getApp(pkg)) throw Error('Unknown Profile package');
+    installBusy = true;
+    try {
+      const answer = await dialog.showMessageBox(mainWindow, {type:'warning',title:action,
+        message:action+' '+pkg+' ('+id+')?', buttons:['Cancel',action],defaultId:0,cancelId:0});
+      if (answer.response !== 1) return {ok:false,canceled:true};
+      if (id !== store.profiles.currentId()) throw Error('Profile changed');
+      await installer.changePackage(pkg,id,action==='Uninstall');
+      return {ok:true};
+    } finally { installBusy=false; }
+  }
+  ipcMain.handle('app:uninstall', (_e,pkg) => changePackage(pkg,'Uninstall'));
 
   ipcMain.handle('app:shortcut', async (_e, pkg) => {
     const appRecord = store.getApp(pkg);
@@ -1958,12 +1952,7 @@ function registerIpc() {
     return { ok: true, path: p };
   });
 
-  ipcMain.handle('app:clearData', async (_e, pkg) => {
-    const rt = await runtime.ensure();
-    if (!rt.ok) throw new Error(rt.error);
-    await rt.client.clearData(pkg);
-    return { ok: true };
-  });
+  ipcMain.handle('app:clearData', (_e,pkg) => changePackage(pkg,'Clear Android app data'));
 
   ipcMain.handle('app:pin', async (_e, { pkg, pinned }) => {
     store.upsertApp({ package: pkg, pinned: !!pinned });
@@ -2931,8 +2920,7 @@ function registerIpc() {
 
       // 先让本程序退出，再由一个独立进程延迟 2 秒拉起卸载器：
       // 运行中的 exe 会锁住安装目录里的文件，直接拉起卸载器容易删不干净。
-      const cmd = `ping 127.0.0.1 -n 3 >nul & start "" "${uninstaller}"`;
-      spawn('cmd.exe', ['/c', cmd], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+      spawn(uninstaller, [], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
       setTimeout(() => app.quit(), 300);
       return { ok: true, portable: false };
     } catch (e) {
@@ -2940,7 +2928,7 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle('shell:open', (_e, url) => shell.openExternal(url));
+  ipcMain.handle('shell:open', (_e, url) => shell.openExternal(externalWebUrl(url)));
 
   /**
    * 打开「启用或关闭 Windows 功能」对话框。
@@ -3215,7 +3203,7 @@ if (!gotLock) {
         show: false,
         webPreferences: {
           preload: path.join(__dirname, 'splash-preload.js'),
-          contextIsolation: true, nodeIntegration: false, sandbox: false,
+          contextIsolation: true, nodeIntegration: false, sandbox: true,
         },
       });
       // 用 screen-saver 级别确保不被模拟器窗口盖住（之前 alwaysOnTop 默认 level

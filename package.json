@@ -54,10 +54,13 @@
     "pack:setup": "electron-builder --prepackaged dist/ApkStart-International-win64-portable --win nsis --x64 --config electron-builder.yml --publish never"
   },
   "devDependencies": {
-    "electron": "^33.4.11",
+    "electron": "45.3.4",
     "electron-builder": "^26.18.0"
   },
   "dependencies": {
     "@napi-rs/lzma": "^1.5.3"
+  },
+  "overrides": {
+    "minimatch@>=7 <11.0.1": "11.0.1"
   }
 }

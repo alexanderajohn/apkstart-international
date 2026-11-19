@@ -16,6 +16,7 @@ const { ZipArchive, ZipFile, resolveZipEntry } = require('./zip');
 const { Sources } = require('./sources');
 const { cmpVer } = require('./version');
 
+const {verifiedSdkArchive}=require('./sdk-archive');
 const IS_WIN = process.platform === 'win32';
 
 const SOURCES = {
@@ -501,20 +502,7 @@ class Provisioner {
   async installAdb(onProgress = () => {}) {
     const p = this.ensureDirs();
     await this.guardDisk('adb', p.root);
-    const zipPath = path.join(p.tmp, 'platform-tools.zip');
-    onProgress({ stage: 'download', message: '下载 Android platform-tools（约 8MB）…', percent: 2 });
-
-    await downloadAny(SOURCES.adb, zipPath, {
-      onProgress: (pr) => onProgress({
-        stage: 'download',
-        message: `下载 adb… ${(pr.got / 1048576).toFixed(1)}MB / ${(pr.total / 1048576).toFixed(1)}MB`,
-        percent: pr.percent,
-        speed: pr.speed,
-      }),
-    });
-
-    assertComplete(zipPath, MIN_SIZE.adb, 'adb 安装包');
-
+    const zipPath = await verifiedSdkArchive(SOURCES.sdkIndex,'platform-tools',p.tmp,onProgress);
     onProgress({ stage: 'extract', message: '解压 adb…', percent: 92 });
     await this.extractZip(zipPath, p.root);
 
@@ -590,68 +578,8 @@ class Provisioner {
    * 轻量版一键部署：从本项目 GitHub 下载运行时整包并解压。
    * 系统镜像在包里是 .xz，首次开机时由 materializeImages() 展开（只做一次）。
    */
-  async installRuntimePack(onProgress = () => {}) {
-    const p = this.ensureDirs();
-    // 先给一条进度：找版本 + 测速这一段没有字节数，不给提示用户会以为「卡死了」。
-    onProgress({ stage: 'download', message: '正在获取运行时版本信息…', percent: 1 });
-    const pack = await this.resolveRuntimePack();
-    await this.guardDisk('runtime', p.root);
-    const zip = path.join(p.tmp, 'runtime-pack.zip');
-    const total = pack.size || 0;
-    const s = store.getSettings().runtime || {};
-    const conn = Math.max(1, Math.min(16, Number(s.downloadConnections) || 8));
-
-    onProgress({ stage: 'download', message: `正在挑选最快的下载源（${pack.from || 'GitHub'} · ${pack.tag}）…`, percent: 1 });
-    // 候选 = 源站 + 镜像前缀。先各下一个 128KB 实测速度再决定用哪个：
-    // 「按域名猜」在实测里经常错 —— 同一个地址上午 30KB/s、晚上 5MB/s。
-    const urls = await this.sources
-      .rank(this._downloadUrls(pack.url), { onProgress: (pp) => onProgress({ stage: 'download', message: pp.message, percent: 1 }) })
-      .catch(() => this._downloadUrls(pack.url));
-
-    onProgress({ stage: 'download', message: `下载运行时（约 1.5 GB，只需一次，${conn} 线程）…`, percent: 2 });
-    // 分块并行（8 线程）比单流快得多：GitHub 对单连接限速很常见，单流实测只有
-    // 一两百 KB/s，8 线程能跑满本地带宽。中途断掉会退回单流续传。
-    await downloadMulti(urls, zip, {
-      connections: conn,
-      onProgress: (pr) => {
-        const pct = pr.percent != null ? pr.percent : (total ? Math.round((pr.got / total) * 100) : 0);
-        const mb = `${(pr.got / 1048576).toFixed(1)} MB${total ? ` / ${(total / 1048576).toFixed(1)} MB` : ''}`;
-        const sp = Number(pr.speed) > 0 ? ` · ${(pr.speed / 1048576).toFixed(2)} MB/s` : '';
-        const eta = Number(pr.eta) > 0 ? ` · 剩余约 ${Math.ceil(pr.eta / 60)} 分钟` : '';
-        onProgress({
-          stage: 'download',
-          message: `下载运行时 ${mb}${sp}${eta}`,
-          percent: Math.max(1, Math.min(90, Math.round(pct * 0.9))),
-          speed: pr.speed,
-        });
-      },
-    });
-    assertComplete(zip, 200 * 1024 * 1024, '运行时整包');
-
-    onProgress({ stage: 'extract', message: '解压运行时（约 1 分钟）…', percent: 91 });
-    await this.extractZip(zip, p.root, {
-      onEntry: (name, done, all) => {
-        if (done % 50 === 0) {
-          onProgress({ stage: 'extract', percent: Math.min(99, 91 + Math.round((done / all) * 8)), message: `解压 ${done}/${all}` });
-        }
-      },
-    });
-    try {
-      fs.writeFileSync(path.join(p.root, '.runtime-pack.json'), JSON.stringify({
-        name: pack.name, tag: pack.tag, at: new Date().toISOString(), from: pack.url,
-      }));
-      fs.rmSync(zip, { force: true });
-    } catch (_) { /* 标记写不进去不影响使用 */ }
-
-    // 整包里的 system.img 是 .xz 压缩的（和完整版安装包一致）。这里立刻展开，
-    // 否则紧接着 checkEnv() 会认为「没装系统镜像」，又去 Google 下一套 1.4 GB。
-    // 展开失败必须让部署失败并带上原因：旧版这里 catch 成 0，用户看到进度
-    // 停在 99% 之后又跳回「改用官方源补齐」，白下一套 1.4GB。
-    onProgress({ stage: 'extract', message: '展开系统镜像（约 1 分钟，只需一次）…', percent: 99 });
-    await this.materializeImages((m) => onProgress({ stage: 'extract', message: m, percent: 99 }));
-
-    onProgress({ stage: 'done', message: '运行时已就绪', percent: 100 });
-    return { ok: true, name: pack.name, tag: pack.tag };
+  async installRuntimePack() {
+    throw Error('Install Android components from the verified Google SDK index.');
   }
 
   /**
@@ -680,6 +608,13 @@ class Provisioner {
         if (!target) {
           if (opts.onUnsafeEntry) opts.onUnsafeEntry(name);
           continue;
+        }
+        let ancestor=path.resolve(destDir);
+        for(const part of ['',...path.relative(ancestor,target).split(path.sep)]){
+          ancestor=path.join(ancestor,part);
+          let entry;
+          try { entry=fs.lstatSync(ancestor); } catch(error){if(error.code==='ENOENT')break;throw error;}
+          if(entry.isSymbolicLink())throw Error('SDK destination contains a linked path');
         }
         if (name.endsWith('/')) {
           fs.mkdirSync(target, { recursive: true });
@@ -1055,23 +990,7 @@ class Provisioner {
   async installEmulator(onProgress = () => {}) {
     const p = this.ensureDirs();
     await this.guardDisk('emulator', p.root);
-    const url = await this.resolveEmulatorUrl();
-    const zip = path.join(p.tmp, 'emulator.zip');
-    onProgress({ stage: 'download', message: '下载运行时引擎（约 440MB，走 Google 官方源）…', percent: 1 });
-
-    await downloadAnyParallel(this._downloadUrls(url), zip, {
-      connections: 8,
-      minChunk: 4 * 1024 * 1024,
-      onProgress: (pr) => onProgress({
-        stage: 'download',
-        message: `下载运行时引擎 ${(pr.got / 1048576).toFixed(0)}MB / ${(pr.total / 1048576).toFixed(0)}MB`
-          + (pr.speed ? `（${(pr.speed / 1048576).toFixed(1)} MB/s）` : ''),
-        percent: Math.round(pr.percent * 0.85),
-        canResume: true,
-      }),
-    });
-    assertComplete(zip, MIN_SIZE.emulator, '运行时引擎');
-
+    const zip = await verifiedSdkArchive(SOURCES.sdkIndex,'emulator',p.tmp,onProgress);
     onProgress({ stage: 'extract', message: '解压运行时引擎…', percent: 88 });
     await this.extractZip(zip, p.root);
     fs.rmSync(zip, { force: true });
@@ -1173,22 +1092,7 @@ class Provisioner {
   async installPlayImage(onProgress = () => {}) {
     const p = this.ensureDirs();
     await this.guardDisk('playimg', p.sysImgRoot);
-    const url = await this.resolvePlayUrl();
-    const zip = path.join(p.tmp, 'play-sysimg.zip');
-    onProgress({ stage: 'download', message: '下载 ARM 兼容镜像（Android 14，约 1.5GB）…', percent: 1 });
-    await downloadAnyParallel(this._downloadUrls(url), zip, {
-      connections: 8,
-      minChunk: 4 * 1024 * 1024,
-      onProgress: (pr) => onProgress({
-        stage: 'download',
-        message: `下载兼容镜像 ${(pr.got / 1048576).toFixed(0)}MB / ${(pr.total / 1048576).toFixed(0)}MB`
-          + (pr.speed ? `（${(pr.speed / 1048576).toFixed(1)} MB/s）` : ''),
-        percent: Math.round(pr.percent * 0.8),
-        canResume: true,
-      }),
-    });
-    assertComplete(zip, MIN_SIZE.sysimg, '兼容镜像');
-
+    const zip = await verifiedSdkArchive(SOURCES.playImgIndex,'system-images;android-34;google_apis_playstore;x86_64',p.tmp,onProgress);
     const dest = path.join(p.sysImgRoot, `android-${PLAY_SYSIMG.api}`, PLAY_SYSIMG.tag);
     fs.mkdirSync(dest, { recursive: true });
     onProgress({ stage: 'extract', message: '解压兼容镜像（3GB，需十余秒）…', percent: 82 });
@@ -1216,9 +1120,7 @@ class Provisioner {
   async installAehd(onProgress = () => {}) {
     const p = this.ensureDirs();
     await this.guardDisk('aehd', p.aehdDir);
-    const zip = path.join(p.tmp, 'aehd.zip');
-    onProgress({ stage: 'download', message: '下载 AEHD 驱动…', percent: 10 });
-    await downloadAnyParallel(this._downloadUrls(SOURCES.aehdFallback), zip, { connections: 2 });
+    const zip = await verifiedSdkArchive('https://dl.google.com/android/repository/addon2-3.xml','extras;google;Android_Emulator_Hypervisor_Driver',p.tmp,onProgress);
     fs.mkdirSync(p.aehdDir, { recursive: true });
     await this.extractZip(zip, p.aehdDir);
     fs.rmSync(zip, { force: true });
@@ -1256,78 +1158,14 @@ class Provisioner {
     return SOURCES.qemuFallback[0];
   }
 
-  async installQemu(onProgress = () => {}) {
-    const p = this.ensureDirs();
-    await this.guardDisk('qemu', p.root);
-    const setup = path.join(p.tmp, 'qemu-setup.exe');
-
-    onProgress({ stage: 'resolve', message: '查找最新 QEMU 版本…', percent: 1 });
-    const url = await this.resolveQemuUrl();
-    onProgress({ stage: 'download', message: `下载 QEMU（约 200MB）…`, percent: 2, url });
-
-    await download(url, setup, {
-      resume: true,
-      onProgress: (pr) => onProgress({
-        stage: 'download',
-        message: `下载 QEMU… ${(pr.got / 1048576).toFixed(0)}MB / ${(pr.total / 1048576).toFixed(0)}MB`
-          + (pr.speed ? `（${(pr.speed / 1024).toFixed(0)} KB/s）` : ''),
-        percent: pr.percent,
-        canResume: true,
-      }),
-    });
-    assertComplete(setup, MIN_SIZE.qemu, 'QEMU 安装包');
-
-    onProgress({ stage: 'install', message: '正在安装 QEMU（静默）…', percent: 96 });
-    // qemu-w64-setup 是 NSIS 安装器：/S 静默，/D 指定目录（必须最后且不加引号）
-    const target = p.qemuDir;
-    fs.mkdirSync(target, { recursive: true });
-    await new Promise((resolve) => {
-      const proc = spawn(setup, ['/S', `/D=${target}`], { windowsHide: true, stdio: 'ignore' });
-      proc.on('exit', () => resolve());
-      proc.on('error', () => resolve());
-      setTimeout(() => { try { proc.kill(); } catch (_) {} resolve(); }, 600000);
-    });
-
-    const v = await this.qemuVersion();
-    if (!v.ok) {
-      throw new Error('QEMU 安装后未找到 qemu-system-x86_64.exe：可手动下载 QEMU 并解压到 engine/qemu/');
-    }
-    fs.rmSync(setup, { force: true });
-    this._cache.qemuVersion = v.version;
-    onProgress({ stage: 'done', message: `QEMU ${v.version} 就绪`, percent: 100 });
-    return v;
+  async installQemu() {
+    throw Error('Import an independently verified QEMU installation, or choose the Android Emulator.');
   }
 
   // ---------------- 系统镜像 ----------------
 
-  async downloadIso(onProgress = () => {}) {
-    const p = this.ensureDirs();
-    const s = store.getSettings();
-    const dest = s.runtime.isoPath || p.iso;
-    await this.guardDisk('iso', path.dirname(dest));
-    const custom = s.runtime.isoUrl && s.runtime.isoUrl.trim();
-    const urls = custom ? [custom, ...SOURCES.iso] : SOURCES.iso;
-
-    onProgress({ stage: 'download', message: '下载 Android-x86 9.0-r2（约 900MB，8 线程分块）…', percent: 1 });
-    const r = await downloadAnyParallel(urls, dest, {
-      connections: 8,
-      onProgress: (pr) => onProgress({
-        stage: 'download',
-        message: `下载系统镜像… ${(pr.got / 1048576).toFixed(0)}MB / ${(pr.total / 1048576).toFixed(0)}MB`
-          + (pr.speed ? `（${(pr.speed / 1024).toFixed(0)} KB/s）` : ''),
-        percent: pr.percent,
-        canResume: true,
-      }),
-    });
-
-    const info = this.inspectIso(dest);
-    if (!info.ok) {
-      throw new Error(`系统镜像不可用：${info.reason}${info.size && info.size < MIN_SIZE.iso ? '，可再次点击继续断点续传' : ''}`);
-    }
-
-    store.saveSettings({ runtime: { isoPath: dest } });
-    onProgress({ stage: 'done', message: `系统镜像就绪（${(info.size / 1073741824).toFixed(2)} GB）`, percent: 100, path: dest });
-    return { ...r, ...info };
+  async downloadIso() {
+    throw Error('Import an independently verified local ISO, or choose Android 14.');
   }
 
   /** 校验用户导入的镜像/ISO */

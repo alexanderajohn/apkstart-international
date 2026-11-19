@@ -85,6 +85,16 @@ jobs:
           cache: npm
       - name: Install Electron build dependencies
         run: npm ci
+      - name: Generate dependency and license inventory
+        shell: pwsh
+        run: |
+          npm sbom --package-lock-only --sbom-format=cyclonedx | Out-File -Encoding utf8 sbom.cdx.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $bom = Get-Content -Raw sbom.cdx.json | ConvertFrom-Json
+          $electron = (Get-Content -Raw node_modules/electron/package.json | ConvertFrom-Json).version
+          if (!($bom.components | Where-Object { $_.name -eq 'electron' -and $_.version -eq $electron })) { throw 'Shipped Electron is missing from SBOM' }
+      - name: Install pinned Electron for Windows packaging
+        run: npm exec --offline -- install-electron
       - name: Package Windows portable preview
         run: npm run pack
       - name: Verify portable executable and bundled code
@@ -173,6 +183,7 @@ jobs:
           path: |
             dist/release/*-Setup.exe
             dist/release/SHA256SUMS
+            sbom.cdx.json
           if-no-files-found: error
           retention-days: 3
       - uses: actions/upload-artifact@v4

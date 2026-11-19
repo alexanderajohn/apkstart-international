@@ -60,3 +60,7 @@ Setup packages the same runtime-free portable tree that passes UI smoke. The hos
 ## Pass 28
 
 Both restore formats inventory the installed destinations and re-read their SHA-256 before success. Migration retains the destination AVD config and verifies its staged digest. An exclusive, flushed per-Profile journal records target, stage and original safety-copy names before renames. A fresh process blocks Android start on an interrupted restore. On failure keep Android closed, copy the Profile, journal, AVD and all transaction siblings to a separate disk first. Use the recorded original components or a known verified external backup to reconstruct an offline copy. Verify all selected files before archiving the journal and reopening that Profile. Recovery after physical power loss still requires hardware validation. Runtime cleanup preserves every AVD, snapshot, lock and shared image.
+
+## Pass 29
+
+Security review, trust decisions and outstanding release gates are recorded in [SECURITY_REVIEW.md](SECURITY_REVIEW.md). The locally verified Google Windows platform-tools archive passed size and checksum checks. Dependency audit, signed-update verifier tests, backup fault injection and Windows host CI have separate evidence. Third-party rights, physical path races, production signing and independent assessment remain open.

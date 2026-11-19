@@ -14,7 +14,7 @@ const store = require('./store');
 const { autoGrantEnabled } = require('./permission-policy');
 const { parseApk } = require('./apk');
 const { assertProfileGuest, assertProfileUnchanged } = require('./profile-runtime-guard');
-const { iconToIco, writeShortcut, removeShortcut, safeFileName, shortcutExt } = require('./shortcut');
+const { iconToIco, writeShortcut, safeFileName, shortcutExt } = require('./shortcut');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -350,21 +350,26 @@ class Installer {
     return made;
   }
 
-  async uninstall(pkg, { removeShortcut: rm = true } = {}) {
-    const app = store.getApp(pkg);
+  async changePackage(pkg, profileId, uninstall) {
+    if (!require('./pkgname').validPackageName(pkg) || !store.getApp(pkg)) throw Error('Unknown Profile package');
+    const checkProfile = () => assertProfileUnchanged(profileId, () => store.profiles.currentId());
+    checkProfile();
     const rt = await this.runtime.ensure();
-    if (rt.ok) await rt.client.uninstall(pkg).catch(() => {});
-    if (app && rm) {
-      removeShortcut(app.shortcutPath);
-      removeShortcut(app.startMenuPath);
+    if (!rt.ok) throw Error(rt.error);
+    await verifyOwner(rt.client,store.profiles,profileId);
+    checkProfile();
+    if (uninstall) {
+      await rt.client.uninstall(pkg);
+      checkProfile();
+      // Restored catalogs may refer to files outside the application. Keep all host copies.
+      store.removeApp(pkg);
+    } else {
+      await rt.client.clearData(pkg);
     }
-    if (app) {
-      try { if (app.iconPath && fs.existsSync(app.iconPath)) fs.unlinkSync(app.iconPath); } catch (_) {}
-      try { if (app.icoPath && fs.existsSync(app.icoPath)) fs.unlinkSync(app.icoPath); } catch (_) {}
-      try { if (app.apkPath && fs.existsSync(app.apkPath)) fs.unlinkSync(app.apkPath); } catch (_) {}
-    }
-    store.removeApp(pkg);
-    return true;
+  }
+
+  async uninstall(pkg) {
+    return this.changePackage(pkg,store.profiles.currentId(),true);
   }
 
   async launch(pkg, { onLog = () => {}, beforeStart = null, onMark = () => {}, onAppUp = null } = {}) {

@@ -1248,11 +1248,16 @@ class Runtime {
     try {
       assertRestoreFinished(store.profiles);
       if (store.profileSwitching || store.backupLocked) throw Error('Profile is busy');
+      const profileId=store.profiles.currentId();
       if (this.vmRunning) await this.stop();
       if ((await this.emulatorPorts()).length) throw Error('Close running emulators before resetting this Profile');
       const avdDir = path.join(this.provisioner.paths().avdHome, store.profiles.avdName() + '.avd');
+      if(profileId!==store.profiles.currentId() || this.vmStarting || store.profileSwitching)throw Error('Profile changed');
       let reclaimed = 0;
       if (fs.existsSync(avdDir)) {
+        // Reset only a real directory under the configured AVD home.
+        if(fs.lstatSync(avdDir).isSymbolicLink() || path.relative(path.resolve(avdDir),fs.realpathSync(avdDir))!=='')
+          throw Error('Reset requires an unlinked AVD directory');
         for (const e of fs.readdirSync(avdDir, { withFileTypes: true })) {
           const p = path.join(avdDir, e.name);
           // 删除：用户数据镜像（含 qcow2 差量 + 基址）、快速启动快照、残留锁文件/锁目录。

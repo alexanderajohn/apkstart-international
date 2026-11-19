@@ -185,3 +185,47 @@ test('settings action labels and option text have usable translations', () => {
     }
   }
 });
+
+test('IPC requires the owning window, local page and authorized frame',()=>{
+  const {authorizeSender,externalWebUrl}=require('../src/core/ipc-origin');
+  const {pathToFileURL}=require('node:url');
+  const frame={url:pathToFileURL(require('node:path').join(__dirname,'../src/ui/shell.html')).href};
+  const sender={mainFrame:frame};
+  const events={sender,senderFrame:frame}, windows={shell:{isDestroyed:()=>false,webContents:sender}};
+  assert.doesNotThrow(()=>authorizeSender(events,'shell:close',windows));
+  assert.throws(()=>authorizeSender(events,'backup:restore',windows),/denied/);
+  assert.throws(()=>authorizeSender({...events,senderFrame:{...frame}},'shell:close',windows),/frame/);
+  assert.throws(()=>externalWebUrl('file:///'),/web URL/);
+});
+test('official SDK selection binds component, Windows host, bytes and checksum',()=>{
+  const {archiveFromIndex,base}=require('../src/core/sdk-archive');
+  const part=host=>'<archive><host-os>'+host+'</host-os><complete><size>10</size><checksum type="sha256">'+'a'.repeat(64)+'</checksum><url>'+host+'.zip</url></complete></archive>';
+  const xml='<remotePackage path="emulator"><archives>'+part('linux')+part('windows')+'</archives></remotePackage>';
+  const ref=archiveFromIndex(xml,base+'repository2-3.xml','emulator');
+  assert.equal(ref.url,base+'windows.zip');assert.equal(ref.size,10);
+  assert.throws(()=>archiveFromIndex(xml,base+'repository2-3.xml','platform-tools'),/No verified/);
+  assert.throws(()=>archiveFromIndex(xml.replaceAll('sha256','unknown'),base+'repository2-3.xml','emulator'),/No verified/);
+});
+
+test('offline update and rollback verification requires the separately trusted signing key',async t=>{
+  const crypto=require('node:crypto'),os=require('node:os');
+  const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'asi-update-check-'));
+  t.after(()=>fs.rmSync(tmp,{recursive:true,force:true}));
+  const fixture=Object.fromEntries(['manifest','signature','key','artifact'].map(k=>[k,path.join(tmp,k)]));
+  fixture.version='0.1.0-beta.1';
+  const keys=crypto.generateKeyPairSync('ed25519');
+  fs.writeFileSync(fixture.key,keys.publicKey.export({format:'pem',type:'spki'}));
+  const payload=Buffer.from('disposable update fixture');
+  fs.writeFileSync(fixture.artifact,payload);
+  const meta=JSON.stringify({product:'org.apkstart.international',version:fixture.version,file:'artifact',
+    size:payload.length,sha256:crypto.createHash('sha256').update(payload).digest('hex')});
+  fs.writeFileSync(fixture.manifest,meta);
+  fs.writeFileSync(fixture.signature,crypto.sign(null,Buffer.from(meta),keys.privateKey));
+  const {verifyUpdate}=require('../scripts/asi/verify-update.cjs');
+  assert.equal((await verifyUpdate(fixture)).version,fixture.version);
+  await assert.rejects(verifyUpdate({...fixture,version:'1.0.0'}),/version/);
+  fs.writeFileSync(fixture.artifact,Buffer.alloc(payload.length));
+  await assert.rejects(verifyUpdate(fixture),/SHA-256/);
+  fs.writeFileSync(fixture.key,crypto.generateKeyPairSync('ed25519').publicKey.export({format:'pem',type:'spki'}));
+  await assert.rejects(verifyUpdate(fixture),/signature/);
+});

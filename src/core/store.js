@@ -24,7 +24,7 @@ const { createRegistry } = require('./profiles');
  * process.windowsStore 由 Electron 在 MSIX/APPX 环境下注入（普通 node 下是 undefined）。
  */
 const STORE_BUILD = (() => {
-  try { return !!require('electron').app?.isPackaged && !!process.windowsStore; } catch (_) { return false; }
+  try { return !!process.versions.electron && !!process.windowsStore && !!require('electron').app?.isPackaged; } catch (_) { return false; }
 })();
 
 const DATA_DIR = STORE_BUILD
