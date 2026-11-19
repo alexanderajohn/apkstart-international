@@ -56,3 +56,7 @@ Added EN/VI/ZH entries for 70 settings actions, options and fields. Profile, bac
 | 27 | Unsigned installer build and host lifecycle gate | This revision | Pending | Pending | Signed delivery, MSIX identity, verified production update channel |
 
 Setup packages the same runtime-free portable tree that passes UI smoke. The hosted Windows gate installs twice, verifies the installed source, uninstalls and checks a disposable Profile sentinel. The artifact includes its SHA-256 file. MSIX requires a fork-owned publisher identity. The production updater stays disabled pending an independently managed release key and verified update channel.
+
+## Pass 28
+
+Both restore formats inventory the installed destinations and re-read their SHA-256 before success. Migration retains the destination AVD config and verifies its staged digest. An exclusive, flushed per-Profile journal records target, stage and original safety-copy names before renames. A fresh process blocks Android start on an interrupted restore. On failure keep Android closed, copy the Profile, journal, AVD and all transaction siblings to a separate disk first. Use the recorded original components or a known verified external backup to reconstruct an offline copy. Verify all selected files before archiving the journal and reopening that Profile. Recovery after physical power loss still requires hardware validation. Runtime cleanup preserves every AVD, snapshot, lock and shared image.

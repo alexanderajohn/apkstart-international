@@ -156,7 +156,7 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
 
   console.log('\n[layers.js 容器式瘦身]');
 
-  await test('盘点可回收项：非 x86_64 QEMU、旧镜像、旧 AVD、锁文件、旧快照', () => {
+  await test('Runtime cleanup preserves all Profile and shared image data', () => {
     const root = path.join(TMP, 'runtime-layers');
     const mk = (p, size) => {
       fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -178,19 +178,16 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     const paths = a.candidates.map((c) => c.path.replace(/\\/g, '/'));
     assert(paths.some((p) => p.endsWith('qemu-system-aarch64.exe')), '应列出非 x86_64 QEMU');
     assert(!paths.some((p) => p.endsWith('qemu-system-x86_64.exe')), '不能删 x86_64 QEMU');
-    assert(paths.some((p) => p.includes('android-30')), '应列出旧版 API30 镜像');
-    assert(paths.some((p) => p.endsWith('.lock')), '应列出锁文件');
-    assert(paths.some((p) => p.includes('snapshots')), '应列出旧快照');
-    assert(paths.some((p) => p.includes('apkstart-arm.avd')), '应列出非活动 AVD');
-    assert(!paths.some((p) => p.endsWith('apkstart.avd/config.ini')), '不能删活动 AVD 配置');
-
+    assert(!paths.some(p => p.includes('/avd/') || p.includes('/system-images/')));
     const dry = layers.prune(root, { apply: false });
     assert(dry.removed.length === 0 && dry.saved === 0, 'dryRun 不应删除任何文件');
     assert(fs.existsSync(path.join(root, 'avd', 'apkstart-arm.avd', 'userdata-qemu.img')));
 
     const done = layers.prune(root, { apply: true });
-    assert(done.saved > 0 && done.removed.length >= 5, '实际清理应释放空间');
-    assert(!fs.existsSync(path.join(root, 'avd', 'apkstart-arm.avd')), '非活动 AVD 应被清掉');
+    assert(done.saved > 0 && done.removed.length === 1, '实际清理应释放空间');
+    assert(fs.existsSync(path.join(root, 'avd', 'apkstart-arm.avd','userdata-qemu.img')));
+    assert(fs.existsSync(path.join(root, 'avd','apkstart.avd','multiInstance.lock')));
+    assert(fs.existsSync(path.join(root, 'avd','apkstart.avd','snapshots','default_boot','ram.img')));
     assert(fs.existsSync(path.join(root, 'avd', 'apkstart.avd', 'config.ini')), '活动 AVD 必须保留');
     assert(fs.existsSync(path.join(root, 'emulator', 'qemu', 'windows-x86_64', 'qemu-system-x86_64.exe')), 'x86_64 QEMU 必须保留');
   });

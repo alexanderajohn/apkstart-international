@@ -146,8 +146,7 @@ test('Partial decrypted staging paths are tracked before any file decryption',()
     restore.indexOf('await decryptFile('),'Stage registered before decrypt can fail');
   assert.ok(restore.includes('if(fs.existsSync(stage.stage))await p.rm(stage.stage'),
     'All incomplete stage files removed on failure');
-  assert.ok(restore.includes('if(item.oldMoved&&fs.existsSync(item.safety))'),
-    'Existing original data restored after a failed commit');
+
 });
 
 test('A ciphertext mutation after preflight removes partial plaintext staging without touching live data',()=>fixture(async x=>{
@@ -174,4 +173,16 @@ test('A ciphertext mutation after preflight removes partial plaintext staging wi
     'Incomplete decrypted stage files must be removed immediately on failure');
   assert.ok(!entries.some(name=>name.includes('.before-restore')),
     'Uncommitted restoration must not move original user data');
+}));
+
+
+test('encrypted post-swap verification rolls back every installed component',()=>fixture(async x=>{
+  await source(x);
+  const backup=await x.svc.create(x.out,PASSWORD);
+  const disk=path.join(x.avd,'apkstart.avd','userdata-qemu.img');
+  await write(disk,'before restore');
+  const approved=await x.svc.previewRestore(backup.path,PASSWORD);
+  x.svc.onProgress=({phase})=>{if(phase==='restore-verify-installed')fs.writeFileSync(disk,'corrupt');};
+  await assert.rejects(x.svc.restore(approved.token,PASSWORD),/Installed restore SHA-256/);
+  assert.equal(await p.readFile(disk,'utf8'),'before restore');
 }));

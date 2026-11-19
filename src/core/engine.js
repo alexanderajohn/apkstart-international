@@ -21,6 +21,7 @@ const container = require('./container');
 const backends = require('./backends');
 const performance = require('./performance');
 
+const {assertRestoreFinished}=require('./restore-journal');
 const LOG_DIR = path.join(store.DATA_DIR, 'logs');
 const MONITOR_PORT = 5556;
 const EMU_PORT = 5554;
@@ -318,6 +319,7 @@ class Runtime {
   }
 
   async boot({ install = false, onLog = () => {} } = {}) {
+    assertRestoreFinished(store.profiles);
     if (store.profileSwitching) throw Error('Android Profile is switching');
     if (store.backupLocked) throw new Error('Android cannot boot during backup/restore');
     const env = await this.provisioner.checkEnv();
@@ -800,6 +802,7 @@ class Runtime {
   // ---------------- 安装系统到虚拟磁盘 ----------------
 
   async startInstaller({ onLog = () => {} } = {}) {
+    assertRestoreFinished(store.profiles);
     if (store.profileSwitching) throw Error('Android Profile is switching');
     if (store.backupLocked) throw new Error('Installer disabled during backup/restore');
     if (store.profiles.currentId() !== 'default')
@@ -882,6 +885,7 @@ class Runtime {
    * 避免两边各判断一次「没在线」后各自拉起一台模拟器（AVD 锁冲突 + 双倍内存）。
    */
   async ensure({ onLog = () => {} } = {}) {
+    assertRestoreFinished(store.profiles);
     if (store.profileSwitching) throw Error('Android Profile is switching');
     if (store.backupLocked) throw new Error('Android cannot start during profile backup/restore');
     if (this._ensurePromise) return this._ensurePromise;
@@ -1222,16 +1226,12 @@ class Runtime {
    * 现在调用方可以显式传 includeSnapshots：先停运行时再裁，快照就能真正回收。
    */
   async cleanup({ apply = false, aggressive = false, includeSnapshots = false } = {}) {
-    let stoppedVm = false;
-    if (includeSnapshots && this.vmRunning) {
-      await this.stop().catch(() => {});
-      stoppedVm = true;
-    }
-    const report = require('./layers').prune(this.provisioner.paths().root, {
-      apply, aggressive, keepSnapshots: !includeSnapshots && this.vmRunning,
-    });
-    // 预览阶段若停了机，给用户一个提示：清完可手动重启运行时
-    return { ...report, apply, stoppedVm };
+    if (apply && (this.vmRunning || this.vmStarting || store.backupLocked || store.profileSwitching))
+      throw Error('Stop Android before cleaning shared runtime files');
+    if (apply) assertRestoreFinished(store.profiles);
+    const report = require('./layers').prune(this.provisioner.paths().root, { apply, aggressive });
+    return { ...report, apply, stoppedVm:false };
+
   }
 
   /**
@@ -1246,6 +1246,7 @@ class Runtime {
     const fs = require('fs');
     const path = require('path');
     try {
+      assertRestoreFinished(store.profiles);
       if (store.profileSwitching || store.backupLocked) throw Error('Profile is busy');
       if (this.vmRunning) await this.stop();
       if ((await this.emulatorPorts()).length) throw Error('Close running emulators before resetting this Profile');

@@ -2,6 +2,7 @@
 // Offline, manifest-verified per-profile directory snapshots. Never touch
 // Android runtime binaries, shared settings or another profile's data.
 const fs=require('node:fs'),p=fs.promises,path=require('node:path'),crypto=require('node:crypto');
+const {assertRestoreFinished,beginRestore}=require('./restore-journal');
 const FORMAT='apkstart-international-profile-backup',VERSION=1;
 const PARTS=['apps.json','apks','icons','avd'],DIRS=new Set(PARTS.slice(1));
 const MAX_FILES=200000,MAX_BYTES=1024*1024*1024*1024,MARGIN=64*1048576;
@@ -242,6 +243,43 @@ class BackupCenter{
     }
     return [...drives.values()];
   }
+  async commitRestore(layout, manifest, transaction, stages, overrides=new Map()){
+    await this.idle();
+    if(this.registry.currentId()!==layout.id)throw Error('Profile changed during restore');
+    const journal=await beginRestore(this.registry,layout.id,transaction,stages);
+    const moved=[];
+    try{
+      for(const item of stages){
+        const state={...item,oldMoved:false,newMoved:false};
+        moved.push(state);
+        if(fs.existsSync(item.target)){await p.rename(item.target,item.safety);state.oldMoved=true;}
+        if(item.present){await p.rename(item.stage,item.target);state.newMoved=true;}
+      }
+      this.progress('restore-verify-installed',0,manifest.totalBytes);
+      const live=await this.inventory(layout);
+      const same=(a,b)=>{const entries=new Set(b);return a.length===b.length&&a.every(x=>entries.has(x));};
+      if(!same(live.components,manifest.components)||!same(live.directories,manifest.directories)||
+        !same(live.files.map(f=>f.path),manifest.files.map(f=>f.path)))throw Error('Installed restore inventory differs');
+      for(const file of manifest.files){
+        const [part,...rest]=file.path.split('/');
+        const target=rest.length?safe(layout.targets[part],rest.join('/')):layout.targets[part];
+        const expected=overrides.get(file.path)||file;
+        const actual=await shaFile(target);
+        if(actual.size!==expected.size||actual.sha256!==expected.sha256.toLowerCase())throw Error('Installed restore SHA-256 mismatch: '+file.path);
+      }
+      await p.unlink(journal);
+      return moved.filter(x=>x.oldMoved).map(x=>x.safety);
+    }catch(error){
+      const failures=[];
+      for(const item of moved.reverse())try{
+        if(item.newMoved)await p.rename(item.target,item.stage).catch(e=>{if(e.code!=='ENOENT')throw e;});
+        if(item.oldMoved)await p.rename(item.safety,item.target);
+      }catch(e){failures.push(e.message);}
+      if(failures.length)throw Error('Restore rollback incomplete. Keep Android stopped and inspect '+journal+' '+failures.join(', '));
+      await p.unlink(journal);
+      throw error;
+    }
+  }
   async previewRestore(folder){
     return this.exclusive(async()=>{
       this.pending=null;
@@ -264,17 +302,19 @@ class BackupCenter{
         throw Error('Restore approval expired. Verify and confirm again.');
       await this.idle();
       const layout=this.layout();
+      assertRestoreFinished(this.registry);
       if(layout.id!==pending.id)throw Error('Profile changed since restore preview');
       const s=await this.verify(pending.directory,layout);
       if(s.manifestSha!==pending.sha)throw Error('Backup changed since preview');
       for(const d of this.requirements(layout,s.manifest))checkSpace(d.path,d.bytes);
-      const m=s.manifest,txn='asi-'+uid(10),stages=[],moved=[];
+      const m=s.manifest,txn='asi-'+uid(10),stages=[];
       try{
         for(const c of PARTS){
           const target=layout.targets[c],present=m.components.includes(c);
           if(!present&&!fs.existsSync(target))continue;
           const stage=target+'.'+txn+'.stage',safety=target+'.'+txn+'.before-restore';
           if(fs.existsSync(stage)||fs.existsSync(safety))throw Error('Restore file collision');
+          stages.push({c,target,stage,safety,present});
           if(present){
             await p.mkdir(path.dirname(stage),{recursive:true});
             if(DIRS.has(c)){
@@ -292,25 +332,10 @@ class BackupCenter{
                 throw Error('Restored stage failed SHA-256: '+f.path);
             }
           }
-          stages.push({c,target,stage,safety,present});
         }
-        await this.idle();
-        for(const item of stages){
-          const state={...item,oldMoved:false,newMoved:false};moved.push(state);
-          if(fs.existsSync(item.target)){await p.rename(item.target,item.safety);state.oldMoved=true;}
-          if(item.present){await p.rename(item.stage,item.target);state.newMoved=true;}
-        }
+        const preserved=await this.commitRestore(layout,m,txn,stages);
         this.progress('restore-complete',m.totalBytes,m.totalBytes);
-        return {ok:true,profileId:layout.id,bytes:m.totalBytes,files:m.files.length,
-          preserved:moved.filter(x=>x.oldMoved).map(x=>x.safety),restartRequired:true};
-      }catch(error){
-        const failures=[];
-        for(const item of moved.reverse())try{
-          if(item.newMoved&&fs.existsSync(item.target))await p.rename(item.target,item.stage);
-          if(item.oldMoved&&fs.existsSync(item.safety))await p.rename(item.safety,item.target);
-        }catch(e){failures.push(e.message);}
-        if(failures.length)throw Error('Restore failed; rollback incomplete. Preserved data remains in before-restore folders. '+failures.join('; '));
-        throw error;
+        return {ok:true,profileId:layout.id,bytes:m.totalBytes,files:m.files.length,preserved,restartRequired:true};
       }finally{
         // Only delete temporary stages created by us; never delete safety copies.
         for(const item of stages)try{

@@ -142,3 +142,26 @@ test('Restart only appears after actual restoration, never in read-only preview'
   assert.ok(main.includes('restartHidden:getComputedStyle'));
   assert.ok(main.includes('!result.restartHidden'));
 });
+
+test('post-swap corruption restores the original catalog and userdata',()=>fixture(async x=>{
+  await source(x);
+  const backup=await x.svc.create(x.out);
+  const catalog=path.join(x.data,'apps.json');
+  await write(catalog,'newer catalog');
+  const preview=await x.svc.previewRestore(backup.path);
+  x.svc.onProgress=({phase})=>{
+    if(phase==='restore-verify-installed') fs.writeFileSync(catalog,'unexpected bytes');
+  };
+  await assert.rejects(x.svc.restore(preview.token),/Installed restore SHA-256/);
+  assert.equal(await p.readFile(catalog,'utf8'),'newer catalog');
+  assert.equal(await p.readFile(path.join(x.avd,'apkstart.avd','userdata-qemu.img'),'utf8'),'PRIVATE USER DATA');
+  require('../src/core/restore-journal').assertRestoreFinished(x.registry);
+}));
+
+test('an outstanding on-disk journal blocks a second transaction after restart',()=>fixture(async x=>{
+  const {beginRestore,assertRestoreFinished}=require('../src/core/restore-journal');
+  const file=await beginRestore(x.registry,'default','test-transaction',[]);
+  assert.throws(()=>assertRestoreFinished(createRegistry(x.data)),/Interrupted Profile restore/);
+  await assert.rejects(beginRestore(x.registry,'default','second',[]),{code:'EEXIST'});
+  assert.equal(JSON.parse(await p.readFile(file,'utf8')).transaction,'test-transaction');
+}));

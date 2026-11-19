@@ -17,8 +17,9 @@ const {Writable}=require('node:stream');
 const {promisify}=require('node:util');
 const {
   BackupCenter,FORMAT,VERSION,PARTS,DIRS,MAX_FILES,MAX_BYTES,
-  checkManifest,within,safe,safeStat,walk,checkSpace
+  checkManifest,within,safe,safeStat,walk,checkSpace,shaFile
 }=require('./backup-center');
+const {assertRestoreFinished}=require('./restore-journal');
 const scrypt=promisify(crypto.scrypt);
 const ENC_FORMAT='apkstart-international-encrypted-backup',ENC_VERSION=1;
 const KDF={name:'scrypt',N:32768,r:8,p:1,keyBytes:32};
@@ -340,6 +341,7 @@ class EncryptedBackupCenter extends BackupCenter {
       await this.idle();
       const layout=this.layout();
       if(layout.id!==pending.profileId)throw Error('Profile changed since preview');
+      assertRestoreFinished(this.registry);
       const v=await this._verify(pending.directory,password,layout,!pending.migration);
       if(pending.migration){
         if(layout.id==='default')throw Error('Cannot migrate into Default');
@@ -358,7 +360,7 @@ class EncryptedBackupCenter extends BackupCenter {
       // Key exists only during this restore, never across the preview/consent window.
       const header=checkHeader(JSON.parse(await p.readFile(path.join(v.directory,'header.json'),'utf8')));
       const key=await derive(password,header.salt);
-      const txn='asi-'+id(10),stages=[],moved=[],m=v.manifest;
+      const txn='asi-'+id(10),stages=[],overrides=new Map(),m=v.manifest;
       try{
         for(const c of PARTS){
           const target=layout.targets[c],present=m.components.includes(c);
@@ -384,6 +386,7 @@ class EncryptedBackupCenter extends BackupCenter {
                  // Keep the destination's system image and machine-specific AVD paths.
                  // The encrypted source was authenticated during verification.
                  await p.copyFile(path.join(layout.targets.avd,'config.ini'),targetFile,fs.constants.COPYFILE_EXCL);
+                 overrides.set(f.path,await shaFile(targetFile));
                }else{
                  await decryptFile(path.join(v.directory,'payload',f.blob+'.bin'),targetFile,key,f);
                }
@@ -391,24 +394,10 @@ class EncryptedBackupCenter extends BackupCenter {
             }
           }
         }
-        await this.idle();
-        for(const item of stages){
-          const state={...item,oldMoved:false,newMoved:false};moved.push(state);
-          if(fs.existsSync(item.target)){await p.rename(item.target,item.safety);state.oldMoved=true;}
-          if(item.present){await p.rename(item.stage,item.target);state.newMoved=true;}
-        }
+        const preserved=await this.commitRestore(layout,m,txn,stages,overrides);
         this.progress('restore-complete',m.totalBytes,m.totalBytes);
         return {ok:true,encrypted:true,migration:!!pending.migration,profileId:layout.id,files:m.files.length,
-          bytes:m.totalBytes,restartRequired:true,
-          preserved:moved.filter(x=>x.oldMoved).map(x=>x.safety)};
-      }catch(error){
-        const errors=[];
-        for(const item of moved.reverse())try{
-          if(item.newMoved&&fs.existsSync(item.target))await p.rename(item.target,item.stage);
-          if(item.oldMoved&&fs.existsSync(item.safety))await p.rename(item.safety,item.target);
-        }catch(e){errors.push(e.message);}
-        if(errors.length)throw Error('Restore rollback incomplete; safety copies preserved: '+errors.join('; '));
-        throw error;
+          bytes:m.totalBytes,restartRequired:true,preserved};
       }finally{
         key.fill(0);
         for(const stage of stages)try{
