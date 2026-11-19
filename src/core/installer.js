@@ -144,13 +144,13 @@ class Installer {
         throw Error('No matching Android ABI. Choose APKs built for ' + available.join(', '));
     }
     onProgress({ stage: 'install', message: replace ? 'Updating Android app…' : 'Installing Android app…' });
+    if (rt.engine === 'emulator') this.runtime.emulator.invalidateSnapshot();
     await installSession(client, parts, { pkg: meta.package, replace: replace && staged.package === meta.package,
       grant: autoGrantEnabled(store.getSettings()), checkGuest });
     await checkGuest();
     if (!await client.isInstalled(meta.package))
       throw Error('Android committed the install but package files could not be confirmed. Check this Profile before retrying.');
     await checkGuest();
-    this.runtime.emulator?.invalidateSnapshot();
     this.runtime.touch();
 
     // 图标落盘。APK 图标大量是 WebP，nativeImage 解不了，交给渲染进程解码 +

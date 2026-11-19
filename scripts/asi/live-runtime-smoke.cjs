@@ -15,7 +15,7 @@ const { installSession } = require('../../src/core/install-session');
 const { packagePresent, verifyCanary, launchAndObserve } = require('./guest-evidence.cjs');
 const {inspectRuntime,expectedAvd}=require('../../src/core/runtime-readiness');
 const PROFILE=/^p_[0-9a-f]{16}$/,PKG=/^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*){2,}$/;
-const HELP='Usage: node scripts/asi/live-runtime-smoke.cjs [--readiness|--install-launch|--verify-existing|--assert-absent]. Set ASI_E2E_ADB_PATH (absolute adb.exe), ASI_E2E_SERIAL (emulator-5554), ASI_E2E_PROFILE_ID. Optional install: ASI_E2E_APK_PATH, ASI_E2E_PACKAGE, ASI_E2E_DISPOSABLE_ACK=I_CREATED_DISPOSABLE_PROFILE.';
+const HELP='Usage: node scripts/asi/live-runtime-smoke.cjs [--readiness|--install-launch|--verify-existing|--assert-absent|--benchmark]. Set ASI_E2E_ADB_PATH (absolute adb.exe), ASI_E2E_SERIAL (emulator-5554), ASI_E2E_PROFILE_ID. Optional install: ASI_E2E_APK_PATH, ASI_E2E_PACKAGE, ASI_E2E_DISPOSABLE_ACK=I_CREATED_DISPOSABLE_PROFILE.';
 const args=process.argv.slice(2);
 function requireEnv(name){const x=process.env[name];if(!x)throw Error('Missing required environment value: '+name);return x;}
 function emit(report){process.stdout.write(JSON.stringify(report,null,2)+'\n');}
@@ -23,7 +23,7 @@ async function run(){
  if(args.includes('--help')){process.stdout.write(HELP+'\n');return;}
  if(process.platform!=='win32')throw Error('Live test must run on a physical Windows 10/11 test host');
  const mode=args.length===0?'--readiness':args[0];
- if(args.length>1||!['--readiness','--install-launch','--verify-existing','--assert-absent'].includes(mode))
+ if(args.length>1||!['--readiness','--install-launch','--verify-existing','--assert-absent','--benchmark'].includes(mode))
   throw Error('Unsupported mode. '+HELP);
  const adb=requireEnv('ASI_E2E_ADB_PATH'),serial=requireEnv('ASI_E2E_SERIAL'),profileId=requireEnv('ASI_E2E_PROFILE_ID');
  if(!path.isAbsolute(adb)||path.basename(adb).toLowerCase()!=='adb.exe'||!fs.statSync(adb).isFile())
@@ -61,6 +61,26 @@ async function run(){
  // Install+launch is NEVER run for Default, and never without exact consent.
  if(!PROFILE.test(profileId)||process.env.ASI_E2E_DISPOSABLE_ACK!=='I_CREATED_DISPOSABLE_PROFILE')
   throw Error('Install/launch requires a disposable secondary profile and explicit opt-in');
+ if(mode==='--benchmark') {
+   if(!await packagePresent(client,pkg)) throw Error('Install the disposable benchmark APK first');
+   const activity=await client.resolveLauncher(pkg);
+   if(!activity || !activity.startsWith(pkg+'/') || !/^[\w.$]+\/[\w.$]+$/.test(activity))
+     throw Error('Cannot resolve the benchmark launcher');
+   const samples=[];
+   for(let i=0; i<6; i++){
+     await check();
+     await client.exec(['shell','am','force-stop','--user','0',pkg]);
+     const start=performance.now();
+     const out=(await client.exec(['shell','am','start','-W','-n',activity],{timeout:60000})).stdout;
+     const total=/^TotalTime:\s*(\d+)\s*$/m.exec(out);
+     if(!/^Status:\s*ok\s*$/m.test(out)||!total) throw Error('Android did not report a completed timed launch');
+     const elapsed=Math.round(performance.now()-start);
+     if(i) samples.push({androidMs:Number(total[1]),hostRoundTripMs:elapsed});
+   }
+   const sorted=samples.map(s=>s.androidMs).sort((a,b)=>a-b);
+   emit({...result, samples, androidMedianMs:sorted[2], warmupExcluded:1, ok:true});
+   return;
+ }
  if(await packagePresent(client,pkg))
   throw Error('Refusing to install over an existing package; use another disposable test APK');
  const apk=requireEnv('ASI_E2E_APK_PATH'),stat=fs.statSync(apk);

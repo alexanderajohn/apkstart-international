@@ -38,3 +38,9 @@ SmartCheck now requires one base manifest, consistent package/version and unique
 | 24 | Profile-qualified desktop launch | This revision | Pending | Pending | Physical Windows shortcut launch after restart and window lifecycle |
 
 New shortcuts encode the Profile ID, have separate names per package/Profile and use the same Windows app identity as their window. Unqualified legacy links resolve to Default. Opening a shortcut in a different Profile reports the mismatch. Launches queue across concurrent requests, await their actual display attachment, and report a window failure if both attachment attempts fail.
+
+| Pass | Status | Commit | Windows CI | Preview | Remaining work |
+| --- | --- | --- | --- | --- | --- |
+| 25 | Runtime changes and benchmark harness | This revision | Pending | Pending | Physical performance, crash recovery and long-running soak |
+
+Snapshot writes share one in-flight save. A stale marker survives process restart and invalidation during a save. Incomplete snapshots remain on disk for recovery. The planner avoids redundant boot attempts and keeps the configured disk size on fallback. Window refit timers stop after close. The full local Node suite passed on Linux, including the small-host fallback test. Use the disposable-profile prerequisites in LIVE_ANDROID_VALIDATION.md, then run `npm run test:runtime:live -- --benchmark`. The run excludes a warm-up and records five force-stop/launch samples, Android TotalTime and host round-trip duration. Repeat under each host configuration with the same APK digest and boot mode. No physical measurements are available yet.

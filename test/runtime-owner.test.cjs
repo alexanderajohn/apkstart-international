@@ -32,3 +32,24 @@ test('only the recorded profile, serial, AVD and boot can be resumed after host 
     await assert.rejects(verifyOwner(client,restarted,id), /Unmanaged/);
   } finally { fs.rmSync(root,{recursive:true,force:true}); }
 });
+
+test('concurrent snapshot saves coalesce and an invalidation during I/O survives the old completion', async () => {
+  const {EmulatorEngine}=require('../src/core/emulator');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'asi-quickboot-'));
+  const marker=path.join(root,'quickboot.stale');
+  let finish, count=0;
+  const engine=Object.assign(Object.create(EmulatorEngine.prototype), {
+    snapshotMarker:()=>marker, hasSnapshot:()=>true,
+    _saveViaAdb:()=>{count++;return new Promise(r=>{finish=r;});}
+  });
+  try {
+    const first=engine.saveSnapshotNow('adb'), second=engine.saveSnapshotNow('adb');
+    assert.equal(count,1);
+    engine.invalidateSnapshot();finish(true);
+    assert.deepEqual(await Promise.all([first,second]),[false,false]);
+    assert.ok(fs.existsSync(marker));
+    const fresh=engine.saveSnapshotNow('adb');finish(true);
+    assert.equal(await fresh,true);
+    assert.equal(fs.existsSync(marker),false);
+  } finally {fs.rmSync(root,{recursive:true,force:true});}
+});

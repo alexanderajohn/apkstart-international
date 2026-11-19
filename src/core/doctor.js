@@ -326,7 +326,7 @@ function planVariants(profile) {
     accel: 'off',
     memoryMB: 2048,
     cores: 2,
-    dataMB: Math.min(profile.dataMB, 2048),
+    dataMB: profile.dataMB,
     label: '保守冷启动（最小内存 + 清快照）',
     // 这里**绝对不能** wipe：以前写的是 wipe:true，而磁盘写满时每次尝试都会失败，
     // 于是连续重试把用户已装的应用和存档一起「清快照 + 清数据」了 ——
@@ -339,13 +339,13 @@ function planVariants(profile) {
   });
   // 去重（相同 gpu/accel/wipe 组合不重复试）——但「最后一档」必须保留：
   // 它是唯一「不加载快照」的方案，小内存机器上可能和前一档参数完全一样。
-  const seen = new Set();
-  return out.filter((v) => {
-    const k = `${v.gpu}|${v.accel}|${!!v.wipe}|${v.memoryMB}|${v.snapshot !== false ? 'snap' : 'nosnap'}|${v.lastResort ? 'last' : ''}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+  const unique = new Map();
+  for (const plan of out) {
+    const key = [plan.gpu, plan.accel, plan.wipe, plan.memoryMB, plan.cores, plan.snapshot].join('|');
+    // Keep the final conservative plan when it matches an earlier fallback.
+    unique.set(key, plan);
+  }
+  return [...unique.values()];
 }
 
 /** 检测一对空闲端口（emulator console + adb 注册端口必须相邻偶数/奇数） */

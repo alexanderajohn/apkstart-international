@@ -138,14 +138,14 @@ class EmulatorEngine {
    */
   invalidateSnapshot() {
     this.cancelSnapshotSave();
-    this._snapSaved = false;
-    try {
-      const snapDir = path.join(this.provisioner.paths().avdHome, `${activeAvdName()}.avd`, 'snapshots');
-      fs.rmSync(snapDir, { recursive: true, force: true });
-      return true;
-    } catch (_) {
-      return false;
-    }
+    this._snapshotGeneration = (this._snapshotGeneration || 0) + 1;
+    const marker = this.snapshotMarker();
+    fs.writeFileSync(marker, String(this._snapshotGeneration), {mode:0o600, flush:true});
+    return true;
+  }
+
+  snapshotMarker() {
+    return path.join(this.provisioner.paths().avdHome, activeAvdName() + '.avd', 'quickboot.stale');
   }
 
   assertAvdUnlocked(avdDir) {
@@ -159,7 +159,8 @@ class EmulatorEngine {
    * emulator 会尝试加载、失败（日志 "does not have the requested snapshot"）再回退冷启动，
    * 白等几秒。这里按文件大小校验，顺手清掉空壳和旧版遗留的 default_boot（单个 3GB）。
    */
-  hasSnapshot() {
+  hasSnapshot({ ignoreMarker = false } = {}) {
+    if (!ignoreMarker && fs.existsSync(this.snapshotMarker())) return false;
     const base = path.join(this.provisioner.paths().avdHome, `${activeAvdName()}.avd`, 'snapshots', SNAPSHOT_NAME);
     const size = (p) => { try { return fs.statSync(p).size; } catch (_) { return 0; } };
     const pb = size(path.join(base, 'snapshot.pb'));
@@ -167,24 +168,7 @@ class EmulatorEngine {
     // 只认 ram.img 的后果非常严重：刚存好的 3GB 快照会被当成空壳删掉，
     // 于是每次都带 -no-snapshot-load，永远冷启动 —— 这是「打开很慢」的一半原因。
     const ram = Math.max(size(path.join(base, 'ram.bin')), size(path.join(base, 'ram.img')));
-    if (pb > 1024 && ram > 1024 * 1024) return true;
-    if (pb === 0 && ram === 0) return false;   // 目录本来就没有，别白删
-    try { fs.rmSync(base, { recursive: true, force: true }); } catch (_) { /* ignore */ }
-    this._cleanLegacySnapshots();
-    return false;
-  }
-
-  /** 清掉旧版遗留/失败重命名留下的快照目录（default_boot 里的 ram.img 可达 3GB） */
-  _cleanLegacySnapshots() {
-    const dir = path.dirname(path.join(this.provisioner.paths().avdHome, `${activeAvdName()}.avd`, 'snapshots', SNAPSHOT_NAME));
-    let names = [];
-    try { names = fs.readdirSync(dir); } catch (_) { return; }
-    for (const name of names) {
-      if (name === SNAPSHOT_NAME) continue;
-      if (/^default_boot$|\.stale-\d+$/i.test(name)) {
-        try { fs.rmSync(path.join(dir, name), { recursive: true, force: true }); } catch (_) { /* ignore */ }
-      }
-    }
+    return pb > 1024 && ram > 1024 * 1024;
   }
 
   /**
@@ -374,18 +358,7 @@ class EmulatorEngine {
     let prevKey = '';
     try { prevKey = fs.readFileSync(keyFile, 'utf8').trim(); } catch (_) { /* 首次 */ }
     const snapshotStale = !!(prevKey && prevKey !== key);
-    if (this.wipePending || snapshotStale || wipe) {
-      // 删除可能被系统/安全软件拦截（快照目录常有几个 GB）。
-      // 失败就改名让 emulator 不再加载它，绝不因为清理失败而中断启动。
-      const snapDir = path.join(avdDir, 'snapshots');
-      try {
-        fs.rmSync(snapDir, { recursive: true, force: true });
-      } catch (_) {
-        try { fs.renameSync(snapDir, `${snapDir}.stale-${Date.now()}`); } catch (__) { /* ignore */ }
-      }
-    }
-    // 只有「镜像换了」（tag / sysdir 变化）才需要 -wipe-data：旧 userdata 与新镜像
-    // 的 APEX 不兼容，不重建会一直卡在引导循环。改容量 / 改分辨率 / 换渲染后端都不算。
+    if (snapshotStale || wipe) this.invalidateSnapshot();
     fs.writeFileSync(keyFile, key, 'utf8');
 
     // hw.cpu.arch 必须是 ABI 本身（x86_64 不能截成 x86）
@@ -1410,11 +1383,18 @@ class EmulatorEngine {
    */
   async saveSnapshotNow(adbPath, { timeout = 45000 } = {}) {
     if (!adbPath) return false;
-    const ok = await this._saveViaAdb(adbPath, { timeout });
-    // emulator 的 save 命令可能在写盘中途就回 OK，这里按文件完整性再确认一次，
-    // 只有 snapshot.pb 真正落盘才算数（否则下次加载会失败并白等几秒）。
-    if (!ok) return false;
-    return this.hasSnapshot();
+    if (this._snapshotWrite) return this._snapshotWrite;
+    const marker = this.snapshotMarker();
+    const generation = this._snapshotGeneration;
+    this._snapshotWrite = (async () => {
+      const ok = await this._saveViaAdb(adbPath, {timeout});
+      if (!ok || marker !== this.snapshotMarker() || generation !== this._snapshotGeneration ||
+          !this.hasSnapshot({ignoreMarker:true})) return false;
+      fs.rmSync(marker,{force:true});
+      return true;
+    })();
+    try { return await this._snapshotWrite; }
+    finally { this._snapshotWrite = null; }
   }
 
   /**
@@ -1438,7 +1418,7 @@ class EmulatorEngine {
           return;
         }
         await this.saveSnapshotNow(adbPath).catch(() => false);
-        this._snapSaved = true;
+
       }, ms);
       if (this._snapTimer.unref) this._snapTimer.unref();
     };
@@ -1466,7 +1446,7 @@ class EmulatorEngine {
     const healthy = adbPath ? await this._adbGuestHealthy(adbPath) : false;
     if (adbPath && this.snapshotWorthSaving !== false && healthy) {
       // 3GB 内存写盘要几秒到二十几秒，超时给足，别让快照写一半就被 kill 掉。
-      await this._saveViaAdb(adbPath, { timeout: 60000 });
+      await this.saveSnapshotNow(adbPath, { timeout: 60000 });
     }
     if (!healthy && this.snapshotWorthSaving !== false) {
       this.log('关机时 guest 未授权/未就绪：将作废快照，下次冷启动重新注入调试授权');
