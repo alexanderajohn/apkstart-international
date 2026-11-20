@@ -26,3 +26,17 @@ test('adb query failure refuses to report a device as online',async()=>{
  c.exec=async()=>{throw Error('ADB not responding');};
  assert.equal(await c.isOnline(),false);
 });
+
+test('launcher resolution follows the guest now using the same emulator serial', async () => {
+  const client = new AdbClient({adbPath: 'adb', serial: 'emulator-5554'});
+  const pkg = 'example.profile.app';
+  let component = pkg + '/.First';
+  client.shell = async () => component;
+  assert.equal(await client.resolveLauncher(pkg), component);
+
+  component = pkg + '/.Restored';
+  assert.equal(await client.resolveLauncher(pkg), component);
+
+  component = 'No activity found';
+  assert.equal(await client.resolveLauncher(pkg), null);
+});

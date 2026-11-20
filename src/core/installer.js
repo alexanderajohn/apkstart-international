@@ -191,7 +191,6 @@ class Installer {
     // 真正的 LAUNCHER 入口，直接用它启动会跳过应用的初始化页导致闪退。
     let launchActivity = meta.launchActivity;
     try {
-      client.clearLauncherCache?.(meta.package);
       const resolved = await client.resolveLauncher(meta.package);
       if (resolved) launchActivity = resolved;
     } catch (_) { /* 保留 APK 解析结果 */ }

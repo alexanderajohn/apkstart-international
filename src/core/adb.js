@@ -128,9 +128,6 @@ function parsePmPaths(text) {
     .filter((l) => /^package:/.test(l)).map((l) => l.slice(8).trim()).filter(Boolean);
 }
 
-/** 已解析过的启动入口（adbPath|pkg → activity），10 分钟有效 */
-const LAUNCHER_CACHE = new Map();
-
 /**
  * Windows 版 adb 对非 ASCII 路径处理不稳定（中文用户名/中文下载目录很常见）。
  * 安装前把 APK 复制到纯 ASCII 的临时目录，装完即删。
@@ -550,30 +547,16 @@ class AdbClient {
     return out.split('\n').map((l) => l.replace('package:', '').trim()).filter(Boolean);
   }
 
-  /** 从系统解析真正的启动 Activity（清单里解析不出来时的兜底） */
-  /** 应用升级后入口可能变，解析前先把这个包从缓存里摘掉 */
-  clearLauncherCache(pkg) {
-    if (!pkg) { LAUNCHER_CACHE.clear(); return; }
-    LAUNCHER_CACHE.delete(`${this.adbPath}|${pkg}`);
-  }
-
+  // Profile switches and restores can reuse an ADB serial with different APKs.
   async resolveLauncher(pkg) {
-    // 解析入口 Activity 要一次 adb 往返（~200-400ms），而它在一个启动会话里不会变。
-    // 缓存起来，第二次点同一个应用直接跳过；10 分钟后自然失效，重装应用也不会用错入口。
-    const key = `${this.adbPath}|${pkg}`;
-    const hit = LAUNCHER_CACHE.get(key);
-    if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.value;
     try {
-      const out = await this.shell(
+      const output = await this.shell(
         `cmd package resolve-activity --brief ${pkg}`, { timeout: 10000 },
       );
-      const comp = parseResolvedActivity(pkg, out);
-      if (comp) {
-        LAUNCHER_CACHE.set(key, { value: comp, at: Date.now() });
-        return comp;
-      }
-    } catch (_) { /* 落到 monkey */ }
-    return null;
+      return parseResolvedActivity(pkg, output) || null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /** 应用是否真的活着：am start 返回成功 ≠ 进程没崩 */
