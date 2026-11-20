@@ -5,14 +5,6 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {execFileSync,spawn} = require('node:child_process');
 const {setTimeout:delay} = require('node:timers/promises');
-const {AdbClient} = require('../../src/core/adb');
-const {inspectRuntime} = require('../../src/core/runtime-readiness');
-const {identifyGuest,recordOwner,verifyOwner} = require('../../src/core/runtime-owner');
-const {prepareInstall} = require('../../src/core/apk-install-guard');
-const {withApprovedCopy} = require('../../src/core/install-staging');
-const {EncryptedBackupCenter} = require('../../src/core/encrypted-backup');
-const {packagePresent,verifyCanary} = require('./guest-evidence.cjs');
-
 const image = 'system-images;android-34;google_apis_playstore;x86_64';
 const fixtures = [
   {file:'api.apk', pkg:'io.appium.android.apis'},
@@ -28,8 +20,16 @@ async function run() {
   fs.mkdirSync(evidence);
   process.env.APPDATA = path.join(root,'data');
   process.env.ANDROID_ADB_SERVER_PORT = '5044';
+  const {AdbClient} = require('../../src/core/adb');
+  const {inspectRuntime} = require('../../src/core/runtime-readiness');
+  const {identifyGuest,recordOwner,verifyOwner} = require('../../src/core/runtime-owner');
+  const {prepareInstall} = require('../../src/core/apk-install-guard');
+  const {withApprovedCopy} = require('../../src/core/install-staging');
+  const {EncryptedBackupCenter} = require('../../src/core/encrypted-backup');
+  const {packagePresent,verifyCanary} = require('./guest-evidence.cjs');
   const store = require('../../src/core/store');
   const {Installer} = require('../../src/core/installer');
+  assert.equal(store.DATA_DIR,path.join(process.env.APPDATA,'apkstart-international'));
   const registry = store.profiles;
   store.saveSettings({createShortcutOnInstall:false,freeform:false});
   const primary = registry.create('Guest validation A').id;
@@ -52,7 +52,11 @@ async function run() {
     save();
     try { step.observation=await fn();step.status='passed'; }
     catch(error){step.status='failed';step.error=error.message;throw error;}
-    finally {step.elapsedMs=Date.now()-start;save();}
+    finally {
+      step.elapsedMs=Date.now()-start;
+      save();
+      console.log('Guest evidence '+JSON.stringify(step));
+    }
     return step.observation;
   }
   function select(id) {

@@ -35,7 +35,14 @@ jobs:
         run: |
           test -c /dev/kvm
           sudo setfacl -m "u:$(id -un):rw" /dev/kvm
-          sdkmanager --install 'platform-tools' 'emulator' 'system-images;android-34;google_apis_playstore;x86_64'
+          df -h "$RUNNER_TEMP" "$ANDROID_HOME"
+          sdkmanager=$(find -L "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)
+          test -x "$sdkmanager"
+          sdk_bin=$(dirname "$sdkmanager")
+          test -x "$sdk_bin/avdmanager"
+          echo "$sdk_bin" >> "$GITHUB_PATH"
+          "$sdkmanager" --sdk_root="$ANDROID_HOME" --install 'platform-tools' 'emulator' 'build-tools;35.0.0' 'system-images;android-34;google_apis_playstore;x86_64'
+          test -x "$ANDROID_HOME/platform-tools/adb"
           "$ANDROID_HOME/emulator/emulator" -accel-check
       - name: Verify published APK fixtures
         working-directory: ${{ runner.temp }}
@@ -46,7 +53,7 @@ jobs:
           curl --proto '=https' --proto-redir '=https' -fLsS --retry 2 'https://github.com/FossifyOrg/Calculator/releases/download/1.4.0/calculator-10-foss-release.apk' -o calculator.apk
           echo 'a9eecf37b26cd084855c530db81c2bb1b91f4c1b095a04f47aa7c20e2791f686  api.apk' | sha256sum --check
           echo '7c5443c22d6d62c67dfe80df33ea9161ff0fa440f92590bcb45d7008b57613ed  calculator.apk' | sha256sum --check
-          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          signer="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           "$signer" verify --verbose --print-certs api.apk
           "$signer" verify --verbose --print-certs calculator.apk
       - name: Boot, install, launch, isolate and restore
