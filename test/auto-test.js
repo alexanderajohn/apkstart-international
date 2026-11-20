@@ -87,7 +87,7 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     assert(v[v.length - 1].snapshot === false, '最后一档必须跳过快照加载');
     assert(v[v.length - 1].wipe === false, '任何自动重试都不允许清用户数据');
     assert(v[v.length - 1].memoryMB <= 2048, '最后一档应降到最小内存');
-    const keys = v.map((x) => `${x.gpu}|${x.accel}|${x.wipe}|${x.memoryMB}|${x.snapshot !== false}`);
+    const keys = v.map((x) => `${x.gpu}|${x.accel}|${x.wipe}|${x.memoryMB}|${x.cores}|${x.snapshot !== false}`);
     assert(new Set(keys).size === keys.length, '重试方案不应重复');
   });
 
@@ -156,7 +156,7 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
 
   console.log('\n[layers.js 容器式瘦身]');
 
-  await test('盘点可回收项：非 x86_64 QEMU、旧镜像、旧 AVD、锁文件、旧快照', () => {
+  await test('Runtime cleanup preserves all Profile and shared image data', () => {
     const root = path.join(TMP, 'runtime-layers');
     const mk = (p, size) => {
       fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -178,19 +178,16 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     const paths = a.candidates.map((c) => c.path.replace(/\\/g, '/'));
     assert(paths.some((p) => p.endsWith('qemu-system-aarch64.exe')), '应列出非 x86_64 QEMU');
     assert(!paths.some((p) => p.endsWith('qemu-system-x86_64.exe')), '不能删 x86_64 QEMU');
-    assert(paths.some((p) => p.includes('android-30')), '应列出旧版 API30 镜像');
-    assert(paths.some((p) => p.endsWith('.lock')), '应列出锁文件');
-    assert(paths.some((p) => p.includes('snapshots')), '应列出旧快照');
-    assert(paths.some((p) => p.includes('apkstart-arm.avd')), '应列出非活动 AVD');
-    assert(!paths.some((p) => p.endsWith('apkstart.avd/config.ini')), '不能删活动 AVD 配置');
-
+    assert(!paths.some(p => p.includes('/avd/') || p.includes('/system-images/')));
     const dry = layers.prune(root, { apply: false });
     assert(dry.removed.length === 0 && dry.saved === 0, 'dryRun 不应删除任何文件');
     assert(fs.existsSync(path.join(root, 'avd', 'apkstart-arm.avd', 'userdata-qemu.img')));
 
     const done = layers.prune(root, { apply: true });
-    assert(done.saved > 0 && done.removed.length >= 5, '实际清理应释放空间');
-    assert(!fs.existsSync(path.join(root, 'avd', 'apkstart-arm.avd')), '非活动 AVD 应被清掉');
+    assert(done.saved > 0 && done.removed.length === 1, '实际清理应释放空间');
+    assert(fs.existsSync(path.join(root, 'avd', 'apkstart-arm.avd','userdata-qemu.img')));
+    assert(fs.existsSync(path.join(root, 'avd','apkstart.avd','multiInstance.lock')));
+    assert(fs.existsSync(path.join(root, 'avd','apkstart.avd','snapshots','default_boot','ram.img')));
     assert(fs.existsSync(path.join(root, 'avd', 'apkstart.avd', 'config.ini')), '活动 AVD 必须保留');
     assert(fs.existsSync(path.join(root, 'emulator', 'qemu', 'windows-x86_64', 'qemu-system-x86_64.exe')), 'x86_64 QEMU 必须保留');
   });
@@ -199,7 +196,7 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
 
   await test('Android 14 老 targetSdk 应用失败有明确指引', () => {
     const s = friendlyInstallError('Failure [INSTALL_FAILED_DEPRECATED_SDK_VERSION: app must target at least 23]');
-    assert(s.includes('Android 14') && s.includes('自动'), s);
+    assert(s.includes('Android 14') && s.includes('新版应用') && !s.includes('绕过'), s);
   });
 
   await test('ARM 翻译层崩溃能给出可执行的中文结论', () => {
@@ -598,8 +595,15 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     // balanced/performance 有应用在前台时必须是 normal：below 会让 qemu 被饿，
     // 表现为视频解码掉帧、点击要等一下才响应（用户说的「点击不跟手」主因）。
     const begin = engJs.slice(engJs.indexOf('async beginApp'));
-    assert(/mode === 'game' \? 'game' : 'normal'/.test(begin),
-      "beginApp 前台优先级应映射为 game→game、其余→normal");
+    // Fork supports explicitly configured per-app process presets.
+    // Inherit / balanced use Normal; only an opted-in save profile uses BelowNormal.
+    const perf = require('../src/core/performance');
+    assert(/performance\.effectivePriority/.test(begin),
+      'beginApp must use per-app priority policy');
+    assert(perf.effectivePriority('inherit', 'balanced') === 'normal');
+    assert(perf.effectivePriority('balanced', 'game') === 'normal');
+    assert(perf.effectivePriority('save', 'balanced') === 'below');
+    assert(perf.effectivePriority('smooth', 'balanced') === 'game');
     assert(!/performance.*\? 'normal' : 'below'/.test(begin),
       '不能再把 balanced 落到 below');
     // 每次打开/切回都要重设优先级：endApp 会降到 idle，切换回来不提权就会发木
@@ -998,8 +1002,8 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
       '不能再用无效的 -prop persist.sys.locale');
     assert(/_guestLocale/.test(emuJs), '要有可配置的语言来源');
     // 默认中文
-    assert(/locale:\s*'zh-CN'/.test(storeJs), '默认语言必须是简体中文');
-    assert(/chineseIme:\s*true/.test(storeJs), '默认开启中文输入法');
+    assert(/locale:\s*'en-US'/.test(storeJs), 'International fork defaults Android guest locale to English');
+    assert(/chineseIme:\s*false/.test(storeJs), 'International fork must not silently enable Chinese IME');
 
     // 输入法：随包带 APK、开机装好并启用
     assert(fs.existsSync(path.join(root, 'assets', 'PinyinIME.apk')), '缺少 PinyinIME.apk');
@@ -1258,8 +1262,8 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
 
     // 提前接过了就不能再在后面重复接一次 —— 独立窗口模式下会把刚摆好的窗口
     // 再隐藏/显示一遍，画面会闪。
-    assert(/attachDoneEarly/.test(mainJs), '要记住是否已经提前接过画面');
-    assert(/if \(attachDoneEarly\)/.test(mainJs), '最终判定要跳过重复接画面');
+    assert(/pendingAttach = attachAppWindow/.test(mainJs), '要记住是否已经提前接过画面');
+    assert(/await pendingAttach/.test(mainJs), '最终判定要跳过重复接画面');
 
     // 存活观察期本身不能删：它是防「闪一下就崩」的兜底
     assert(/aliveSince >= 4000/.test(instJs), '4 秒存活观察期要保留（防闪崩）');
@@ -1296,9 +1300,8 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     const repairBody = repair.slice(0, repair.indexOf('async ', 10) > 0 ? undefined : undefined);
     assert(/repairWifi/.test(repairBody), 'repairNetwork 应先尝试轻量的 Wi-Fi 重连');
     const wifiAt = repairBody.indexOf('repairWifi');
-    const wipeAt = repairBody.indexOf('forceWipeOnNextStart');
-    assert(wifiAt > -1 && wipeAt > -1 && wifiAt < wipeAt,
-      '顺序必须是：先重连 Wi-Fi，最后才重置数据（不能一上来就清用户数据）');
+    assert(wifiAt >= 0 && !repairBody.includes('forceWipeOnNextStart('),
+      'Network repair must preserve Android userdata even when cold boot fails');
 
     // ensureNetwork 也要先试轻量修复，别直接冷启动
     const ensure = engineJs.slice(engineJs.indexOf('async ensureNetwork'));
@@ -2180,7 +2183,7 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     const okPath = path.join(TMP, 'ok.xapk');
     fs.writeFileSync(okPath, buildStoredZip([
       { name: 'base.apk', data: apk },
-      { name: 'split_config.arm64_v8a.apk', data: apk },
+      { name: 'split_config.arm64_v8a.apk', data: buildApkBytes({split:'config.arm64_v8a'}) },
       { name: 'manifest.json', data: Buffer.from('{}') },
     ]));
     const b = await parseBundle(okPath);
@@ -2318,8 +2321,8 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
   await test('多窗口：启动应用要先收起管理窗口再开应用窗口', () => {
     const root = path.join(__dirname, '..');
     const mainJs = fs.readFileSync(path.join(root, 'src', 'main.js'), 'utf8');
-    const launchIdx = mainJs.indexOf('async function runLaunch(');
-    const body = mainJs.slice(launchIdx, launchIdx + 1600);
+    const launchIdx = mainJs.indexOf('async function launchOne(');
+    const body = mainJs.slice(launchIdx, mainJs.indexOf('const r = await installer.launch', launchIdx));
     const hideIdx = body.indexOf('mainWindow.hide()');
     const openIdx = body.indexOf('openAppWindow(pkg');
     assert(hideIdx > 0 && openIdx > 0, '两个调用都要在 runLaunch 里');
@@ -2505,7 +2508,7 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     assert(/--set-icon/.test(packJs), '要写图标');
     assert(/--set-file-version/.test(packJs), '要写文件版本');
     assert(/--set-version-string', 'FileDescription'/.test(packJs), '要写 FileDescription');
-    assert(/--set-version-string', 'ProductName', 'ApkStart'/.test(packJs), 'ProductName 必须是 ApkStart');
+    assert(/--set-version-string', 'ProductName', 'ApkStart International'/.test(packJs), 'ProductName must be ApkStart International');
     assert(/embedExeMeta\(exePath\)/.test(packJs), '要在改名之后真的调用');
     // 找不到 rcedit 时要明确告警，不能静默产出「Electron 图标」的包
     assert(/找不到 rcedit\.exe/.test(packJs), '缺 rcedit 要告警');
@@ -2514,28 +2517,25 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     assert(/setAumid\(APP_AUMID\);/.test(mainJs), '启动时要设置 AppUserModelID');
 
     // 完整版（含运行时）作为一个可交付版本
-    assert(/--full/.test(packJs) && /ApkStart-v\$\{PKG\.version\}-win64-full/.test(packJs),
+    assert(/--full/.test(packJs) && /ApkStart-International-v\$\{PKG\.version\}-win64-full/.test(packJs),
       '--full 要产出带版本号的完整版目录');
     assert(/build', 'runtime'/.test(packJs), '完整版要内置 build/runtime');
   });
 
-  await test('版本统一：package.json / MSIX 四段号 / 文档包名一致', () => {
-    const root = path.join(__dirname, '..');
-    const pkg = require(path.join(root, 'package.json'));
-    const { msixVersion } = require(path.join(root, 'build', 'msix.js'));
-    const four = msixVersion(pkg.version);
-    assert(/^\d+\.\d+\.\d+\.0$/.test(four), `MSIX 四段版本号格式不对：${four}`);
-    const artifact = `ApkStart_${four}_x64.msix`;
-    for (const f of ['docs/store-listing.md', 'docs/store-msix.md', 'docs/store-upload-walkthrough.md']) {
-      const t = fs.readFileSync(path.join(root, f), 'utf8');
-      assert(t.includes(artifact), `${f} 里应引用当前版本的包名 ${artifact}`);
-    }
-    // exe 的文件版本也要用同一个号（四段），别和 package.json 各说各话
-    const packJs = fs.readFileSync(path.join(root, 'build', 'pack.js'), 'utf8');
-    assert(/\$\{PKG\.version\}\.0/.test(packJs), 'exe 文件版本要跟 package.json 对齐');
-    // 商店包和 exe 用的是同一个版本来源，不该有第二份硬编码版本号
-    const msixJs = fs.readFileSync(path.join(root, 'build', 'msix.js'), 'utf8');
-    assert(/const VERSION = String\(pkg\.version/.test(msixJs), 'MSIX 版本号必须取自 package.json');
+
+  await test('国际版版本信息和预发行 EXE 均符合规则，MSIX 发布关闭', () => {
+    const root=path.join(__dirname,'..');
+    const pkg=require(path.join(root,'package.json'));
+    const { msixVersion }=require(path.join(root,'build','msix.js'));
+    const four=msixVersion(pkg.version);
+    assert(/^\d+\.\d+\.\d+\.0$/.test(four),'MSIX version must remain numeric: '+four);
+    const buildConfig=fs.readFileSync(path.join(root,'electron-builder.yml'),'utf8');
+    assert(!/^appx:/m.test(buildConfig),'Fork must not reuse upstream Microsoft Store identity');
+    const packJs=fs.readFileSync(path.join(root,'build','pack.js'),'utf8');
+    assert(/numericFileVersion\(PKG\.version\)/.test(packJs),'Preview PE file metadata must be normalized');
+    assert(/ApkStart International\.exe/.test(packJs),'Preview EXE must be independently named');
+    const msixJs=fs.readFileSync(path.join(root,'build','msix.js'),'utf8');
+    assert(/const VERSION = String\(pkg\.version/.test(msixJs),'MSIX version still derives from package.json');
   });
 
   await test('安卓应用的快捷方式必须用它自己的图标 + 自己的任务栏身份', () => {
@@ -2550,12 +2550,8 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     assert(/iconIcoPath: ico/.test(installerJs), 'writeShortcut 要拿到应用图标');
     assert(!/iconIcoPath:\s*(APPICON|appicon|brandIcon)/.test(installerJs), '不能用 ApkStart 的品牌图标');
     // 每个应用一个 AUMID：任务栏按应用分组，固定项才认得出是哪个应用
-    assert(/appUserModelId: `RoutineMiku\.ApkStart\.\$\{app\.package\}`/.test(installerJs),
-      '每个应用要有自己的 AUMID');
-    // Windows 只在「进程 AUMID == 快捷方式 AUMID」时沿用快捷方式图标，
-    // 所以打开某个应用时要把进程身份切过去，回管理窗口再切回 ApkStart。
-    assert(/const APP_AUMID = 'RoutineMiku\.ApkStart';/.test(mainJs), '要有统一的 AUMID 前缀');
-    assert(/setAumid\(`\$\{APP_AUMID\}\.\$\{pkg\}`\)/.test(mainJs), '开应用窗口前要切到该应用的 AUMID');
+    assert(installerJs.includes('appUserModelId: identity.aumid'), 'shortcut uses the Profile AUMID');
+    assert(mainJs.includes('setAumid(shortcutIdentity(pkg,store.profiles.currentId()).aumid)'), 'window and shortcut share the same identity');
     assert(/function showWindow\(\) \{\s*\n\s*\/\/[^\n]*\n\s*setAumid\(APP_AUMID\);/.test(mainJs),
       '回管理窗口要切回 ApkStart 的 AUMID');
     // writeShortcut 必须把 iconIndex 设成 0（ico 里第 0 帧），否则某些尺寸会取错

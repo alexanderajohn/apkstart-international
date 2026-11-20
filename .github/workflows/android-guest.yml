@@ -1,0 +1,76 @@
+name: Android 14 guest validation
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/international-foundation]
+    paths:
+      - '.github/workflows/android-guest.yml'
+      - 'scripts/asi/hosted-android.cjs'
+      - 'scripts/asi/guest-evidence.cjs'
+      - 'src/core/adb.js'
+      - 'src/core/installer.js'
+      - 'src/core/install-*.js'
+      - 'src/core/backup-center.js'
+      - 'src/core/encrypted-backup.js'
+      - 'src/core/runtime-owner.js'
+
+permissions:
+  contents: read
+
+jobs:
+  guest:
+    name: Signed apps, two AVDs and encrypted restore
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Prepare Google SDK and isolated hardware acceleration
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libpulse0 libnss3 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libgl1 libvulkan1
+          test -c /dev/kvm
+          sudo usermod -aG kvm "$(id -un)"
+          sudo install -d /run/udev/rules.d
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0660"' | sudo tee /run/udev/rules.d/99-asi-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo udevadm settle
+          df -h "$RUNNER_TEMP" "$ANDROID_HOME"
+          sdkmanager=$(find -L "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)
+          test -x "$sdkmanager"
+          sdk_bin=$(dirname "$sdkmanager")
+          test -x "$sdk_bin/avdmanager"
+          echo "$sdk_bin" >> "$GITHUB_PATH"
+          "$sdkmanager" --sdk_root="$ANDROID_HOME" --install 'platform-tools' 'emulator' 'build-tools;35.0.0' 'system-images;android-34;google_apis_playstore;x86_64'
+          test -x "$ANDROID_HOME/platform-tools/adb"
+          sg kvm -c '"$ANDROID_HOME/emulator/emulator" -accel-check'
+      - name: Verify published APK fixtures
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir guest-fixtures
+          cd guest-fixtures
+          curl --proto '=https' --proto-redir '=https' -fLsS --retry 2 'https://github.com/appium/android-apidemos/releases/download/v6.0.18/ApiDemos-debug.apk' -o api.apk
+          curl --proto '=https' --proto-redir '=https' -fLsS --retry 2 'https://github.com/FossifyOrg/Calculator/releases/download/1.4.0/calculator-10-foss-release.apk' -o calculator.apk
+          echo 'a9eecf37b26cd084855c530db81c2bb1b91f4c1b095a04f47aa7c20e2791f686  api.apk' | sha256sum --check
+          echo '7c5443c22d6d62c67dfe80df33ea9161ff0fa440f92590bcb45d7008b57613ed  calculator.apk' | sha256sum --check
+          signer="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$signer" verify --verbose --print-certs api.apk
+          "$signer" verify --verbose --print-certs calculator.apk
+      - name: Boot, install, launch, isolate and restore
+        env:
+          TEST_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: sg kvm -c 'node scripts/asi/hosted-android.cjs'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-14-guest-evidence
+          path: ${{ runner.temp }}/guest-evidence/
+          if-no-files-found: warn
+          retention-days: 14

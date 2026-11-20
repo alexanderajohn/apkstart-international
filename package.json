@@ -1,19 +1,19 @@
 {
-  "name": "apkstart",
-  "productName": "ApkStart",
-  "version": "0.5.7",
-  "description": "极致轻量的 Windows 安卓应用运行器：双击 APK 即装，应用以独立窗口与桌面图标运行",
+  "name": "apkstart-international",
+  "productName": "ApkStart International",
+  "version": "1.0.0-rc.1",
+  "description": "Independent international fork of ApkStart: run Android apps in desktop-style windows, with English and Vietnamese localization.",
   "main": "src/main.js",
-  "author": "RoutineMiku",
+  "author": "ApkStart International contributors (based on RoutineMiku/ApkStart)",
   "license": "MIT",
   "private": true,
-  "homepage": "https://github.com/RoutineMiku/apkstart#readme",
+  "homepage": "https://github.com/alexanderajohn/apkstart-international#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/RoutineMiku/apkstart.git"
+    "url": "git+https://github.com/alexanderajohn/apkstart-international.git"
   },
   "bugs": {
-    "url": "https://github.com/RoutineMiku/apkstart/issues"
+    "url": "https://github.com/alexanderajohn/apkstart-international/issues"
   },
   "keywords": [
     "android",
@@ -39,8 +39,6 @@
     "pack": "node build/pack.js",
     "runtime": "node build/prepare-runtime.js",
     "build:exe": "node build/prepare-runtime.js && electron-builder --win nsis --config electron-builder.yml",
-    "build:appx": "node build/prepare-runtime.js && electron-builder --win appx --x64 --config electron-builder.yml",
-    "build:msix": "node build/msix.js",
     "selftest": "node scripts/selftest.js",
     "assoc:on": "node scripts/assoc.js on",
     "assoc:off": "node scripts/assoc.js off",
@@ -49,13 +47,20 @@
     "icons": "electron build/build-icons.js",
     "shots": "electron build/store-shots.js",
     "pack:full": "node build/pack.js --full",
-    "build:all": "node build/pack.js && node build/pack.js --full && node build/msix.js"
+    "test:international": "node --test test/international.test.cjs test/smartcheck.test.cjs test/auto-repair.test.cjs test/performance.test.cjs test/profiles.test.cjs test/backup-center.test.cjs test/encrypted-backup.test.cjs test/portable-migration.test.cjs test/recovery-vault.test.cjs test/sealed-safety-vault.test.cjs test/safety-retention.test.cjs test/disaster-health.test.cjs test/restore-drill.test.cjs test/recovery-audit.test.cjs test/audit-signing.test.cjs test/signing-key-management.test.cjs test/trust-lifecycle.test.cjs test/trust-hardening.test.cjs test/runtime-readiness.test.cjs test/apk-install-guard.test.cjs test/profile-runtime-guard.test.cjs test/adb-authentication.test.cjs test/pass19-integration.test.cjs test/install-session.test.cjs test/runtime-owner.test.cjs test/guest-evidence.test.cjs",
+    "audit:international": "node scripts/asi/audit.cjs",
+    "i18n:build": "node scripts/asi/build-catalogs.cjs",
+    "test:runtime:live": "node scripts/asi/live-runtime-smoke.cjs",
+    "pack:setup": "electron-builder --prepackaged dist/ApkStart-International-win64-portable --win nsis --x64 --config electron-builder.yml --publish never"
   },
   "devDependencies": {
-    "electron": "^33.4.11",
+    "electron": "45.3.4",
     "electron-builder": "^26.18.0"
   },
   "dependencies": {
     "@napi-rs/lzma": "^1.5.3"
+  },
+  "overrides": {
+    "minimatch@>=7 <11.0.1": "11.0.1"
   }
 }

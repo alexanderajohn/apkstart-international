@@ -1,6 +1,6 @@
-appId: com.apkstart.win
-productName: ApkStart
-copyright: Copyright © 2026 ApkStart
+appId: org.apkstart.international
+productName: ApkStart International
+copyright: Copyright (c) 2026 ApkStart International contributors
 
 directories:
   output: dist/release
@@ -26,6 +26,7 @@ electronLanguages:
   - zh-CN
   - zh-TW
   - en-US
+  - vi
 
 # 完整运行时（emulator + platform-tools + 系统镜像），由 build/prepare-runtime.js 生成。
 # 打进包里之后首次启动不再需要任何下载。
@@ -55,28 +56,14 @@ win:
 # 下面这两个值是 2026-11-16 从 Partner Center 抄下来的确认值；
 # 换产品身份时改这里（或设 APKSTART_MSIX_IDENTITY / APKSTART_MSIX_PUBLISHER）。
 # 注意：占位 Publisher（CN=RoutineMiku）打出来的包商店会直接拒收。
-appx:
-  identityName: RoutineMiku.ApkStart
-  publisher: "CN=58CA1DED-8AB3-4D0D-AF50-62C9B781AA4D"
-  publisherDisplayName: RoutineMiku
-  displayName: ApkStart
-  applicationId: ApkStart
-  # 全信任桌面应用唯一必需的能力。不要加 unvirtualizedResources /
-  # broadFileSystemAccess —— Store 基本不批，而且本应用靠「数据目录挪到
-  # %USERPROFILE%\ApkStart」绕开了 AppData 写重定向，不需要它们。
-  capabilities:
-    - runFullTrust
-  languages:
-    - zh-CN
-    - en-US
-  minVersion: 10.0.19041.0
-  maxVersionTested: 10.0.22621.0
-
+# Microsoft Store/MSIX publishing disabled until the fork owns an approved identity.
 nsis:
   # 不再是「一键装到 C 盘默认目录」：改为标准向导，允许用户选择安装位置
   # （装到非系统盘可减轻 C 盘压力；运行时数据目录另在设置里单独指定）。
   oneClick: false
   perMachine: false
+  deleteAppDataOnUninstall: false
+  runAfterFinish: false
   allowToChangeInstallationDirectory: true
   displayLanguageSelector: false
   # always：即使桌面上已有同名 .lnk 也重建一次。
@@ -85,7 +72,7 @@ nsis:
   # 或者图标还指着旧 exe。always 保证每次安装后都指向当前安装目录。
   createDesktopShortcut: always
   createStartMenuShortcut: true
-  artifactName: ApkStart-${version}-Setup.exe
+  artifactName: ApkStart-International-${version}-Setup.exe
   # 卸载前先结束仍在运行的运行时进程，避免文件被锁导致无法删除
   # （火绒等粉碎工具删不掉，多半是 qemu/adb 进程还驻留）。
   include: build/installer.nsh
@@ -110,6 +97,6 @@ linux:
   icon: src/ui/assets/logo-128.png
   desktop:
     entry:
-      Name: ApkStart
+      Name: ApkStart International
       Comment: 在 FydeOS / Linux 上管理安卓应用
       Categories: Utility;

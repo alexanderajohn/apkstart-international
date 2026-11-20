@@ -224,7 +224,7 @@ class ZipFile {
   constructor(filePath) {
     this.path = filePath;
     this.fd = fs.openSync(filePath, 'r');
-    this.size = fs.statSync(filePath).size;
+    this.size = fs.fstatSync(this.fd).size;
     this.entries = new Map();
     try { this._parse(); } catch (e) { this.close(); throw e; }
   }
@@ -323,14 +323,34 @@ class ZipFile {
     const { e, start } = this._range(name);
     // read() 会把整个条目解到内存：给一个明确上限，避免未来某个调用点顺手
     // 拿来读 GB 级镜像（那正是 issue #21 里「大包必炸」的形态）。
-    if (e.compSize > MAX_READ) {
+    if (e.compSize > MAX_READ || e.uncompSize > MAX_READ) {
       throw new Error(`条目过大（${(e.compSize / 1048576).toFixed(0)}MB），请改用 pipeTo: ${name}`);
     }
     const raw = this._readAt(start, e.compSize);
     if (raw.length < e.compSize) throw new Error(`条目数据被截断: ${name}`);
     if (e.method === 0) return raw;
-    if (e.method === 8) return zlib.inflateRawSync(raw);
+    if (e.method === 8) return zlib.inflateRawSync(raw, {maxOutputLength: Math.max(1,e.uncompSize)});
     throw new Error(`不支持的压缩方式 ${e.method}: ${name}`);
+  }
+
+  async extractChecked(name, target, hash) {
+    const { e, start, end } = this._range(name);
+    if (e.flags & 1 || ![0,8].includes(e.method) || e.compSize < 1 ||
+        e.uncompSize < 1 || end >= this.size) throw Error('Invalid or encrypted split entry');
+    const { Transform } = require('node:stream');
+    const { pipeline } = require('node:stream/promises');
+    let bytes = 0;
+    const limit = new Transform({ transform(chunk, _enc, done) {
+      bytes += chunk.length;
+      if (bytes > e.uncompSize) return done(Error('Split exceeds its declared length'));
+      hash.update(chunk);
+      done(null,chunk);
+    } });
+    await pipeline(fs.createReadStream(null,{fd:this.fd,autoClose:false,start,end}),
+      ...(e.method === 8 ? [zlib.createInflateRaw()] : []),limit,
+      fs.createWriteStream(target,{flags:'wx',mode:0o600}));
+    if (bytes !== e.uncompSize) throw Error('Incomplete split APK');
+    return bytes;
   }
 
   pipeTo(name, dest) {

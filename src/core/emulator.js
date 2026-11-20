@@ -20,6 +20,8 @@ const drivers = require('./drivers');
 const userdata = require('./userdata');
 
 const AVD_NAME = 'apkstart';
+// Default retains its original AVD identity; other profiles have unique IDs.
+const activeAvdName = () => store.profiles.avdName();
 const SNAPSHOT_NAME = 'apkstart';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -136,31 +138,19 @@ class EmulatorEngine {
    */
   invalidateSnapshot() {
     this.cancelSnapshotSave();
-    this._snapSaved = false;
-    try {
-      const snapDir = path.join(this.provisioner.paths().avdHome, `${AVD_NAME}.avd`, 'snapshots');
-      fs.rmSync(snapDir, { recursive: true, force: true });
-      return true;
-    } catch (_) {
-      return false;
-    }
+    this._snapshotGeneration = (this._snapshotGeneration || 0) + 1;
+    const marker = this.snapshotMarker();
+    fs.writeFileSync(marker, String(this._snapshotGeneration), {mode:0o600, flush:true});
+    return true;
   }
 
-  /**
-   * 清掉上次异常退出留下的锁。
-   * 注意 hardware-qemu.ini.lock 是**目录**不是文件，bsdtar 式的 rmSync(force) 删不掉它，
-   * 于是模拟器会一直报 "Running multiple emulators with the same AVD" 起不来
-   * （被强杀过一次就会这样），必须递归删。
-   */
-  clearLocks(avdDir) {
-    try {
-      for (const f of fs.readdirSync(avdDir)) {
-        if (!/\.lock$/i.test(f)) continue;
-        try {
-          fs.rmSync(path.join(avdDir, f), { recursive: true, force: true });
-        } catch (_) { /* 被占用就跳过，下次再清 */ }
-      }
-    } catch (_) { /* ignore */ }
+  snapshotMarker() {
+    return path.join(this.provisioner.paths().avdHome, activeAvdName() + '.avd', 'quickboot.stale');
+  }
+
+  assertAvdUnlocked(avdDir) {
+    if (fs.readdirSync(avdDir).some(name => /\.lock$/i.test(name)))
+      throw Error('AVD lock is held or stale. Close the owning emulator before starting this Profile.');
   }
 
   /**
@@ -169,32 +159,16 @@ class EmulatorEngine {
    * emulator 会尝试加载、失败（日志 "does not have the requested snapshot"）再回退冷启动，
    * 白等几秒。这里按文件大小校验，顺手清掉空壳和旧版遗留的 default_boot（单个 3GB）。
    */
-  hasSnapshot() {
-    const base = path.join(this.provisioner.paths().avdHome, `${AVD_NAME}.avd`, 'snapshots', SNAPSHOT_NAME);
+  hasSnapshot({ ignoreMarker = false } = {}) {
+    if (!ignoreMarker && fs.existsSync(this.snapshotMarker())) return false;
+    const base = path.join(this.provisioner.paths().avdHome, `${activeAvdName()}.avd`, 'snapshots', SNAPSHOT_NAME);
     const size = (p) => { try { return fs.statSync(p).size; } catch (_) { return 0; } };
     const pb = size(path.join(base, 'snapshot.pb'));
     // 新版 emulator（37.x）写的是 ram.bin，老版本写 ram.img。
     // 只认 ram.img 的后果非常严重：刚存好的 3GB 快照会被当成空壳删掉，
     // 于是每次都带 -no-snapshot-load，永远冷启动 —— 这是「打开很慢」的一半原因。
     const ram = Math.max(size(path.join(base, 'ram.bin')), size(path.join(base, 'ram.img')));
-    if (pb > 1024 && ram > 1024 * 1024) return true;
-    if (pb === 0 && ram === 0) return false;   // 目录本来就没有，别白删
-    try { fs.rmSync(base, { recursive: true, force: true }); } catch (_) { /* ignore */ }
-    this._cleanLegacySnapshots();
-    return false;
-  }
-
-  /** 清掉旧版遗留/失败重命名留下的快照目录（default_boot 里的 ram.img 可达 3GB） */
-  _cleanLegacySnapshots() {
-    const dir = path.dirname(path.join(this.provisioner.paths().avdHome, `${AVD_NAME}.avd`, 'snapshots', SNAPSHOT_NAME));
-    let names = [];
-    try { names = fs.readdirSync(dir); } catch (_) { return; }
-    for (const name of names) {
-      if (name === SNAPSHOT_NAME) continue;
-      if (/^default_boot$|\.stale-\d+$/i.test(name)) {
-        try { fs.rmSync(path.join(dir, name), { recursive: true, force: true }); } catch (_) { /* ignore */ }
-      }
-    }
+    return pb > 1024 && ram > 1024 * 1024;
   }
 
   /**
@@ -216,7 +190,7 @@ class EmulatorEngine {
    */
   panelLandscape() {
     try {
-      const avdDir = path.join(this.provisioner.paths().avdHome, `${AVD_NAME}.avd`);
+      const avdDir = path.join(this.provisioner.paths().avdHome, `${activeAvdName()}.avd`);
       const cfg = fs.readFileSync(path.join(avdDir, 'config.ini'), 'utf8');
       const w = Number((/^hw\.lcd\.width=(\d+)$/m.exec(cfg) || [])[1]);
       const h = Number((/^hw\.lcd\.height=(\d+)$/m.exec(cfg) || [])[1]);
@@ -225,61 +199,6 @@ class EmulatorEngine {
     } catch (_) {
       return null;
     }
-  }
-
-  async killOrphanProcesses({ onLog = () => {} } = {}) {
-    if (process.platform !== 'win32') return 0;
-    const avdDir = path.join(this.provisioner.paths().avdHome, `${AVD_NAME}.avd`);
-
-    // 快速路径（每次冷启动都会走到）：
-    //  - 没有 .lock → 不可能有活着的 emulator 占着这个 AVD，直接返回；
-    //  - 有 lock 但端口没人监听 → 只是上次强杀留下的残留目录，清掉即可。
-    // 以前无论什么情况都要跑一次 wmic（1~3 秒，还很吃 CPU），冷启动时明显拖慢。
-    let locks = [];
-    try { locks = fs.readdirSync(avdDir).filter((f) => /\.lock$/i.test(f)); } catch (_) { locks = []; }
-    if (!locks.length) return 0;
-    if (!(await this._anyEmulatorPortAlive())) {
-      this.clearLocks(avdDir);
-      return 0;
-    }
-
-    const pids = new Set();
-    // 1) 锁文件里 emulator 自己写的 pid（最可靠）
-    try {
-      const f = path.join(avdDir, 'hardware-qemu.ini.lock', 'pid');
-      if (fs.existsSync(f) && fs.statSync(f).isFile()) {
-        const pid = parseInt(fs.readFileSync(f, 'utf8').trim(), 10);
-        if (pid) pids.add(pid);
-      }
-    } catch (_) { /* ignore */ }
-    // 2) 兜底：按进程名 + 端口找活着的 qemu（tasklist/netstat 比 wmic 快一个量级）
-    try {
-      const [tl, ns] = await Promise.all([
-        new Promise((res) => execFile('tasklist', ['/FO', 'CSV', '/NH'], { windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (e, o) => res(e ? '' : String(o || '')))),
-        new Promise((res) => execFile('netstat', ['-ano', '-p', 'TCP'], { windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (e, o) => res(e ? '' : String(o || '')))),
-      ]);
-      const qemuPids = new Set();
-      for (const line of tl.split('\n')) {
-        const m = /^"([^"]+)","(\d+)"/.exec(line.trim());
-        if (m && /qemu|emulator/i.test(m[1])) qemuPids.add(m[2]);
-      }
-      for (const line of ns.split('\n')) {
-        const m = /:(\d+)\s+\S+\s+LISTENING\s+(\d+)/i.exec(line);
-        if (m && qemuPids.has(m[2])) pids.add(Number(m[2]));
-      }
-    } catch (_) { /* 拿不到进程列表就只靠锁文件里的 pid */ }
-    pids.delete(process.pid);
-    if (!pids.size) {
-      this.clearLocks(avdDir);
-      return 0;
-    }
-    onLog(`清理 ${pids.size} 个残留模拟器进程`);
-    await Promise.all([...pids].map((pid) => new Promise((r) => {
-      execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => r());
-    })));
-    await sleep(1200);
-    this.clearLocks(avdDir);
-    return pids.size;
   }
 
   /** 5554~5620 里是否有 emulator 控制台端口在监听（连接被拒会立刻返回，代价极小） */
@@ -393,9 +312,9 @@ class EmulatorEngine {
   } = {}) {
     const p = this.provisioner.ensureDirs();
     const home = p.avdHome;
-    const avdDir = path.join(home, `${AVD_NAME}.avd`);
+    const avdDir = path.join(home, `${activeAvdName()}.avd`);
     fs.mkdirSync(avdDir, { recursive: true });
-    this.clearLocks(avdDir);
+    this.assertAvdUnlocked(avdDir);
 
     // 屏幕分辨率：有硬件加速时 720x1280@320 画面清晰、文字不糊；
     // 纯软件模拟时降到 540x960，帧率优先（面积只有 56%，肉眼差距远小于流畅度差距）。
@@ -407,7 +326,7 @@ class EmulatorEngine {
     const tagDisplay = choice.compat ? 'Google Play (ARM 兼容)' : 'AOSP';
 
     fs.writeFileSync(
-      path.join(home, `${AVD_NAME}.ini`),
+      path.join(home, `${activeAvdName()}.ini`),
       `avd.ini.encoding=UTF-8\npath=${avdDir.replace(/\\/g, '/')}\ntarget=android-${api}\n`,
     );
 
@@ -426,7 +345,7 @@ class EmulatorEngine {
       const wantId = doctor.imageIdentity(wantImg);
       if ((prevTag && prevTag[1].trim() !== tag) || (prevId && prevId !== wantId)) {
         // 旧 userdata 与新镜像不兼容（APEX 引导循环），必须重建
-        this.wipePending = true;
+        throw Error('System image differs from this Profile. Select its original image or create a new Profile.');
       }
     }
 
@@ -439,18 +358,7 @@ class EmulatorEngine {
     let prevKey = '';
     try { prevKey = fs.readFileSync(keyFile, 'utf8').trim(); } catch (_) { /* 首次 */ }
     const snapshotStale = !!(prevKey && prevKey !== key);
-    if (this.wipePending || snapshotStale || wipe) {
-      // 删除可能被系统/安全软件拦截（快照目录常有几个 GB）。
-      // 失败就改名让 emulator 不再加载它，绝不因为清理失败而中断启动。
-      const snapDir = path.join(avdDir, 'snapshots');
-      try {
-        fs.rmSync(snapDir, { recursive: true, force: true });
-      } catch (_) {
-        try { fs.renameSync(snapDir, `${snapDir}.stale-${Date.now()}`); } catch (__) { /* ignore */ }
-      }
-    }
-    // 只有「镜像换了」（tag / sysdir 变化）才需要 -wipe-data：旧 userdata 与新镜像
-    // 的 APEX 不兼容，不重建会一直卡在引导循环。改容量 / 改分辨率 / 换渲染后端都不算。
+    if (snapshotStale || wipe) this.invalidateSnapshot();
     fs.writeFileSync(keyFile, key, 'utf8');
 
     // hw.cpu.arch 必须是 ABI 本身（x86_64 不能截成 x86）
@@ -458,7 +366,7 @@ class EmulatorEngine {
       : choice.abi === 'armeabi-v7a' ? 'arm' : choice.abi;
 
     const cfg = [
-      `AvdId=${AVD_NAME}`,
+      `AvdId=${activeAvdName()}`,
       'avd.ini.displayname=ApkStart',
       'avd.ini.encoding=UTF-8',
       `abi.type=${choice.abi}`,
@@ -505,7 +413,7 @@ class EmulatorEngine {
     const data = this.ensureDataPartition(avdDir, dataMB);
 
     return {
-      home, avdDir, ini: path.join(home, `${AVD_NAME}.ini`), image: choice,
+      home, avdDir, ini: path.join(home, `${activeAvdName()}.ini`), image: choice,
       wipePending: this.wipePending, screen, data,
     };
   }
@@ -557,12 +465,12 @@ class EmulatorEngine {
       }
     }
 
-    // 首次 / 旧版留下的全零占位 / 镜像损坏：全新造一个
+    // Only initialize an entirely new partition.
+    if (fs.existsSync(img) || fs.existsSync(img + '.qcow2'))
+        throw Error('Existing Android userdata could not be verified. Preserve it for recovery.');
     try {
-      fs.rmSync(img, { force: true });
-      fs.rmSync(`${img}.qcow2`, { force: true });
       // 先不带 encrypt 位（老 e2fsck/resize2fs 才肯干活）
-      fs.writeFileSync(img, userdata.buildEmptyExt4({ sizeMB: 64, encrypt: false }));
+      fs.writeFileSync(img, userdata.buildEmptyExt4({ sizeMB: 64, encrypt: false }), { flag: 'wx' });
       this._qemuImg('resize', img, wantBytes);
       this._resize2fs(img);
       userdata.setEncryptFlag(img);
@@ -641,7 +549,7 @@ class EmulatorEngine {
     if (drvGpu) gpu = drvGpu;
     if (eff && eff.forceTcg) accel = 'off';
     const args = [
-      '-avd', AVD_NAME,
+      '-avd', activeAvdName(),
       '-port', String(port),
       // 音频：默认开启（让安卓应用的提示音/视频声音能放出来）。      // 仅当用户在设置里显式关闭时才传 -no-audio 省一点 CPU。
       ...(this.settings?.engine?.audio === false ? ['-no-audio'] : []),
@@ -800,7 +708,7 @@ class EmulatorEngine {
 
   /** 当前 /data 镜像的实际情况（设置页展示用，不启动安卓也能取） */
   dataInfo() {
-    const dir = path.join(this.provisioner.paths().avdHome, `${AVD_NAME}.avd`);
+    const dir = path.join(this.provisioner.paths().avdHome, `${activeAvdName()}.avd`);
     const img = path.join(dir, 'userdata-qemu.img');
     let bytes = 0;
     try { bytes = fs.statSync(img).size; } catch (_) { /* 还没建 */ }
@@ -838,7 +746,7 @@ class EmulatorEngine {
    *    不能再像以前那样返回成功 —— 用户会以为扩好了，装 50GB 游戏依旧半路失败。
    */
   resizeDataPartition(dataMB) {
-    const dir = path.join(this.provisioner.paths().avdHome, `${AVD_NAME}.avd`);
+    const dir = path.join(this.provisioner.paths().avdHome, `${activeAvdName()}.avd`);
     const img = path.join(dir, 'userdata-qemu.img');
     const wantGB = Math.max(1, Math.round(Number(dataMB || 0) / 1024));
     if (this._hasDataOverlay(img)) {
@@ -879,7 +787,7 @@ class EmulatorEngine {
     return new Promise((resolve) => {
       execFile('powershell.exe', [
         '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-        '-File', script, '-Avd', AVD_NAME, '-Level', level,
+        '-File', script, '-Avd', activeAvdName(), '-Level', level,
       ], { windowsHide: true, timeout: 15000 }, (_err, out) => {
         const m = /CHANGED=(\d+)/.exec(String(out || ''));
         resolve(m ? Number(m[1]) : 0);
@@ -893,14 +801,8 @@ class EmulatorEngine {
     this.proc = null;
     if (proc) {
       try { proc.kill(); } catch (_) { /* ignore */ }
-      if (process.platform === 'win32' && proc.pid) {
-        try { spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); } catch (_) { /* ignore */ }
-      }
     }
     await sleep(800);
-    // proc 句柄常常已经没了（emulator.exe 启动完就退出，qemu 是 detached 的独立进程），
-    // 不按进程名兜底清一遍，下一轮就会被 AVD 锁挡成 FATAL。
-    await this.killOrphanProcesses().catch(() => {});
   }
 
   /**
@@ -1297,11 +1199,6 @@ class EmulatorEngine {
     this.lastDiagnosis = null;
     let lastError = '';
 
-    // 冷启前先清孤儿：上一次运行留下的 qemu 仍占着 AVD 锁时，
-    // 所有尝试都会立刻 FATAL "Running multiple emulators with the same AVD"。
-    // eslint-disable-next-line no-await-in-loop
-    await this.killOrphanProcesses({ onLog }).catch(() => {});
-
     for (let i = 0; i < variants.length; i += 1) {
       const base = variants[i];
       // 端口占用也会导致失败，每次重试重新探测一次
@@ -1486,11 +1383,18 @@ class EmulatorEngine {
    */
   async saveSnapshotNow(adbPath, { timeout = 45000 } = {}) {
     if (!adbPath) return false;
-    const ok = await this._saveViaAdb(adbPath, { timeout });
-    // emulator 的 save 命令可能在写盘中途就回 OK，这里按文件完整性再确认一次，
-    // 只有 snapshot.pb 真正落盘才算数（否则下次加载会失败并白等几秒）。
-    if (!ok) return false;
-    return this.hasSnapshot();
+    if (this._snapshotWrite) return this._snapshotWrite;
+    const marker = this.snapshotMarker();
+    const generation = this._snapshotGeneration;
+    this._snapshotWrite = (async () => {
+      const ok = await this._saveViaAdb(adbPath, {timeout});
+      if (!ok || marker !== this.snapshotMarker() || generation !== this._snapshotGeneration ||
+          !this.hasSnapshot({ignoreMarker:true})) return false;
+      fs.rmSync(marker,{force:true});
+      return true;
+    })();
+    try { return await this._snapshotWrite; }
+    finally { this._snapshotWrite = null; }
   }
 
   /**
@@ -1514,7 +1418,7 @@ class EmulatorEngine {
           return;
         }
         await this.saveSnapshotNow(adbPath).catch(() => false);
-        this._snapSaved = true;
+
       }, ms);
       if (this._snapTimer.unref) this._snapTimer.unref();
     };
@@ -1542,7 +1446,7 @@ class EmulatorEngine {
     const healthy = adbPath ? await this._adbGuestHealthy(adbPath) : false;
     if (adbPath && this.snapshotWorthSaving !== false && healthy) {
       // 3GB 内存写盘要几秒到二十几秒，超时给足，别让快照写一半就被 kill 掉。
-      await this._saveViaAdb(adbPath, { timeout: 60000 });
+      await this.saveSnapshotNow(adbPath, { timeout: 60000 });
     }
     if (!healthy && this.snapshotWorthSaving !== false) {
       this.log('关机时 guest 未授权/未就绪：将作废快照，下次冷启动重新注入调试授权');
@@ -1550,7 +1454,7 @@ class EmulatorEngine {
     if (adbPath) {
       await new Promise((resolve) => {
         execFile(adbPath, ['-s', serial, 'emu', 'kill'],
-          { timeout: 10000, windowsHide: true }, () => resolve());
+          { timeout: 10000, windowsHide: true, env: { ...process.env, ANDROID_ADB_SERVER_PORT: String(this.adbPort || 5044) } }, () => resolve());
       });
     }
     // 等它自己走完「落盘 → 退出」的流程。以前固定等 6 秒就强杀，

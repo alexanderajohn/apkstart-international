@@ -5,11 +5,11 @@
  */
 const { execFileSync } = require('child_process');
 
-const PROGID = 'ApkStart.apk';
+const PROGID = 'ApkStartInternational.apk';
 const EXT = '.apk';
 const CLASSES = 'HKCU\\Software\\Classes';
 // 关联前的「原默认程序」记在这里，卸载时原样还回去，别把用户的关联弄丢
-const STORE_KEY = 'HKCU\\Software\\ApkStart';
+const STORE_KEY = 'HKCU\\Software\\ApkStartInternational';
 const PREV_VALUE = 'assocPrev';
 
 function reg(args) {

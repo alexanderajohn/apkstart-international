@@ -17,6 +17,7 @@ const net = require('net');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { memoryLimits } = require('./resources');
+const { redactText, redactValue } = require('./diagnostic-privacy');
 
 const ASCII = /^[\x20-\x7e]*$/;
 const isAsciiPath = (p) => ASCII.test(String(p || ''));
@@ -325,7 +326,7 @@ function planVariants(profile) {
     accel: 'off',
     memoryMB: 2048,
     cores: 2,
-    dataMB: Math.min(profile.dataMB, 2048),
+    dataMB: profile.dataMB,
     label: '保守冷启动（最小内存 + 清快照）',
     // 这里**绝对不能** wipe：以前写的是 wipe:true，而磁盘写满时每次尝试都会失败，
     // 于是连续重试把用户已装的应用和存档一起「清快照 + 清数据」了 ——
@@ -338,13 +339,13 @@ function planVariants(profile) {
   });
   // 去重（相同 gpu/accel/wipe 组合不重复试）——但「最后一档」必须保留：
   // 它是唯一「不加载快照」的方案，小内存机器上可能和前一档参数完全一样。
-  const seen = new Set();
-  return out.filter((v) => {
-    const k = `${v.gpu}|${v.accel}|${!!v.wipe}|${v.memoryMB}|${v.snapshot !== false ? 'snap' : 'nosnap'}|${v.lastResort ? 'last' : ''}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+  const unique = new Map();
+  for (const plan of out) {
+    const key = [plan.gpu, plan.accel, plan.wipe, plan.memoryMB, plan.cores, plan.snapshot].join('|');
+    // Keep the final conservative plan when it matches an earlier fallback.
+    unique.set(key, plan);
+  }
+  return [...unique.values()];
 }
 
 /** 检测一对空闲端口（emulator console + adb 注册端口必须相邻偶数/奇数） */
@@ -533,28 +534,30 @@ function writeReport({ dataDir, profile, logLines = [], extra = {} }) {
   const file = path.join(dir, `diagnostic-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`);
   const d = diagnose(logLines);
   const body = [
-    'ApkStart 诊断报告',
+    'ApkStart International — Privacy-safe diagnostics',
+    'The report is saved locally and is NOT uploaded. Sensitive details are masked on a best-effort basis.',
+    'Review its contents before sharing. Some unusual secrets may not be detected.',
     `生成时间：${new Date().toLocaleString()}`,
     '',
     '== 本机 ==',
-    JSON.stringify(hostInfo(), null, 2),
+    JSON.stringify(redactValue(hostInfo()), null, 2),
     '',
     '== 自动配置 ==',
-    JSON.stringify(profile || {}, null, 2),
-    describeProfile(profile || chooseProfile()),
+    JSON.stringify(redactValue(profile || {}), null, 2),
+    redactText(describeProfile(profile || chooseProfile())),
     '',
     '== 诊断 ==',
     `${d.code}：${d.title}`,
     d.hint,
     '',
     '== 附加信息 ==',
-    JSON.stringify(extra, null, 2),
+    JSON.stringify(redactValue(extra), null, 2),
     '',
     '== 运行时日志（末尾 300 行）==',
-    ...(Array.isArray(logLines) ? logLines.slice(-300) : String(logLines || '').split('\n')),
+    ...(Array.isArray(logLines) ? logLines.slice(-300) : String(logLines || '').split('\n')).map((line) => redactText(line)),
   ].join('\n');
   fs.writeFileSync(file, body, 'utf8');
-  return { file, diagnosis: d };
+  return { file, diagnosis: d, privacy: 'best-effort-redacted' };
 }
 
 /**

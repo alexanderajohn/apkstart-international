@@ -10,6 +10,7 @@
 const { spawn, execFile } = require('child_process');
 const net = require('net');
 const fs = require('fs');
+const { identifyGuest, readOwner, recordOwner, verifyOwner } = require('./runtime-owner');
 const path = require('path');
 const { AdbClient, isUnauthorizedError } = require('./adb');
 const store = require('./store');
@@ -18,7 +19,9 @@ const { EmulatorEngine } = require('./emulator');
 const doctor = require('./doctor');
 const container = require('./container');
 const backends = require('./backends');
+const performance = require('./performance');
 
+const {assertRestoreFinished}=require('./restore-journal');
 const LOG_DIR = path.join(store.DATA_DIR, 'logs');
 const MONITOR_PORT = 5556;
 const EMU_PORT = 5554;
@@ -48,6 +51,9 @@ class Runtime {
     this.emulator = new EmulatorEngine(appRoot);
     this.vmProc = null;
     this.vmStarting = false;
+    // Once more than one profile exists, never adopt an unverified emulator
+    // that may belong to another profile, Android Studio or another app.
+    this._profileOwnedRuntime = false;
     this.installing = false;
     this.lastActivity = Date.now();
     this._watchdog = null;
@@ -313,7 +319,12 @@ class Runtime {
   }
 
   async boot({ install = false, onLog = () => {} } = {}) {
+    assertRestoreFinished(store.profiles);
+    if (store.profileSwitching) throw Error('Android Profile is switching');
+    if (store.backupLocked) throw new Error('Android cannot boot during backup/restore');
     const env = await this.provisioner.checkEnv();
+    if (store.profiles.currentId() !== 'default' && (install || !env.emulator.ok || !env.sysimg.ok))
+      return {ok:false,error:'Secondary profiles require the official Android Emulator with a supported system image; shared QEMU/ISO disks are disabled.'};
     this._hv = env.hypervisor;
 
     // 首选：官方 emulator（自带设备模型与 GPU 转译，体验最好）
@@ -329,6 +340,7 @@ class Runtime {
    * 与 QEMU+ISO 不同，这里没有"安装系统"这一步：镜像本身就是系统，首次启动即开机。
    */
   async bootEmulator({ env, onLog = () => {} } = {}) {
+    const profileId = store.profiles.currentId();
     if (this.vmStarting) {
       const started = Date.now();
       while (this.vmStarting && Date.now() - started < 300000) {
@@ -337,6 +349,7 @@ class Runtime {
       }
       const c = this.client();
       if (await c.isOnline()) {
+        await verifyOwner(c, store.profiles, profileId);
         await this.prepare(c);
         return { ok: true, client: c, reused: true };
       }
@@ -435,6 +448,9 @@ class Runtime {
       this.lastActivity = Date.now();
       this.emuSerial = st.serial || this.emulator.serial;
       const client = this.client(this.emuSerial);
+      if (st.reused) await verifyOwner(client, store.profiles, profileId);
+      else recordOwner(store.profiles, await identifyGuest(client, store.profiles, profileId));
+      this._profileOwnedRuntime = true;
       await this.prepare(client);
       // 快照改成「空闲时再存」：立刻存要写 1~3GB，会和用户刚点开的应用抢磁盘 I/O
       this._armSnapshotSave(20000);
@@ -712,43 +728,16 @@ class Runtime {
 
   /** 优雅停止：emulator 走控制台关机，QEMU 走 monitor */
   async stop({ graceful = true } = {}) {
-    const adbPath = this.adbPath();
-    if (this.emulator.running()) {
-      await this.emulator.stop({ adbPath });
-      return true;
-    }
-    // 接管来的模拟器（adoptExisting）在本进程里没有 proc 句柄，旧逻辑会直接
-    // return false —— 结果空闲看门狗永远关不掉它，容器一直占着 CPU/内存。
-    // 这条路径改用 adb 控制台关机，必要时再按端口强杀兜底。
-    //
-    // 注意：emulator.exe 只是个启动器，spawn 完 qemu 自己就退了，所以「自己拉起来的」
-    // 机器也常常落到这条分支。关机前必须补一次 saveSnapshotNow，否则快照永远存不下来，
-    // 用户每次点开都是全量冷启动（25 秒 vs 8 秒的差别就在这一步）。
-    let online = false;
-    try { online = await this.client().isOnline(); } catch (_) { /* ignore */ }
-    if (online && this.emuSerial) {
-      if (adbPath && this.emulator.snapshotWorthSaving !== false) {
-        await this.emulator.saveSnapshotNow(adbPath, { timeout: 60000 }).catch(() => false);
-      }
-      await this.client().exec(['emu', 'kill'], { timeout: 8000 }).catch(() => {});
-      for (let i = 0; i < 10; i += 1) {
-        // eslint-disable-next-line no-await-in-loop
-        await new Promise((r) => setTimeout(r, 400));
-        // eslint-disable-next-line no-await-in-loop
-        const still = await this.client().isOnline().catch(() => false);
-        if (!still) break;
-      }
-      const still = await this.client().isOnline().catch(() => false);
-      if (still) {
-        const m = /:(\d+)$/.exec(this.emuSerial);
-        const port = m ? Number(m[1]) - 1 : this.emulator.port;
-        const pid = await this.pidOnPort(port);
-        if (pid) {
-          await new Promise((resolve) => {
-            execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => resolve());
-          });
-        }
-      }
+    const id = store.profiles.currentId();
+    const owner = readOwner(store.profiles, id);
+    if (this.emulator.running() || (owner && (await this.emulatorPorts()).includes(Number(owner.serial.slice(9))))) {
+      if (!owner) throw Error('Unmanaged Android emulator detected. Close it manually.');
+      const client = this.client(owner.serial);
+      await verifyOwner(client, store.profiles, id, owner);
+      this.emulator.port = Number(owner.serial.slice(9));
+      await this.emulator.stop({ adbPath: this.adbPath() });
+      if (await this.emulator._consoleAlive()) throw Error('Android shutdown is incomplete. Close its window before switching.');
+      this._profileOwnedRuntime = false;
       this._activeApps.clear();
       return true;
     }
@@ -813,6 +802,11 @@ class Runtime {
   // ---------------- 安装系统到虚拟磁盘 ----------------
 
   async startInstaller({ onLog = () => {} } = {}) {
+    assertRestoreFinished(store.profiles);
+    if (store.profileSwitching) throw Error('Android Profile is switching');
+    if (store.backupLocked) throw new Error('Installer disabled during backup/restore');
+    if (store.profiles.currentId() !== 'default')
+      throw new Error('Installing to a shared QEMU/ISO disk is disabled for secondary profiles.');
     const env = await this.provisioner.checkEnv();
     if (!env.iso.ok) {
       throw new Error(env.iso.reason || '请先下载/导入 Android 系统镜像（ISO）');
@@ -886,86 +880,14 @@ class Runtime {
     return found;
   }
 
-  async adoptExisting({ onLog = () => {} } = {}) {
-    const alive = await this.emulatorPorts();
-    if (!alive.length) {
-      onLog('没有发现上一台运行时，准备冷启动');
-      return null;
-    }
-    onLog(`发现 ${alive.length} 台残留运行时（端口 ${alive.join(', ')}），尝试接管`);
-
-    // adb server 里可能还留着上个进程的 offline 记录（模拟器重启过 adbd 就会这样），
-    // 先清掉再连，否则 get-state 永远返回 offline，会误判成"没就绪"把好好的机器杀掉。
-    await this.client().exec(['kill-server'], { withSerial: false, timeout: 8000 }).catch(() => {});
-
-    for (const port of alive) {
-      const serial = `127.0.0.1:${port + 1}`;
-      const c = this.client(serial);
-      let booted = '';
-      for (let i = 0; i < 6 && booted !== '1'; i += 1) {
-        // eslint-disable-next-line no-await-in-loop
-        await c.connect().catch(() => false);
-        // eslint-disable-next-line no-await-in-loop
-        const state = (await c.exec(['get-state'], { timeout: 5000 }).then((r) => r.stdout).catch(() => '')).trim();
-        if (state === 'device') {
-          // eslint-disable-next-line no-await-in-loop
-          booted = (await c.shell('getprop sys.boot_completed', { timeout: 6000 }).catch(() => '')).trim();
-        }
-        if (booted !== '1') await new Promise((r) => setTimeout(r, 700));
-      }
-      if (booted !== '1') {
-        onLog(`发现上一台运行时（${serial}）但没就绪，先关掉它再重新开机`);
-        // AVD 目录有锁：留着这台会让新实例直接退出，表现成"怎么都开不了机"。
-        // adb 都连不上了，只能按控制台端口找到进程强杀。
-        const pid = await this.pidOnPort(port);
-        if (pid) {
-          await new Promise((resolve) => {
-            const { execFile } = require('child_process');
-            execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => resolve());
-          });
-        }
-        await new Promise((r) => setTimeout(r, 1200));
-        continue;
-      }
-      this.emuSerial = serial;
-      this.emulator.port = port;
-      store.saveSettings({ device: serial });
-      onLog(`已接管正在运行的运行时（${serial}）`);
-      // eslint-disable-next-line no-await-in-loop
-      await this.prepare(c);
-      return { ok: true, client: c, engine: 'emulator', reused: true };
-    }
-    return null;
-  }
-
-  /** 某个 TCP 端口是哪个进程在监听（用于强杀卡死的模拟器） */
-  async pidOnPort(port) {
-    return new Promise((resolve) => {
-      const { execFile } = require('child_process');
-      execFile('netstat', ['-ano', '-p', 'TCP'], { windowsHide: true }, (err, stdout) => {
-        if (err || !stdout) return resolve(0);
-        const line = stdout.split('\n').find((l) => new RegExp(`:${port}\\s`).test(l) && /LISTENING/i.test(l));
-        const m = line && /(\d+)\s*$/.exec(line.trim());
-        return resolve(m ? Number(m[1]) : 0);
-      });
-    });
-  }
-
-  /**
-   * 清理上一次运行遗留、却没被接管的孤儿模拟器。
-   * 关掉 ApkStart 时 emulator 是 detached 的，qemu 会存活；下次启动时它仍占着 AVD 锁，
-   * 表现为冷启直接 FATAL "Running multiple emulators with the same AVD"。
-   * 实现收敛到 EmulatorEngine，重试路径（killAttempt）也用同一份逻辑。
-   */
-  async killOrphanEmulators({ onLog = () => {} } = {}) {
-    return this.emulator.killOrphanProcesses({ onLog });
-  }
-
   /**
    * 幂等入口：预热与用户点击可能同时发生，共用一个 Promise，
    * 避免两边各判断一次「没在线」后各自拉起一台模拟器（AVD 锁冲突 + 双倍内存）。
    */
   async ensure({ onLog = () => {} } = {}) {
+    assertRestoreFinished(store.profiles);
+    if (store.profileSwitching) throw Error('Android Profile is switching');
+    if (store.backupLocked) throw new Error('Android cannot start during profile backup/restore');
     if (this._ensurePromise) return this._ensurePromise;
     const p = this._ensureInner({ onLog });
     this._ensurePromise = p;
@@ -975,37 +897,24 @@ class Runtime {
   }
 
   async _ensureInner({ onLog = () => {} } = {}) {
-    const client = this.client();
-    if (await client.isOnline()) {
+    const id = store.profiles.currentId();
+    const owner = readOwner(store.profiles,id);
+    const client = this.client(owner?.serial || this.emuSerial);
+    if (owner && await client.deviceState() === 'device') {
+      await verifyOwner(client, store.profiles, id, owner);
+      this.emuSerial = owner.serial;
+      this.emulator.port = Number(owner.serial.slice(9));
+      this._profileOwnedRuntime = true;
       await this.prepare(client);
-      return { ok: true, client, engine: 'builtin', reused: true };
+      return { ok:true, client, engine:'emulator', reused:true };
     }
-
-    // 上一次 ApkStart 退出时模拟器会留着（下次点开秒进），但新进程里没有它的
-    // 句柄，adb server 也可能被重启过——只靠 isOnline() 会判成"没有运行时"，
-    // 于是又开一台新的。这里先把还活着的模拟器接管过来，避免重复开机器吃内存。
-    const adopted = await this.adoptExisting({ onLog });
-    if (adopted) return adopted;
-
-    // 上次会话遗留 / 别的进程拉起的 emulator：换个端口也要复用，绝不重复开一台
-    try {
-      const devices = await client.devices();
-      const running = devices.find((d) => /^emulator-\d+$/.test(d.serial) && d.state === 'device');
-      if (running) {
-        this.emuSerial = running.serial;
-        const m = /(\d+)$/.exec(running.serial);
-        if (m) this.emulator.port = Number(m[1]);
-        const c2 = this.client(running.serial);
-        await this.prepare(c2);
-        return { ok: true, client: c2, engine: 'emulator', reused: true };
-      }
-    } catch (_) { /* 没找到就正常拉起 */ }
-
-    // 进程还在但设备离线（多半卡在引导）：先停掉再重新拉起，避免干等
-    if (this.emulator.running()) {
-      onLog('检测到卡住的运行时，正在重启…');
-      await this.emulator.stop({ adbPath: this.adbPath() });
+    this._profileOwnedRuntime = false;
+    if (id === 'default' && this.vmProc && !this.vmProc.killed) {
+      const qemu = this.client('127.0.0.1:5555');
+      if (await qemu.deviceState() === 'device') return {ok:true,client:qemu,engine:'builtin'};
     }
+    if (this.emulator.running() || (await this.emulatorPorts()).length)
+      return { ok:false, error:'Another Android emulator is running. Close it before starting this Profile.' };
 
     const s = this.settings;
 
@@ -1018,13 +927,16 @@ class Runtime {
       this.log(`materialize failed: ${e.message}`);
     });
     const env = await this.provisioner.checkEnv();
+    if (store.profiles.currentId() !== 'default' && (!env.emulator.ok || !env.sysimg.ok)) {
+      return {ok:false,error:'Secondary Android profiles require an official Android Emulator and system image. Shared QEMU/ISO disks are not supported.'};
+    }
 
     // emulator 路径：镜像即系统，没有"安装到磁盘"这一步
     if (env.emulator.ok && env.sysimg.ok) {
       // 关掉 ApkStart 后可能残留未接管的模拟器（detached 的 qemu 仍存活），
       // 它一直占着 AVD 锁，会让冷启直接 FATAL "Running multiple emulators with the same AVD"。
       // 接管失败时先把这些孤儿清掉，再冷启，保证「关掉再开」一定能起来。
-      await this.killOrphanEmulators({ onLog }).catch(() => {});
+
       try {
         const r = await this.boot({ onLog });
         if (r.ok) return { ok: true, client: r.client, engine: 'emulator', profile: r.profile, network: r.network || null };
@@ -1074,11 +986,12 @@ class Runtime {
     this._activeApps.add(pkg);
     this.touch();
     const s = this.settings;
-    const mode = (s.engine && s.engine.priorityMode) || 'balanced';
+    const preset = (s.engine && s.engine.appPerformanceProfiles || {})[pkg] || 'inherit';
+    const globalPriority = (s.engine && s.engine.priorityMode) || 'balanced';
     // 有应用在前台时的调度级别。balanced 用 normal（不是 below）：
     // below 会让 qemu 在系统繁忙时被饿到，表现为视频解码掉帧、点击要等一下才响应 ——
     // 这正是「点击不跟手」的主因。normal 只是与桌面同档，并不额外吃 CPU/内存/GPU。
-    const level = mode === 'game' ? 'game' : 'normal';
+    const level = performance.effectivePriority(performance.validMode(preset) ? preset : 'inherit', globalPriority);
 
     if (first) {
       // 有应用要开了：把「空闲存快照」推迟，别在应用启动时抢磁盘
@@ -1313,16 +1226,12 @@ class Runtime {
    * 现在调用方可以显式传 includeSnapshots：先停运行时再裁，快照就能真正回收。
    */
   async cleanup({ apply = false, aggressive = false, includeSnapshots = false } = {}) {
-    let stoppedVm = false;
-    if (includeSnapshots && this.vmRunning) {
-      await this.stop().catch(() => {});
-      stoppedVm = true;
-    }
-    const report = require('./layers').prune(this.provisioner.paths().root, {
-      apply, aggressive, keepSnapshots: !includeSnapshots && this.vmRunning,
-    });
-    // 预览阶段若停了机，给用户一个提示：清完可手动重启运行时
-    return { ...report, apply, stoppedVm };
+    if (apply && (this.vmRunning || this.vmStarting || store.backupLocked || store.profileSwitching))
+      throw Error('Stop Android before cleaning shared runtime files');
+    if (apply) assertRestoreFinished(store.profiles);
+    const report = require('./layers').prune(this.provisioner.paths().root, { apply, aggressive });
+    return { ...report, apply, stoppedVm:false };
+
   }
 
   /**
@@ -1337,10 +1246,18 @@ class Runtime {
     const fs = require('fs');
     const path = require('path');
     try {
-      if (this.vmRunning) await this.stop().catch(() => {});
-      const avdDir = path.join(this.provisioner.paths().avdHome, 'apkstart.avd');
+      assertRestoreFinished(store.profiles);
+      if (store.profileSwitching || store.backupLocked) throw Error('Profile is busy');
+      const profileId=store.profiles.currentId();
+      if (this.vmRunning) await this.stop();
+      if ((await this.emulatorPorts()).length) throw Error('Close running emulators before resetting this Profile');
+      const avdDir = path.join(this.provisioner.paths().avdHome, store.profiles.avdName() + '.avd');
+      if(profileId!==store.profiles.currentId() || this.vmStarting || store.profileSwitching)throw Error('Profile changed');
       let reclaimed = 0;
       if (fs.existsSync(avdDir)) {
+        // Reset only a real directory under the configured AVD home.
+        if(fs.lstatSync(avdDir).isSymbolicLink() || path.relative(path.resolve(avdDir),fs.realpathSync(avdDir))!=='')
+          throw Error('Reset requires an unlinked AVD directory');
         for (const e of fs.readdirSync(avdDir, { withFileTypes: true })) {
           const p = path.join(avdDir, e.name);
           // 删除：用户数据镜像（含 qcow2 差量 + 基址）、快速启动快照、残留锁文件/锁目录。
@@ -1541,26 +1458,8 @@ class Runtime {
         onLog(`网络已恢复（${network.ip || ''}），已存好可用快照。`);
         return { ok: true, network, boot: true, wiped: false };
       }
-      // 第 3 步：还没网，只能重置数据了（会丢应用内数据）
-      onLog('仍然没有网络，正在重置安卓数据并重新开机（应用清单会保留，点开时自动重装）…');
-      if (this.vmRunning) await this.stop({ graceful: false }).catch(() => {});
-      // 给上一次的 qemu / netsimd 一点时间退干净，否则 -wipe-data 会撞 AVD 锁
-      await new Promise((r) => setTimeout(r, 2500));
-      this.emulator.forceWipeOnNextStart();
-      const boot2 = await this.ensure({ onLog });
-      if (!boot2 || !boot2.ok) {
-        return { ok: false, error: (boot2 && boot2.error) || '虚拟机没能启动', boot: false, wiped: true };
-      }
-      network = await this.waitForNetwork({ onLog, timeoutMs: 240000 });
-      if (network && network.ok) {
-        // 立刻把「网络正常」的状态存成快照：下次恢复时网卡状态一起还原，
-        // 否则关掉再开又会回到没网状态。
-        try { await this.emulator.saveSnapshotNow(this.adbPath(), { timeout: 90000 }); } catch (_) { /* ignore */ }
-        onLog(`网络已恢复（${network.ip || ''} 网关 ${network.gateway || '可达'}），已存好可用快照。`);
-      } else {
-        onLog('重置后仍未联网。请检查本机网络/防火墙是否拦截了模拟器（netsimd 走本机回环端口）。');
-      }
-      return { ok: !!(network && network.ok), network, boot: true, wiped: true };
+      return { ok:false, network, boot:true, wiped:false,
+        error:'Android is still offline after a cold boot. Check host networking and the emulator log.' };
     } catch (e) {
       return { ok: false, error: e.message };
     }

@@ -177,7 +177,7 @@ class AppWindow {
         preload: path.join(__dirname, '..', 'preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false,
+        sandbox: true,
         spellcheck: false,
         backgroundThrottling: false,
       },
@@ -216,6 +216,8 @@ class AppWindow {
     this.win.on('minimize', () => { this.agent.hide().catch(() => {}); });
     this.win.on('close', () => { this._closing = true; });
     this.win.on('closed', () => {
+      clearTimeout(this._fitTimer);
+      this._fitTimer = null;
       if (this._selfClose) return;   // close() 自己在 park 完成后收尾
       this.win = null;
       const pkg = this.pkg;
@@ -440,8 +442,12 @@ class AppWindow {
   scheduleFit(rounds = 1) {
     if (!this.isOpen) return;
     if (this._fitTimer) clearTimeout(this._fitTimer);
+    const win = this.win;
+    const epoch = this._fitEpoch = (this._fitEpoch || 0) + 1;
     const run = async (left) => {
+      if (this.win !== win || !this.isOpen || epoch !== this._fitEpoch) return;
       await this.fitNow().catch(() => {});
+      if (this.win !== win || !this.isOpen || epoch !== this._fitEpoch) return;
       if (left > 1) {
         this._fitTimer = setTimeout(() => run(left - 1), 160);
       } else {

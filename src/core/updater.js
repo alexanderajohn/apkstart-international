@@ -21,9 +21,10 @@ const { downloadAnyParallel, downloadMulti } = require('./download');
 const { ZipFile, resolveZipEntry } = require('./zip');
 const { cmpVer } = require('./version');
 const { Sources } = require('./sources');
+const { SELF_UPDATE_ENABLED, assertSelfUpdateAllowed } = require('./update-policy');
 
-const OWNER = 'RoutineMiku';
-const REPO = 'apkstart';
+const OWNER = 'alexanderajohn';
+const REPO = 'apkstart-international';
 
 /** PowerShell 单引号字符串：内部的 ' 要写成 '' */
 function psq(s) {
@@ -147,6 +148,7 @@ class Updater {
    * @returns {Promise<{mode:'zip'|'setup', payload:string, version:string}>}
    */
   async prepare(info) {
+    assertSelfUpdateAllowed();
     const it = info || this.latest;
     if (!it || !it.asset) throw new Error('这个版本没有可自动安装的安装包，请到 GitHub 发布页手动下载');
     const dir = path.join(this.updateDir, it.version);
@@ -303,7 +305,7 @@ class Updater {
       // 版本不符 = 上次下的是别的版本，不能复用
       if (m.version !== version) return false;
       // 关键：程序主 exe 必须在载荷里。没有它说明解压被中断/被杀软删过。
-      const exeName = path.basename(this.exePath || 'ApkStart.exe');
+      const exeName = path.basename(this.exePath || 'ApkStart International.exe');
       return !!findInDir(payload, exeName);
     } catch (_) {
       return false;
@@ -316,6 +318,7 @@ class Updater {
    * @returns {{mode:'zip', payload:string, version:string}|null}
    */
   findResumableJob() {
+    if (!SELF_UPDATE_ENABLED) return null;
     try {
       if (!fs.existsSync(this.updateDir)) return null;
       const versions = fs.readdirSync(this.updateDir)
@@ -335,6 +338,7 @@ class Updater {
    * @param {{waitPid?:number, spawn?:boolean}} [opts] 测试时可指定别的 pid / 不真启动
    */
   apply(job, opts = {}) {
+    assertSelfUpdateAllowed();
     const exe = this.exePath;
     const dir = this.installDir;
     const logFile = path.join(this.updateDir, 'update.log');

@@ -39,7 +39,7 @@ function relTime(ts) {
   if (d < 3600000) return `${Math.floor(d / 60000)} 分钟前`;
   if (d < 86400000) return `${Math.floor(d / 3600000)} 小时前`;
   if (d < 86400000 * 30) return `${Math.floor(d / 86400000)} 天前`;
-  return new Date(ts).toLocaleDateString('zh-CN');
+  return new Date(ts).toLocaleDateString(window.ASI_I18N?.getLanguage() || 'en');
 }
 
 /**
@@ -516,6 +516,8 @@ async function installFiles(paths) {
   let failed = 0;
 
   for (const p of paths) {
+    // Never install a picked or dragged package without explicit SmartCheck consent.
+    if (!window.ASI_SMARTCHECK || !(await window.ASI_SMARTCHECK.confirm(p))) break;
     const name = p.split(/[\\/]/).pop();
     const t = toast({ title: `正在安装 ${name}`, body: '解析 APK…', progress: 8, sticky: true, spinner: true });
     installToast = t;
@@ -527,7 +529,11 @@ async function installFiles(paths) {
         t.update({ title: pr.meta ? `正在安装 ${pr.meta.label}` : `正在安装 ${name}`, body: pr.message, progress: pct });
       });
       const r = await api.installApk(p);
-      t.update({ title: `${r.app.label} 已安装`, body: r.app.shortcutPath ? '桌面快捷方式已创建，双击即可直接打开。' : '可在应用卡片右键创建桌面快捷方式。', progress: 100, type: 'ok' });
+      if(r?.canceled||r?.ok===false){
+        t.dismiss();installToast=null;break;
+      }
+      t.update({ title: `${r.app.label} 已安装`, body: r.app.shortcutPath ? '桌面快捷方式已创建，双击即可直接打开。'
+        : '可在应用卡片右键创建桌面快捷方式。', progress: 100, type: 'ok' });
       t.el.querySelector('.spinner')?.remove();
       setTimeout(t.dismiss, 3600);
       if (r.warnings && r.warnings.length) {
@@ -590,7 +596,7 @@ async function createShortcut(pkg) {
 async function uninstall(pkg) {
   const app = state.apps.find((a) => a.package === pkg);
   if (!app) return;
-  const ok = window.confirm(`确定卸载「${app.label}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。`);
+  const ok = window.confirm((window.ASI_I18N?.t("确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。") || "确定卸载「{app}」？\n\n应用数据会一并被清除，桌面快捷方式也会被删除。").replace('{app}', app.label));
   if (!ok) return;
   try {
     await api.uninstall(pkg);
@@ -612,6 +618,7 @@ const MENU_ITEMS = [
   { key: 'shortcut', label: '创建桌面快捷方式' },
   { key: 'pin', label: '固定到顶部' },
   { key: 'keymap', label: '按键映射…' },
+  { key: 'performance', label: 'Smart Performance…' },
   { divider: true },
   { key: 'reveal', label: '打开 APK 所在位置' },
   { key: 'clear', label: '清除应用数据' },
@@ -623,7 +630,8 @@ function showMenu(x, y, pkg) {
   const menu = $('ctxmenu');
   state.menuPkg = pkg;
   const app = state.apps.find((a) => a.package === pkg);
-  const items = MENU_ITEMS.filter((it) => !it.onlyRunning || (app && app.running));
+  const items = MENU_ITEMS.filter((it) =>
+    !it.onlyRunning || (app && app.running));
   menu.innerHTML = items.map((it) => {
     if (it.divider) return '<div class="divider"></div>';
     const label = it.key === 'pin' ? (app && app.pinned ? '取消固定' : '固定到顶部') : it.label;
@@ -666,9 +674,16 @@ async function handleMenu(act) {
     case 'shortcut': return createShortcut(pkg);
     case 'pin': return api.pin(pkg, !app.pinned).then(refreshApps);
     case 'keymap': return showKeymapPicker(pkg, app.label);
+    case 'performance': {
+      await openSettings();
+      await window.ASI_PERFORMANCE?.openFor(pkg);
+      return;
+    }
     case 'reveal': return api.revealApk(pkg);
     case 'clear': {
-      if (!window.confirm(`清除「${app.label}」的全部数据？此操作不可撤销。`)) return;
+      const question = (window.ASI_I18N?.t('清除「{app}」的全部数据？此操作不可撤销。')
+        || '清除「{app}」的全部数据？此操作不可撤销。').replace('{app}', app.label);
+      if (!window.confirm(question)) return;
       try {
         await api.clearData(pkg);
         toast({ title: '数据已清除', body: app.label, type: 'ok' });
@@ -936,6 +951,7 @@ function fillSettings(s) {
   if ($('setFastDns')) $('setFastDns').checked = eng.fastDns !== false;
   if ($('setLocale')) $('setLocale').value = eng.locale || 'zh-CN';
   if ($('setChineseIme')) $('setChineseIme').checked = eng.chineseIme !== false;
+  if ($('setAutoGrantAppPermissions')) $('setAutoGrantAppPermissions').checked = eng.autoGrantAppPermissions === true;
   if ($('setKeepSnapshot')) $('setKeepSnapshot').checked = eng.keepSnapshot !== false;
   $('setDisplayMode').value = d.mode === 'fullscreen' ? 'fullscreen' : 'window';
   if ($('setAutoFullscreen')) $('setAutoFullscreen').value = d.autoFullscreenOnLaunch === true ? 'on' : 'off';
@@ -1201,6 +1217,17 @@ function bindSettings() {
       toast({ title: '系统语言已更新', body: '下次重启安卓运行时后生效', type: 'ok' });
     });
   }
+  if ($('setAutoGrantAppPermissions')) {
+    $('setAutoGrantAppPermissions').addEventListener('change', async (e) => {
+      const enabled = e.target.checked;
+      await save({ engine: { autoGrantAppPermissions: enabled } });
+      toast({
+        title: enabled ? '已开启自动授权' : '已关闭自动授权',
+        body: '仅影响之后的应用安装与启动；已授予的权限不会自动撤销。',
+        type: enabled ? 'info' : 'ok',
+      });
+    });
+  }
   if ($('setChineseIme')) {
     $('setChineseIme').addEventListener('change', async (e) => {
       state.settings = await api.setSettings({ engine: { chineseIme: e.target.checked } });
@@ -1403,7 +1430,7 @@ function bindSettings() {
   $('btnDiagnostics').addEventListener('click', async () => {
     try {
       const r = await api.doctorReport();
-      toast({ title: '诊断报告已导出', body: `${r.diagnosis.title} · ${r.file}`, type: 'ok', sticky: true });
+      toast({ title: '隐私保护报告已导出', body: '报告已保存在本机。分享前请检查是否仍有敏感信息。', type: 'ok', sticky: true });
     } catch (e) {
       toast({ title: '导出失败', body: e.message, type: 'error' });
     }
@@ -1614,7 +1641,7 @@ function bindSettings() {
 
   // 一键卸载 ApkStart 本体（取消 .apk 关联 + 启动卸载程序；便携版手动删除）
   $('btnUninstall').addEventListener('click', async () => {
-    const ok = window.confirm('确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。');
+    const ok = window.confirm(window.ASI_I18N?.t("确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。") || "确定卸载 ApkStart？\n\n将取消 .apk 文件关联并移除程序。此操作不可撤销。");
     if (!ok) return;
     const btn = $('btnUninstall');
     btn.disabled = true;
@@ -2007,7 +2034,7 @@ async function maybeShowWelcome() {
   $('welcomeHi').textContent = `${greetingOf(h)}，欢迎回来`;
   const ver = (startupInfo && startupInfo.version) || (state.status && state.status.version) || '';
   const ready = state.status && state.status.ready;
-  $('welcomeSub').textContent = `ApkStart${ver ? ` v${ver}` : ''} · ${ready ? '运行时就绪，点开即用' : '运行时会按需自动准备'}`;
+  $('welcomeSub').textContent = `ApkStart International${ver ? ` v${ver}` : ''} · ${ready ? '运行时就绪，点开即用' : '运行时会按需自动准备'}`;
 
   const apps = (state.apps || []).length;
   const dev = $('statusDevice') ? $('statusDevice').textContent.trim() : '';
@@ -2102,7 +2129,7 @@ function renderEnvCheck(r) {
       ${warns ? `<span class="ec-count warn">${warns} 个提示</span>` : ''}
       <span class="ec-spacer"></span>
       <button class="btn ghost sm" id="btnEnvRecheck">重新检查</button>
-      <button class="btn primary sm" id="btnEnvFixAll">一键修复全部</button>
+      <button class="btn ghost sm" id="btnEnvReviewAll">逐项检查（安全优先）</button>
     </div>
     <div class="env-check-list">
       ${issues.map((i) => `
@@ -2117,8 +2144,14 @@ function renderEnvCheck(r) {
     </div>`;
   const re = $('btnEnvRecheck');
   if (re) re.addEventListener('click', selfCheck);
-  const fixAll = $('btnEnvFixAll');
-  if (fixAll) fixAll.addEventListener('click', () => fixAllIssues(issues));
+  // Old bulk repair silently chained elevation, downloads and file cleanup.
+  // It is replaced by a non-destructive review with explicit per-action consent.
+  const review = $('btnEnvReviewAll');
+  if (review) review.addEventListener('click', () => {
+    const section = $('autoRepairSection');
+    if (section) section.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    $('btnAutoRepairScan')?.click();
+  });
   box.querySelectorAll('.ec-fix').forEach((b) => {
     b.addEventListener('click', () => {
       const issue = issues.find((x) => x.code === b.dataset.code);
@@ -2196,16 +2229,6 @@ async function fixIssue(issue) {
   // 修复后重新自检，刷新横幅与状态
   setTimeout(selfCheck, 600);
   setTimeout(refreshStatus, 600);
-}
-
-async function fixAllIssues(issues) {
-  const fixable = issues.filter((i) => i.fix);
-  for (const i of fixable) {
-    // eslint-disable-next-line no-await-in-loop
-    await fixIssue(i);
-    // eslint-disable-next-line no-await-in-loop
-    await new Promise((res) => setTimeout(res, 500));
-  }
 }
 
 init().catch((e) => {
