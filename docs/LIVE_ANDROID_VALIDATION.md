@@ -83,3 +83,11 @@ $env:ASI_E2E_CANARY_SHA256 = (Get-FileHash .\expected-canary.bin -Algorithm SHA2
 node scripts/asi/live-runtime-smoke.cjs --verify-existing > cold-boot.json
 if ($LASTEXITCODE -ne 0) { throw 'Cold-boot validation failed' }
 ```
+
+## Hosted Android 14 integration run
+
+The separate **Android 14 guest validation** workflow boots the same Google Play API 34 x86_64 image family on a standard Ubuntu runner with KVM. It fetches Appium API Demos 6.0.18 and Fossify Calculator 1.4.0 from their upstream releases, checks pinned SHA-256 values and uses Google's apksigner before installation. Fixtures and private guest data stay off the published artifacts.
+
+The run uses a fresh local Profile registry, the production installer, package-manager sessions and the ADB app launcher. It checks a resumed Activity, stops the process, and checks the resumed Activity again after relaunch. After an encrypted offline backup, it verifies an empty second Profile, cold-boots the first, writes a different private canary, restores, and checks that the earlier content and both apps return. The result JSON records each completed phase and distinguishes an attempted run from a pass.
+
+The hosted run exercises Android guest behavior. The Windows UI, WHPX, native shortcuts, Quick Boot and physical interruptions require separate evidence.
