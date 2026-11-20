@@ -29,6 +29,7 @@ async function run() {
   const {packagePresent,verifyCanary} = require('./guest-evidence.cjs');
   const store = require('../../src/core/store');
   const {Installer} = require('../../src/core/installer');
+  const {EmulatorEngine} = require('../../src/core/emulator');
   assert.equal(store.DATA_DIR,path.join(process.env.APPDATA,'apkstart-international'));
   const registry = store.profiles;
   store.saveSettings({createShortcutOnInstall:false,freeform:false});
@@ -127,6 +128,7 @@ async function run() {
     return activity;
   }
   const runtime = {
+    emulator:new EmulatorEngine(root),
     async ensure(){await verifyOwner(client,registry,registry.currentId());return {ok:true,engine:'emulator',client};},
     touch(){this.lastUsedAt=Date.now();},
   };
