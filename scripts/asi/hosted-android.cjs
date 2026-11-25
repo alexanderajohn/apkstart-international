@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const {execFileSync,spawn} = require('node:child_process');
+const {execFileSync,spawn,spawnSync} = require('node:child_process');
 const {setTimeout:delay} = require('node:timers/promises');
 const image = 'system-images;android-34;google_apis_playstore;x86_64';
 const fixtures = [
@@ -12,8 +12,9 @@ const fixtures = [
 ];
 
 async function run() {
-  assert(process.platform==='linux' && process.env.GITHUB_ACTIONS==='true' &&
-    process.env.TEST_RUNNER_ENVIRONMENT==='github-hosted','Requires a disposable hosted Linux runner');
+  const windows = process.platform==='win32';
+  assert((windows || process.platform==='linux') && process.env.GITHUB_ACTIONS==='true' &&
+    process.env.TEST_RUNNER_ENVIRONMENT==='github-hosted','Requires a disposable GitHub-hosted test runner');
   const temp = fs.realpathSync(process.env.RUNNER_TEMP);
   const root = fs.mkdtempSync(path.join(temp,'asi-live-'));
   const evidence = path.join(temp,'guest-evidence');
@@ -35,11 +36,18 @@ async function run() {
   store.saveSettings({createShortcutOnInstall:false,freeform:false});
   const primary = registry.create('Guest validation A').id;
   const secondary = registry.create('Guest validation B').id;
-  const adb = path.join(process.env.ANDROID_HOME,'platform-tools','adb');
-  const emulator = path.join(process.env.ANDROID_HOME,'emulator','emulator');
+  const adb = path.join(process.env.ANDROID_HOME,'platform-tools',windows?'adb.exe':'adb');
+  const emulator = path.join(process.env.ANDROID_HOME,'emulator',windows?'emulator.exe':'emulator');
   const serial = 'emulator-5554';
   const client = new AdbClient({adbPath:adb,serial});
-  const report = {platform:'GitHub-hosted Linux x64',revision:process.env.GITHUB_SHA,image,
+  const probe=spawnSync(emulator,['-accel-check'],{encoding:'utf8',timeout:30000});
+  const probeText=[probe.stdout,probe.stderr,probe.error?.message].filter(Boolean).join(' ').trim();
+  const hardware=/^0\s*$/m.test(probeText) && /installed and usable|is working/i.test(probeText);
+  const acceleration=windows && !hardware ? 'off' : 'on';
+  console.log('Android acceleration probe', JSON.stringify({acceleration,probeText}));
+  const report = {platform:windows?'GitHub-hosted Windows x64':'GitHub-hosted Linux x64',
+    osRelease:require('node:os').release(),acceleration,accelerationProbe:probeText,
+    revision:process.env.GITHUB_SHA,image,
     emulatorVersion:execFileSync(emulator,['-version'],{encoding:'utf8'}).split('\n').find(l=>l.includes('Android emulator version')),
     phases:[],complete:false};
   let guest;
@@ -70,7 +78,10 @@ async function run() {
   }
   function createAvd(id) {
     select(id);
-    execFileSync('avdmanager',['create','avd','-n',registry.avdName(),'-k',image,'-d','pixel_2'],
+    const args=['create','avd','-n',registry.avdName(),'-k',image,'-d','pixel_2'];
+    // The Windows SDK ships a batch launcher. All arguments here are constants
+    // or the generated Profile AVD identifier.
+    execFileSync(windows?'cmd.exe':'avdmanager',windows?['/d','/c','avdmanager.bat',...args]:args,
       {input:'no\n',stdio:['pipe','inherit','inherit']});
     const config=path.join(registry.paths().avdHome,registry.avdName()+'.avd','config.ini');
     const ini=fs.readFileSync(config,'utf8').replace(/^disk\.dataPartition\.size\s*=.*$/gm,'');
@@ -81,10 +92,10 @@ async function run() {
     const avd=registry.avdName();
     const log=path.join(root,avd+'-'+Date.now()+'.log');
     const fd=fs.openSync(log,'wx');
-    try {guest=spawn(emulator,['-avd',avd,'-port','5554','-accel','on','-no-window','-gpu','swiftshader',
+    try {guest=spawn(emulator,['-avd',avd,'-port','5554','-accel',acceleration,'-no-window','-gpu','swiftshader',
       '-memory','2048','-cores','2','-noaudio','-no-boot-anim',...snapshotArgs],{stdio:['ignore',fd,fd]});}
     finally {fs.closeSync(fd);}
-    const end=Date.now()+7*60000;
+    const end=Date.now()+(acceleration==='off'?18:7)*60000;
     let last;
     while(Date.now()<end && active()){
       last=await inspectRuntime({client,profileId:id,serial,owned:true,running:true});
@@ -172,6 +183,7 @@ async function run() {
   }
 
   try {
+    save();
     createAvd(primary);
     createAvd(secondary);
     await client.exec(['start-server'],{withSerial:false});
