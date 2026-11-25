@@ -37,8 +37,14 @@ function Find-Approval {
     $owned = @(Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exe)) -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -eq $exe } | ForEach-Object { $_.Id })
     if (!$owned.Count) {return}
+    $title = New-Object System.Windows.Automation.PropertyCondition($UI::NameProperty,'Confirm Android APK installation')
     foreach ($window in $UI::RootElement.FindAll($scope::Children,$any)) {
-        if ($owned -contains $window.Current.ProcessId -and $window.Current.Name -eq 'Confirm Android APK installation') {return $window}
+        if ($owned -notcontains $window.Current.ProcessId) {continue}
+        if ($window.Current.Name -eq 'Confirm Android APK installation') {return $window}
+        $modal = $window.FindFirst($scope::Descendants,$title)
+        if ($modal -and $modal.Current.ControlType -eq [System.Windows.Automation.ControlType]::Window) {return $modal}
+        $controls = $window.FindAll($scope::Descendants,$any)
+        if ($controls | Where-Object { $_.Current.Name -like '*SHA-256:*' -and $_.Current.Name -like '*Profile: default*' }) {return $window}
     }
 }
 function Open-AndCancel([string]$Name) {
@@ -55,7 +61,17 @@ function Open-AndCancel([string]$Name) {
         Start-Sleep -Milliseconds 400
         $dialog = Find-Approval
     } until ($null -ne $dialog -or [datetime]::UtcNow -ge $deadline)
-    if (!$dialog) {throw "Windows did not open the native APK approval for $Name"}
+    if (!$dialog) {
+        Get-Item -LiteralPath 'HKCU:\Software\Classes\ApkStartInternational.apk\shell\open\command' | ForEach-Object {Write-Host "Registered command $($_.GetValue(''))"}
+        foreach ($window in $UI::RootElement.FindAll($scope::Children,$any)) {
+            $owner = Get-Process -Id $window.Current.ProcessId -ErrorAction SilentlyContinue
+            Write-Host "Desktop window $($owner.Name) | $($window.Current.ClassName) | $($window.Current.Name)"
+            if ($owner.Path -eq $exe -or $owner.Name -match 'OpenWith|ShellExperience') {
+                $window.FindAll($scope::Descendants,$any) | Select-Object -First 40 | ForEach-Object {Write-Host "Control $($_.Current.ControlType.ProgrammaticName) $($_.Current.Name)"}
+            }
+        }
+        throw "Windows did not open the native APK approval for $Name"
+    }
     $controls = $dialog.FindAll($scope::Descendants,$any)
     $labels = ($controls | ForEach-Object { $_.Current.Name }) -join "`n"
     foreach ($needle in @($Name,$sha,'Profile: default','Package: com.android.inputmethod.pinyin')) {

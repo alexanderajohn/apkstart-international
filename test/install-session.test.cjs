@@ -78,3 +78,33 @@ test('host approval stages the imported binary Android manifest and the exact IM
   });
   assert.equal(require('node:fs').existsSync(copy),false);
 });
+
+test('Windows adb receives text-safe input and Android recovers the approved bytes', async () => {
+  const {createHash} = require('node:crypto');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'asi-adb-bytes-'));
+  try {
+    for (const length of [65537, 131073, 131074]) {
+      const data = Buffer.alloc(length);
+      for (let i = 0; i < length; i++) data[i] = i % 256;
+      data.set([0x1a, 13, 10, 0], 489);
+      const file = path.join(dir, 'payload.apk');
+      await fs.writeFile(file, data);
+      const sha256 = createHash('sha256').update(data).digest('hex');
+      const child = `
+        const chunks = [];
+        process.stdin.on('data', c => chunks.push(c)).on('end', () => {
+          const s = Buffer.concat(chunks).toString('latin1');
+          if (!/^[a-zA-Z0-9+/]+=*$/.test(s)) process.exit(1);
+          const actual = require('node:crypto').createHash('sha256').update(Buffer.from(s, 'base64')).digest('hex');
+          if (actual !== process.argv[1]) process.exit(2);
+          console.log('Success: streamed');
+        });
+      `;
+      const client = {adbPath:process.execPath, _adbEnv:()=>process.env, _args:args=>{
+        assert.deepEqual(args,['shell','-T','base64','-d','|','pm','install-write','-S',String(length),'37','part0.apk','-']);
+        return ['-e',child,sha256];
+      }};
+      await writePart(client,'37',0,{path:file,bytes:length,sha256},'win32');
+    }
+  } finally { await fs.rm(dir,{recursive:true,force:true}); }
+});

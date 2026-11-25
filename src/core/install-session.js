@@ -8,16 +8,31 @@ const { validPackageName } = require('./pkgname');
 
 // Hash the bytes written to the child's stdin. An uncommitted Android session
 // can receive bytes before the digest is known, but cannot publish the package.
-async function writePart(client, session, index, part) {
+async function writePart(client, session, index, part, platform = process.platform) {
+  if (!/^\d{1,10}$/.test(session) || !Number.isSafeInteger(index) || index < 0 ||
+      !Number.isSafeInteger(part.bytes) || part.bytes < 1) throw Error('Invalid install-write arguments');
+  // Windows adb shell reads redirected stdin in CRT text mode. Byte 0x1a
+  // terminates the input and CRLF can change bytes. Send ASCII to that client
+  // and decode inside Android before Package Manager reads the original APK.
+  const encode = platform === 'win32';
   const hash = createHash('sha256');
   let count = 0;
-  const meter = new Transform({ transform(chunk, _enc, cb) {
-    count += chunk.length;
-    hash.update(chunk);
-    cb(count > part.bytes ? Error('APK grew during transfer') : null, chunk);
-  } });
-  const args = ['shell', '-T', 'pm', 'install-write', '-S', String(part.bytes),
-    session, 'part' + index + '.apk', '-'];
+  let tail = Buffer.alloc(0);
+  const meter = new Transform({
+    transform(chunk, _enc, cb) {
+      count += chunk.length;
+      if (count > part.bytes) return cb(Error('APK grew during transfer'));
+      hash.update(chunk);
+      if (!encode) return cb(null, chunk);
+      const data = tail.length ? Buffer.concat([tail, chunk]) : chunk;
+      const end = data.length - (data.length % 3);
+      tail = data.subarray(end);
+      cb(null, data.toString('base64', 0, end));
+    },
+    flush(cb) { cb(null, tail.length ? tail.toString('base64') : undefined); }
+  });
+  const args = ['shell', '-T', ...(encode ? ['base64', '-d', '|'] : []),
+    'pm', 'install-write', '-S', String(part.bytes), session, 'part' + index + '.apk', '-'];
   let child;
   const reply = new Promise((resolve, reject) => {
     child = execFile(client.adbPath, client._args(args), {

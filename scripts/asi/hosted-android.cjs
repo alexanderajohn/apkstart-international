@@ -6,9 +6,12 @@ const crypto = require('node:crypto');
 const {execFileSync,spawn,spawnSync} = require('node:child_process');
 const {setTimeout:delay} = require('node:timers/promises');
 const image = 'system-images;android-34;google_apis_playstore;x86_64';
+const splitPkg = 'io.github.muntashirakon.AppManager';
+const splitFiles = ['base.apk','split_config.en.apk','split_config.x86_64.apk','split_config.xhdpi.apk','split_feat_docs.apk'];
 const fixtures = [
   {file:'api.apk', pkg:'io.appium.android.apis'},
   {file:'calculator.apk', pkg:'org.fossify.math'},
+  {file:'device.apks', pkg:splitPkg},
 ];
 
 async function run() {
@@ -153,9 +156,31 @@ async function run() {
   async function writeCanary(bytes) {
     await verifyOwner(client,registry,primary);
     await client.exec(['shell','run-as',debugPkg,'mkdir','-p','files']);
-    execFileSync(adb,['-s',serial,'shell','-T','run-as',debugPkg,'tee','files/asi-canary'],
-      {input:bytes,stdio:['pipe','ignore','pipe']});
+    execFileSync(adb,['-s',serial,'shell','-T','base64','-d','|','run-as',debugPkg,'tee','files/asi-canary'],
+      {input:bytes.toString('base64'),stdio:['pipe','ignore','pipe']});
     return verifyCanary(client,debugPkg,crypto.createHash('sha256').update(bytes).digest('hex'));
+  }
+  async function exerciseInstallation(fixture,profileId) {
+    assert(!await packagePresent(client,fixture.pkg));
+    const source=path.join(temp,'guest-fixtures',fixture.file);
+    const approved=await prepareInstall(source,profileId);
+    assert.equal(approved.package,fixture.pkg);
+    await withApprovedCopy(approved,profileId,staged=>installer.install(staged,false));
+    assert(await packagePresent(client,fixture.pkg));
+    let installedParts;
+    if (fixture.pkg===splitPkg) {
+      const {stdout}=await client.exec(['shell','pm','path',fixture.pkg]);
+      installedParts=stdout.trim().split(/\r?\n/).map(line=>{
+        assert(line.startsWith('package:/'),'Unexpected package path');
+        return path.posix.basename(line);
+      }).sort();
+      assert.deepEqual(installedParts,splitFiles);
+    }
+    const firstActivity=await foreground(fixture.pkg);
+    await client.exec(['shell','am','force-stop','--user','0',fixture.pkg]);
+    assert(!(await client.shell('ps -A -o NAME')).trim().split(/\s+/).includes(fixture.pkg),'App process did not stop');
+    const secondActivity=await foreground(fixture.pkg);
+    return {format:approved.format,installedParts,pkg:fixture.pkg,version:approved.version,sha256:approved.sha256,firstActivity,secondActivity};
   }
   async function checkDefaultPermissions() {
     await verifyOwner(client,registry,primary);
@@ -188,19 +213,9 @@ async function run() {
     createAvd(secondary);
     await client.exec(['start-server'],{withSerial:false});
     const first=await phase('cold-boot-primary',()=>boot(primary));
-    for(const fixture of fixtures)await phase('install-close-relaunch-'+fixture.pkg,async()=>{
-      assert(!await packagePresent(client,fixture.pkg));
-      const source=path.join(temp,'guest-fixtures',fixture.file);
-      const approved=await prepareInstall(source,primary);
-      assert.equal(approved.package,fixture.pkg);
-      await withApprovedCopy(approved,primary,staged=>installer.install(staged,false));
-      assert(await packagePresent(client,fixture.pkg));
-      const firstActivity=await foreground(fixture.pkg);
-      await client.exec(['shell','am','force-stop','--user','0',fixture.pkg]);
-      assert(!(await client.shell('ps -A -o NAME')).trim().split(/\s+/).includes(fixture.pkg),'App process did not stop');
-      const secondActivity=await foreground(fixture.pkg);
-      return {pkg:fixture.pkg,version:approved.version,sha256:approved.sha256,firstActivity,secondActivity};
-    });
+    for(const fixture of fixtures) {
+      await phase('install-close-relaunch-'+fixture.pkg,()=>exerciseInstallation(fixture,primary));
+    }
     await phase('verify-default-permissions',checkDefaultPermissions);
     await phase('write-private-canary',()=>writeCanary(canary));
     await phase('shutdown-primary',stop);
@@ -219,6 +234,7 @@ async function run() {
       }
       return {absent:fixtures.map(x=>x.pkg)};
     });
+    await phase('install-close-relaunch-xapk',()=>exerciseInstallation({file:'device.xapk',pkg:splitPkg},secondary));
     await phase('shutdown-secondary',stop);
     const beforeRestore=await phase('cold-boot-original',async()=>{
       const b=await boot(primary);
