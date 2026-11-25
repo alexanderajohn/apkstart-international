@@ -30,6 +30,14 @@ function Unregister-App {
     if ($LASTEXITCODE -ne 0) {throw 'Unregister failed'}
 }
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class ShellWindowState {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint process);
+}
+'@
 $UI = [System.Windows.Automation.AutomationElement]
 $scope = [System.Windows.Automation.TreeScope]
 $any = [System.Windows.Automation.Condition]::TrueCondition
@@ -77,9 +85,23 @@ function Open-AndCancel([string]$Name) {
     foreach ($needle in @($Name,$sha,'Profile: default','Package: com.android.inputmethod.pinyin')) {
         if (!$labels.Contains($needle)) {throw "Native approval did not identify $needle. Observed $labels"}
     }
-    $button = $controls | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $_.Current.Name -eq 'Cancel' } | Select-Object -First 1
-    if (!$button) {throw 'Expected a native Cancel button'}
-    $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    $button = $controls | Where-Object {
+        $_.Current.Name.Replace('&','').Trim() -eq 'Cancel' -and
+            $_.Current.ControlType.Id -eq [System.Windows.Automation.ControlType]::Button.Id
+    } | Select-Object -First 1
+    if ($button) {
+        $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    } else {
+        # Some Electron/Windows combinations expose the TaskDialog detail but
+        # put the buttons in a different UIA fragment. Escape is its cancelId.
+        $ownerId = $dialog.Current.ProcessId
+        $keyboard = New-Object -ComObject WScript.Shell
+        $null = $keyboard.AppActivate($ownerId)
+        [uint32]$focusedId = 0
+        $null = [ShellWindowState]::GetWindowThreadProcessId([ShellWindowState]::GetForegroundWindow(),[ref]$focusedId)
+        if ($focusedId -ne $ownerId) {throw 'APK approval does not own keyboard focus'}
+        $keyboard.SendKeys('{ESC}')
+    }
     $deadline = [datetime]::UtcNow.AddSeconds(10)
     while ((Find-Approval) -and [datetime]::UtcNow -lt $deadline) {Start-Sleep -Milliseconds 200}
     if (Find-Approval) {throw 'Approval remained open after cancellation'}
