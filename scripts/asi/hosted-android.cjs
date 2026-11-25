@@ -29,7 +29,7 @@ async function run() {
   const {packagePresent,verifyCanary} = require('./guest-evidence.cjs');
   const store = require('../../src/core/store');
   const {Installer} = require('../../src/core/installer');
-  const {EmulatorEngine} = require('../../src/core/emulator');
+  const {EmulatorEngine, SNAPSHOT_NAME} = require('../../src/core/emulator');
   assert.equal(store.DATA_DIR,path.join(process.env.APPDATA,'apkstart-international'));
   const registry = store.profiles;
   store.saveSettings({createShortcutOnInstall:false,freeform:false});
@@ -76,13 +76,13 @@ async function run() {
     const ini=fs.readFileSync(config,'utf8').replace(/^disk\.dataPartition\.size\s*=.*$/gm,'');
     fs.writeFileSync(config,ini+'\ndisk.dataPartition.size=3G\n');
   }
-  async function boot(id) {
+  async function boot(id,snapshotArgs=['-no-snapshot']) {
     select(id);
     const avd=registry.avdName();
     const log=path.join(root,avd+'-'+Date.now()+'.log');
     const fd=fs.openSync(log,'wx');
     try {guest=spawn(emulator,['-avd',avd,'-port','5554','-accel','on','-no-window','-gpu','swiftshader',
-      '-memory','2048','-cores','2','-noaudio','-no-boot-anim','-no-snapshot'],{stdio:['ignore',fd,fd]});}
+      '-memory','2048','-cores','2','-noaudio','-no-boot-anim',...snapshotArgs],{stdio:['ignore',fd,fd]});}
     finally {fs.closeSync(fd);}
     const end=Date.now()+7*60000;
     let last;
@@ -146,6 +146,20 @@ async function run() {
       {input:bytes,stdio:['pipe','ignore','pipe']});
     return verifyCanary(client,debugPkg,crypto.createHash('sha256').update(bytes).digest('hex'));
   }
+  async function checkDefaultPermissions() {
+    await verifyOwner(client,registry,primary);
+    const {stdout} = await client.exec(['shell','dumpsys','package',debugPkg]);
+    const rows = stdout.split(/\r?\n/).map(line=>line.trim());
+    const denied = ['CAMERA','RECORD_AUDIO','READ_CONTACTS'];
+    for (const name of denied) {
+      const prefix = 'android.permission.' + name + ': granted=';
+      const grants = rows.filter(line=>line.startsWith(prefix));
+      assert.equal(grants.length,1,'Missing or ambiguous permission state for '+name);
+      assert(/^false(?:,|$)/.test(grants[0].slice(prefix.length)),'Permission granted by default: '+name);
+    }
+    return denied;
+  }
+
   async function checkInstalled() {
     assert.equal(await verifyCanary(client,debugPkg,digest),true);
     const foregroundApps=[];
@@ -154,7 +168,7 @@ async function run() {
       assert(await packagePresent(client,pkg),'Missing installed package');
       foregroundApps.push(await foreground(pkg));
     }
-    return {canaryVerified:true,foregroundApps};
+    return {canaryVerified:true,foregroundApps,permissionsDenied:await checkDefaultPermissions()};
   }
 
   try {
@@ -175,6 +189,7 @@ async function run() {
       const secondActivity=await foreground(fixture.pkg);
       return {pkg:fixture.pkg,version:approved.version,sha256:approved.sha256,firstActivity,secondActivity};
     });
+    await phase('verify-default-permissions',checkDefaultPermissions);
     await phase('write-private-canary',()=>writeCanary(canary));
     await phase('shutdown-primary',stop);
     const exportsDir=path.join(root,'exports');
@@ -207,12 +222,24 @@ async function run() {
       assert(restored.preserved.some(p=>p.includes(registry.avdName()+'.avd.')));
       return {bytes:restored.bytes,files:restored.files,originalComponentsPreserved:restored.preserved.length};
     });
-    await phase('cold-boot-restored-data',async()=>{
-      const b=await boot(primary);
+    const restoredBoot=await phase('cold-boot-restored-data',async()=>{
+      const b=await boot(primary,['-snapshot',SNAPSHOT_NAME,'-no-snapshot-load','-no-snapshot-save']);
       assert.notEqual(b.boot,beforeRestore.boot,'Expected a cold boot of the restored AVD');
       return {...b,...await checkInstalled()};
     });
+    await phase('save-restored-snapshot',async()=>{
+      await verifyOwner(client,registry,primary);
+      assert(await runtime.emulator.saveSnapshotNow(adb,{timeout:120000}),'Named snapshot save failed');
+      assert(runtime.emulator.hasSnapshot(),'Saved snapshot is incomplete or marked stale');
+      return {snapshot:SNAPSHOT_NAME,boot:restoredBoot.boot};
+    });
     await phase('shutdown-restored',stop);
+    await phase('quick-boot-restored-profile',async()=>{
+      const resumed=await boot(primary,['-snapshot',SNAPSHOT_NAME,'-no-snapshot-save']);
+      assert.equal(resumed.boot,restoredBoot.boot,'Emulator cold-booted instead of resuming the saved Android kernel');
+      return {...resumed,snapshot:SNAPSHOT_NAME,...await checkInstalled()};
+    });
+    await phase('shutdown-after-quick-boot',stop);
     report.complete=true;
   } finally {
     if(active())guest.kill('SIGTERM');
