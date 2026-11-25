@@ -165,6 +165,12 @@ jobs:
           $signedShot = $shot -replace '\.png$', '-signed.png'
           if (!(Test-Path $signedShot)) { throw 'Signed checkpoint verification screenshot was not saved' }
           Copy-Item $signedShot (Join-Path $PWD 'asi-signed-smoke.png') -Force
+      - name: Open signed APK from the Windows shell and cancel native approval
+        shell: powershell
+        env:
+          ASI_RUNNER_KIND: ${{ runner.environment }}
+        run: |
+          ./scripts/asi/windows-shell-smoke.ps1 -Executable 'dist/ApkStart-International-win64-portable/ApkStart International.exe'
       - name: Build unsigned Windows Setup from the smoke-tested portable tree
         run: npm run pack:setup
         env:

@@ -105,7 +105,7 @@ function unregisterAssociation() {
   const prev = readPrev();
   const current = regDefault(`${CLASSES}\\${EXT}`);
   let restored = '';
-  if (prev) {
+  if (current === PROGID && prev) {
     reg(['add', `${CLASSES}\\${EXT}`, '/ve', '/d', prev, '/f']);
     restored = prev;
   } else if (current === PROGID) {
