@@ -39,7 +39,9 @@ async function writePart(client, session, index, part, platform = process.platfo
       env: client._adbEnv(), windowsHide: true, timeout: 1200000, maxBuffer: 65536
     }, (error, stdout, stderr) => {
       if (error || !/^Success(?:[: ]|$)/.test(stdout.trim())) {
-        reject(Error('Android install-write failed: ' + String(stderr || stdout || error).slice(0, 400)));
+        const detail = String(stderr || stdout || error?.message || 'No package-manager reply').trim();
+        const status = error ? ' (adb ' + (error.signal || 'exit ' + error.code) + ')' : '';
+        reject(Error('Android install-write failed' + status + ': ' + detail.slice(0,400)));
       } else resolve();
     });
   });

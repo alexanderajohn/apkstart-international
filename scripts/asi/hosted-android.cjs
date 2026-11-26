@@ -31,7 +31,7 @@ async function run() {
   const {prepareInstall} = require('../../src/core/apk-install-guard');
   const {withApprovedCopy} = require('../../src/core/install-staging');
   const {EncryptedBackupCenter} = require('../../src/core/encrypted-backup');
-  const {packagePresent,verifyCanary} = require('./guest-evidence.cjs');
+  const {packagePresent,verifyCanary,appManagerDenyControl} = require('./guest-evidence.cjs');
   const store = require('../../src/core/store');
   const {Installer} = require('../../src/core/installer');
   const {EmulatorEngine, SNAPSHOT_NAME} = require('../../src/core/emulator');
@@ -53,8 +53,9 @@ async function run() {
     osRelease:require('node:os').release(),acceleration,accelerationProbe:probeText,
     revision:process.env.GITHUB_SHA,image,splitVersion:legacySplitFixture?'2.5.22-PRE':'4.1.1',
     emulatorVersion:execFileSync(emulator,['-version'],{encoding:'utf8'}).split('\n').find(l=>l.includes('Android emulator version')),
-    phases:[],complete:false};
+    permissionInteractions:[],phases:[],complete:false};
   let guest;
+  let emulatorLog;
   const active = () => guest && guest.exitCode===null && guest.signalCode===null;
   const save = () => fs.writeFileSync(path.join(evidence,'result.json'),JSON.stringify(report,null,2)+'\n');
   async function phase(name,fn) {
@@ -64,7 +65,24 @@ async function run() {
     report.phases.push(step);
     save();
     try { step.observation=await fn();step.status='passed'; }
-    catch(error){step.status='failed';step.error=error.message;throw error;}
+    catch(error){
+      step.status='failed';
+      step.error=error.message;
+      step.guestAlive=Boolean(active());
+      if (emulatorLog) {
+        const tail=fs.readFileSync(emulatorLog,'utf8').split(/\r?\n/).slice(-15);
+        console.error('Emulator tail',JSON.stringify(tail));
+      }
+      // These queries are read-only and bound to the job's serial. Preserve
+      // the original failure if the transport has already disappeared.
+      const observations=await Promise.allSettled([
+        client.exec(['devices','-l'],{withSerial:false,timeout:5000}),
+        client.exec(['shell','getprop','sys.boot_completed'],{timeout:5000}),
+        client.exec(['shell','pm','list','packages','--user','0','io.appium.android.apis'],{timeout:5000})
+      ]);
+      console.error('Failure observations',JSON.stringify(observations.map(r=>r.status==='fulfilled'?r.value.stdout.trim():r.reason.message)));
+      throw error;
+    }
     finally {
       step.elapsedMs=Date.now()-start;
       save();
@@ -95,6 +113,7 @@ async function run() {
     select(id);
     const avd=registry.avdName();
     const log=path.join(root,avd+'-'+Date.now()+'.log');
+    emulatorLog=log;
     const fd=fs.openSync(log,'wx');
     try {guest=spawn(emulator,['-avd',avd,'-port','5554','-accel',acceleration,'-no-window','-gpu','swiftshader',
       '-memory','2048','-cores','2','-noaudio','-no-boot-anim',...snapshotArgs],{stdio:['ignore',fd,fd]});}
@@ -133,12 +152,36 @@ async function run() {
     const end=Date.now()+45000;
     let activity;
     let resumed=[];
+    let visibleSince;
+    const handled=new Set();
     do {
       await delay(500);
       const output=await client.shell('dumpsys activity activities');
       resumed=output.split('\n').filter(s=>/(?:topResumedActivity|mResumedActivity|ResumedActivity):?\s*[=:]/.test(s))
         .map(s=>s.match(/\bu0\s+([\w.$]+\/[\w.$]+)/)?.[1]).filter(Boolean);
-      activity=resumed.find(c=>c.startsWith(pkg+'/'));
+      const visible=resumed.find(c=>c.startsWith(pkg+'/'));
+      if (visible) {
+        visibleSince ??= Date.now();
+        if (Date.now()-visibleSince>=1500) activity=visible;
+      } else {
+        visibleSince=undefined;
+        const grant=resumed.find(c=>/^(?:com\.google\.android|com\.android)\.permissioncontroller\/.*\.GrantPermissionsActivity$/.test(c));
+        if (grant && pkg===splitPkg) {
+          const dump=await client.exec(['shell','uiautomator','dump','/dev/tty'],{timeout:10000});
+          const button=appManagerDenyControl(dump.stdout,grant.split('/')[0]);
+          if (button && !handled.has(button.prompt)) {
+            await verifyOwner(client,registry,registry.currentId());
+            await client.exec(['shell','input','tap',String(button.x),String(button.y)]);
+            handled.add(button.prompt);
+            const decision={profile:registry.currentId(),package:pkg,button:'deny',prompt:button.prompt};
+            report.permissionInteractions.push(decision);
+            console.log('Permission interaction',JSON.stringify(decision));
+          } else if (!button && !handled.has('diagnostic')) {
+            console.log('Unrecognized test permission dialog',dump.stdout.slice(-7000));
+            handled.add('diagnostic');
+          }
+        }
+      }
     } while(!activity && Date.now()<end);
     if (!activity) {
       const crashes=await client.shell('logcat -d -b crash -t 80').catch(()=> '');
