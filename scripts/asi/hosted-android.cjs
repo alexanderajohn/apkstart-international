@@ -131,6 +131,15 @@ async function run() {
           await delay(2000);
           continue;
         }
+        // First-boot receivers can still be running after CE storage becomes available.
+        // The API 34 barrier waits for broadcasts already queued when this command arrives.
+        try {
+          await client.exec(['shell','am','wait-for-broadcast-barrier'],{timeout:30000});
+        } catch (error) {
+          console.log('Waiting for initial broadcasts',error.message.slice(0,200));
+          previousReadyBoot=undefined;
+          continue;
+        }
         const owner=await identifyGuest(client,registry,id);
         assert.equal(owner.boot,bootId);
         recordOwner(registry,owner);
@@ -248,7 +257,10 @@ async function run() {
     const source=path.join(temp,'guest-fixtures',fixture.file);
     const approved=await prepareInstall(source,profileId);
     assert.equal(approved.package,fixture.pkg);
-    await withApprovedCopy(approved,profileId,staged=>installer.install(staged,false));
+    let transferReconnects=0;
+    await withApprovedCopy(approved,profileId,staged=>installer.install(staged,false,event=>{
+      if (event.stage==='install-reconnect') transferReconnects++;
+    }));
     assert(await packagePresent(client,fixture.pkg));
     let installedParts;
     if (fixture.pkg===splitPkg) {
@@ -264,7 +276,7 @@ async function run() {
     await client.exec(['shell','am','force-stop','--user','0',fixture.pkg]);
     assert(!(await client.shell('ps -A -o NAME')).trim().split(/\s+/).includes(fixture.pkg),'App process did not stop');
     const secondActivity=await foreground(fixture.pkg);
-    return {format:approved.format,installedParts,pkg:fixture.pkg,version:approved.version,sha256:approved.sha256,firstActivity,secondActivity};
+    return {format:approved.format,installedParts,transferReconnects,pkg:fixture.pkg,version:approved.version,sha256:approved.sha256,firstActivity,secondActivity};
   }
   // A split failure is reported at the end so the other Profile, cold boots
   // and recovery can still be independently exercised on this runner.

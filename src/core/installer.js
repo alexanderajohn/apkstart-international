@@ -8,7 +8,7 @@ const { parseBundle } = require('./apk-bundle');
 const path = require('path');
 const { sha256File } = require('./smartcheck');
 const { shortcutIdentity } = require('./shortcut-profile');
-const { verifyOwner } = require('./runtime-owner');
+const { readOwner, verifyOwner, waitForOwnedReconnect } = require('./runtime-owner');
 const { installSession } = require('./install-session');
 const store = require('./store');
 const { autoGrantEnabled } = require('./permission-policy');
@@ -128,8 +128,9 @@ class Installer {
     const filePath = staged.path;
     const client = rt.client;
     const serial = client.serial;
+    const owner = rt.engine === 'emulator' ? readOwner(store.profiles, expectedProfileId) : null;
     const checkGuest = () => rt.engine === 'emulator'
-      ? verifyOwner(client, store.profiles, expectedProfileId)
+      ? verifyOwner(client, store.profiles, expectedProfileId, owner)
       : assertProfileGuest({ expectedProfileId, getProfileId: () => store.profiles.currentId(), client, serial, engine: rt.engine });
     await checkGuest();
     const existing = store.getApp(meta.package);
@@ -146,7 +147,12 @@ class Installer {
     onProgress({ stage: 'install', message: replace ? 'Updating Android app…' : 'Installing Android app…' });
     if (rt.engine === 'emulator') this.runtime.emulator.invalidateSnapshot();
     await installSession(client, parts, { pkg: meta.package, replace: replace && staged.package === meta.package,
-      grant: autoGrantEnabled(store.getSettings()), checkGuest });
+      grant: autoGrantEnabled(store.getSettings()), checkGuest,
+      recoverWrite: owner && (async () => {
+        if (!await waitForOwnedReconnect(client,store.profiles,expectedProfileId,owner)) return false;
+        onProgress({stage:'install-reconnect',message:'Android reconnected to the same Profile during APK transfer.'});
+        return true;
+      }) });
     await checkGuest();
     if (!await client.isInstalled(meta.package))
       throw Error('Android committed the install but package files could not be confirmed. Check this Profile before retrying.');

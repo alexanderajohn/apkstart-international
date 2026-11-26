@@ -39,4 +39,21 @@ async function verifyOwner(client, profiles, id, owner = readOwner(profiles,id))
   const actual = await identifyGuest(client, profiles, id);
   if (owner.boot !== actual.boot) throw Error('Android boot identity changed. Close the unverified emulator.');
 }
-module.exports = { identifyGuest, readOwner, recordOwner, verifyOwner };
+// Wait only for a transport that was observed disconnected. Identity and
+// authorization checks use the owner captured before any APK data was sent.
+async function waitForOwnedReconnect(client, profiles, id, owner) {
+  const deadline = Date.now() + 90000;
+  let state = await client.deviceState();
+  if (state !== 'offline' && state !== 'no-device') return false;
+  while (Date.now() < deadline && profiles.currentId() === id && client.serial === owner.serial) {
+    await new Promise(resolve => setTimeout(resolve,1000));
+    state = await client.deviceState();
+    if (state === 'device') {
+      await verifyOwner(client,profiles,id,owner);
+      return true;
+    }
+    if (state !== 'offline' && state !== 'no-device') return false;
+  }
+  return false;
+}
+module.exports = { identifyGuest, readOwner, recordOwner, verifyOwner, waitForOwnedReconnect };

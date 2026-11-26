@@ -53,3 +53,16 @@ test('concurrent snapshot saves coalesce and an invalidation during I/O survives
     assert.equal(fs.existsSync(marker),false);
   } finally {fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test('write recovery refuses a different boot or unauthorized transport on the same serial', async () => {
+  const {waitForOwnedReconnect} = require('../src/core/runtime-owner');
+  const id='p_0123456789abcdef', serial='emulator-5554', boot=randomUUID();
+  const owner={profileId:id,serial,boot};
+  const profiles={currentId:()=>id};
+  const client={serial,deviceState:async()=>'unauthorized'};
+  assert.equal(await waitForOwnedReconnect(client,profiles,id,owner),false);
+  let probes=0;
+  client.deviceState=async()=>probes++?'device':'offline';
+  client.exec=async args=>({stdout:args[0]==='emu'?'apkstart_'+id+'\nOK':randomUUID()});
+  await assert.rejects(waitForOwnedReconnect(client,profiles,id,owner), /boot identity/);
+});

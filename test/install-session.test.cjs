@@ -122,3 +122,31 @@ test('Android integrity rejection is reported without replaying the commit', asy
   }), /integrity check timed out.*INSTALL_FAILED_VERIFICATION_FAILURE/);
   assert.deepEqual(commands.map(args=>args[2]),['install-create','install-commit','install-abandon']);
 });
+
+test('only a confirmed abandoned, pre-commit transfer on the same guest can be replayed once', async () => {
+  for (const mode of ['recovered','still-offline','abandon-refused','second-write-fails','commit-lost']) {
+    let created=0, writes=0, commits=0, waits=0;
+    const parts=[{bytes:1,sha256:'a'.repeat(64)}];
+    const client={exec:async args=>{
+      if (args.includes('install-create')) return {stdout:'Success: created install session ['+(++created)+']'};
+      if (args.includes('install-abandon')) return {stdout:mode==='abandon-refused'?'Failure':'Success'};
+      commits++;
+      if (mode==='commit-lost') throw Object.assign(Error('commit result lost'),{code:'EPIPE'});
+      return {stdout:'Success'};
+    }};
+    const run=installSession(client,parts,{
+      pkg:'com.example.app',grant:false,replace:false,checkGuest:async()=>{},
+      recoverWrite:async()=>{waits++;return mode!=='still-offline';},
+      write:async()=>{
+        writes++;
+        if (mode!=='commit-lost' && (writes===1 || mode==='second-write-fails'))
+          throw Object.assign(Error('disconnected during write'),{code:'ADB_WRITE_INTERRUPTED'});
+      }
+    });
+    if (mode==='recovered') await run;
+    else await assert.rejects(run,/disconnected|result lost/);
+    assert.equal(created,['recovered','second-write-fails'].includes(mode)?2:1);
+    assert.equal(commits,['recovered','commit-lost'].includes(mode)?1:0);
+    assert.equal(waits,mode==='commit-lost'?0:1);
+  }
+});

@@ -41,7 +41,9 @@ async function writePart(client, session, index, part, platform = process.platfo
       if (error || !/^Success(?:[: ]|$)/.test(stdout.trim())) {
         const detail = String(stderr || stdout || error?.message || 'No package-manager reply').trim();
         const status = error ? ' (adb ' + (error.signal || 'exit ' + error.code) + ')' : '';
-        reject(Error('Android install-write failed' + status + ': ' + detail.slice(0,400)));
+        const failure = Error('Android install-write failed' + status + ': ' + detail.slice(0,400));
+        if (error?.code === 255 || /device offline|device .*not found/i.test(stderr || '')) failure.code = 'ADB_WRITE_INTERRUPTED';
+        reject(failure);
       } else resolve();
     });
   });
@@ -56,7 +58,7 @@ async function writePart(client, session, index, part, platform = process.platfo
   }
 }
 
-async function installSession(client, parts, { pkg, replace, grant, checkGuest, write = writePart }) {
+async function installSession(client, parts, { pkg, replace, grant, checkGuest, recoverWrite, write = writePart }) {
   if (!validPackageName(pkg) || !parts.length || parts.some(p =>
     !Number.isSafeInteger(p.bytes) || p.bytes < 1 || !/^[a-f0-9]{64}$/.test(p.sha256)))
     throw Error('Invalid approved Android installation');
@@ -79,10 +81,18 @@ async function installSession(client, parts, { pkg, replace, grant, checkGuest, 
     const result = await command(['install-commit', id], 1200000);
     if (result !== 'Success') throw Error(result.slice(0, 400));
   } catch (error) {
+    const interrupted = ['ADB_WRITE_INTERRUPTED','EPIPE','ECONNRESET'].includes(error.code);
+    const reconnected = !commitSent && interrupted && recoverWrite && await recoverWrite();
+    let abandoned = false;
     try {
       await checkGuest();
-      await command(['install-abandon', id], 15000);
+      abandoned = await command(['install-abandon', id], 15000) === 'Success';
     } catch { /* The emulator may have disconnected or already closed the session. */ }
+    if (reconnected && abandoned) {
+      // The old, uncommitted session is gone. Rehash the approved files in a fresh
+      // session once. Omitting recoverWrite prevents a second automatic recovery.
+      return installSession(client, parts, {pkg, replace, grant, checkGuest, write});
+    }
     const detail = String(error.raw || error.message);
     const tag = /INSTALL_(?:FAILED|PARSE_FAILED)_[A-Z_]+/.exec(detail)?.[0];
     const reason = {
