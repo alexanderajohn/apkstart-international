@@ -948,7 +948,7 @@ function fillSettings(s) {
   if ($('setResourceMode')) $('setResourceMode').value = eng.resourceMode || 'balanced';
   if ($('setRenderSize')) $('setRenderSize').value = eng.renderSize || 'auto';
   if ($('setDataGB')) $('setDataGB').value = String(Number(eng.dataPartitionGB || 0));
-  if ($('setFastDns')) $('setFastDns').checked = eng.fastDns !== false;
+  if ($('setFastDns')) $('setFastDns').checked = eng.fastDns === true;
   if ($('setLocale')) $('setLocale').value = eng.locale || 'zh-CN';
   if ($('setChineseIme')) $('setChineseIme').checked = eng.chineseIme !== false;
   if ($('setAutoGrantAppPermissions')) $('setAutoGrantAppPermissions').checked = eng.autoGrantAppPermissions === true;

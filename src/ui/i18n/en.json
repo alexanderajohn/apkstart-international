@@ -249,5 +249,7 @@
   "系统集成": "System integration",
   "检查中…": "Checking…",
   "一键卸载": "Uninstall ApkStart",
-  "软件更新": "Software updates"
+  "软件更新": "Software updates",
+  "使用中国大陆公共 DNS": "Use public DNS servers in mainland China",
+  "默认使用主机的 DNS。开启后，安卓模拟器使用阿里和腾讯的公共 DNS 服务器。": "The emulator uses the host DNS by default. Turn this on to use Alibaba and Tencent public DNS servers."
 }

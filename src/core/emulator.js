@@ -579,7 +579,7 @@ class EmulatorEngine {
     // DNS：安卓默认用 10.0.2.3（转发到主机 DNS）。主机走 VPN / 公司网 / 某些运营商
     // 时，一次解析能拖到几百毫秒，表现为「页面转圈半天才开始加载」。给一份国内公共
     // DNS 作为首选，失败时系统仍会回退。用户可在设置里关掉（内网域名场景）。
-    if (this.settings?.engine?.fastDns !== false) {
+    if (this.settings?.engine?.fastDns === true) {
       args.push('-dns-server', '223.5.5.5,119.29.29.29');
     }
     if (lcd) args.push('-skin', `${lcd.w}x${lcd.h}`);

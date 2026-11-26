@@ -95,3 +95,6 @@ The restored guest saves a named snapshot with the production snapshot writer. A
 All 19 phases passed on [revision cb8abc8c](https://github.com/alexanderajohn/apkstart-international/actions/runs/45657172284). [Android phase evidence](https://github.com/alexanderajohn/apkstart-international/actions/runs/45657172284/artifacts/15042942567).
 
 All 15 phases passed on [revision 5de4c969](https://github.com/alexanderajohn/apkstart-international/actions/runs/44705191527). The [result JSON](https://github.com/alexanderajohn/apkstart-international/actions/runs/44705191527/artifacts/14614308776) records the four boot identities and the restored private data check. The [candidate checkpoint](DEVELOPMENT_PROGRESS.md) also tracks Windows artifacts and open hardware tests.
+
+
+The [21-phase API 34 run](https://github.com/alexanderajohn/apkstart-international/actions/runs/45866659888/job/140071116587) on Linux validated standalone APKs, targeted signed APKS and XAPK, both system notification denial controls, profile isolation, encrypted AVD restore and named Quick Boot. The hosted harness checks the same boot identity and an unlocked Android user across multiple read-only observations. Results for Windows Server 2025 and physical Windows 10/11 are tracked independently in [DEVELOPMENT_PROGRESS.md](DEVELOPMENT_PROGRESS.md).

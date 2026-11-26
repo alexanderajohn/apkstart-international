@@ -89,3 +89,14 @@ test('Google Play userdata keeps its selected language without a privileged fram
   const args = engine.buildArgs({snapshot:false});
   assert.equal(args[args.indexOf('-change-locale') + 1], 'vi-VN');
 });
+
+test('regional public DNS requires an explicit setting', () => {
+  const {EmulatorEngine} = require('../src/core/emulator');
+  const engine = new EmulatorEngine(__dirname);
+  Object.defineProperty(engine,'settings',{value:{engine:{locale:'off'}},configurable:true});
+  for (const value of [undefined,false,true]) {
+    engine.settings.engine.fastDns=value;
+    const args=engine.buildArgs({snapshot:false});
+    assert.equal(args.includes('-dns-server'),value===true);
+  }
+});

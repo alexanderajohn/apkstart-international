@@ -108,3 +108,17 @@ test('Windows adb receives text-safe input and Android recovers the approved byt
     }
   } finally { await fs.rm(dir,{recursive:true,force:true}); }
 });
+
+test('Android integrity rejection is reported without replaying the commit', async () => {
+  const commands = [];
+  const client = {exec:async args => {
+    commands.push(args);
+    if (args.includes('install-create')) return {stdout:'Success: created install session [42]'};
+    if (args.includes('install-commit')) throw Error('Failure [INSTALL_FAILED_VERIFICATION_FAILURE: Integrity verification timed out for file:///data/app/vmdl42.tmp]');
+    return {stdout:'Success'};
+  }};
+  await assert.rejects(installSession(client,[{bytes:100,sha256:'a'.repeat(64)}], {
+    pkg:'com.example.demo',replace:false,grant:false,checkGuest:async()=>{},write:async()=>{}
+  }), /integrity check timed out.*INSTALL_FAILED_VERIFICATION_FAILURE/);
+  assert.deepEqual(commands.map(args=>args[2]),['install-create','install-commit','install-abandon']);
+});
