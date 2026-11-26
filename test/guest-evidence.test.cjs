@@ -22,6 +22,8 @@ test('hosted permission interaction selects only the named fixture and system de
   assert.deepEqual(appManagerDenyControl(msg+button,owner),{prompt:'Allow App Manager to send notifications?',control:'com.android.permissioncontroller:id/permission_deny_button',x:55,y:50});
   const second = button.replace('permission_deny_button','permission_deny_dont_ask_again_button');
   assert.equal(appManagerDenyControl(msg+second,owner).control, 'com.android.permissioncontroller:id/permission_deny_dont_ask_again_button');
+  const observed = button.replace('permission_deny_button','permission_deny_and_dont_ask_again_button');
+  assert.equal(appManagerDenyControl(msg+observed,owner).control,'com.android.permissioncontroller:id/permission_deny_and_dont_ask_again_button');
   assert.equal(appManagerDenyControl(msg+button+second,owner),null);
   for(const xml of [msg+button+button,msg.replace('App Manager','Another app')+button,msg+button.replace('deny_button','allow_button'),msg+button.replace('enabled="true"','enabled="false"')])
     assert.equal(appManagerDenyControl(xml,owner),null);

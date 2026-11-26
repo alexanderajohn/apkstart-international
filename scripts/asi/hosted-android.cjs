@@ -120,15 +120,25 @@ async function run() {
     finally {fs.closeSync(fd);}
     const end=Date.now()+(acceleration==='off'?18:7)*60000;
     let last;
+    let previousReadyBoot;
     while(Date.now()<end && active()){
       last=await inspectRuntime({client,profileId:id,serial,owned:true,running:true});
       if(last.status==='ready'){
+        const userState=await client.shell('am get-started-user-state 0').catch(()=> '');
+        const bootId=await client.shell('cat /proc/sys/kernel/random/boot_id').catch(()=> '');
+        if (userState!=='RUNNING_UNLOCKED' || !bootId || previousReadyBoot!==bootId) {
+          previousReadyBoot=userState==='RUNNING_UNLOCKED'?bootId:undefined;
+          await delay(2000);
+          continue;
+        }
         const owner=await identifyGuest(client,registry,id);
+        assert.equal(owner.boot,bootId);
         recordOwner(registry,owner);
         await client.exec(['shell','input','keyevent','KEYCODE_WAKEUP']);
         await client.exec(['shell','wm','dismiss-keyguard']);
-        return {profile:id,avd,boot:owner.boot,api:last.sdk,abi:last.abi};
+        return {profile:id,avd,boot:owner.boot,api:last.sdk,abi:last.abi,userState};
       }
+      previousReadyBoot=undefined;
       await delay(2000);
     }
     console.error(last,fs.readFileSync(log,'utf8').split('\n').slice(-35).join('\n'));
@@ -171,7 +181,12 @@ async function run() {
           const uiFile='/data/local/tmp/asi-ui-'+crypto.randomUUID()+'.xml';
           let xml;
           try {
-            await client.exec(['shell','uiautomator','dump',uiFile],{timeout:25000});
+            const dump=await client.exec(['shell','uiautomator','dump',uiFile],{timeout:25000});
+            // UI Automator can exit successfully while the Activity changes and produce no file.
+            if (!dump.stdout.includes(uiFile)) {
+              console.log('Android UI dump unavailable', (dump.stderr || dump.stdout).trim().slice(0,240));
+              continue;
+            }
             xml=(await client.exec(['shell','cat',uiFile],{timeout:5000})).stdout;
           } finally {
             await client.exec(['shell','rm','-f',uiFile],{timeout:5000}).catch(()=>{});
@@ -203,6 +218,10 @@ async function run() {
       throw Error('No resumed Activity belonging to '+pkg+'; foreground: '+resumed.join(', '));
     }
     assert.match((await client.shell('pidof '+pkg)).trim(),/^\d+(?:\s+\d+)*$/);
+    if (pkg===splitPkg && !legacySplitFixture) {
+      const permissions=await client.shell('dumpsys package '+pkg);
+      assert.match(permissions,/android\.permission\.POST_NOTIFICATIONS: granted=false\b/);
+    }
     return activity;
   }
   const runtime = {

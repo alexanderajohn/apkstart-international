@@ -181,14 +181,17 @@ console.log(id);
         } until ($links.Count -or [datetime]::UtcNow -gt $deadline)
         if ($links.Count -ne 1) {throw 'Packaged application did not install and create the expected shortcut'}
         $link = (New-Object -ComObject WScript.Shell).CreateShortcut($links[0].FullName)
-        if ($link.TargetPath -ne $exe -or $link.Arguments -ne ('--launch "'+$pkg+'" --profile '+$profileId)) {throw 'Shortcut target or Profile does not match'}
+        if ($link.TargetPath -ne $exe -or $link.Arguments -ne ('--launch='+$pkg+' --profile='+$profileId)) {throw 'Shortcut target or Profile does not match'}
         $owner = Get-Content -Raw (Join-Path $env:APPDATA "apkstart-international/profiles/$profileId/runtime-owner.json") | ConvertFrom-Json
         if ($owner.profileId -ne $profileId -or $owner.serial -notmatch '^emulator-\d+$') {throw 'Unknown emulator owner'}
         $env:ANDROID_ADB_SERVER_PORT = '5044'
         $adb = Join-Path $env:ANDROID_HOME 'platform-tools/adb.exe'
         $installed = & $adb -s $owner.serial shell pm path $pkg
         if ($LASTEXITCODE -ne 0 -or $installed -notmatch 'package:/.*base.apk') {throw 'Installed package file not found'}
-        Start-Process -FilePath $links[0].FullName
+        $openLink = New-Object Diagnostics.ProcessStartInfo
+        $openLink.FileName = $links[0].FullName
+        $openLink.UseShellExecute = $true
+        $null = [Diagnostics.Process]::Start($openLink)
         $deadline = [datetime]::UtcNow.AddMinutes(5)
         do {
             Start-Sleep -Seconds 2

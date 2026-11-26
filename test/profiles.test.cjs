@@ -153,3 +153,17 @@ test('shortcut identity survives restart and unqualified legacy links belong to 
   assert.equal(shortcutProfile(['--profile','bogus']),null);
   assert.equal(shortcutProfile(['--profile',p,'--profile','default']),null);
 });
+
+test('desktop shortcut switches keep their values after reordering and reject ambiguous Profiles',()=>{
+  const {shortcutProfile,shortcutLaunch,shortcutIdentity}=require('../src/core/shortcut-profile');
+  const id='p_0123456789abcdef', pkg='com.example.app';
+  const ordered=shortcutIdentity(pkg,id).args.split(' ');
+  for (const args of [ordered, ordered.slice().reverse(), ['--launch',pkg,'--profile',id]]) {
+    assert.equal(shortcutProfile(args),id);
+    assert.equal(shortcutLaunch(args),pkg);
+  }
+  assert.equal(shortcutProfile(['--profile='+id,'--profile','default']),null);
+  assert.equal(shortcutProfile(['--profile=']),null);
+  assert.equal(shortcutLaunch(['--launch='+pkg,'--launch=com.other.app']),null);
+  assert.equal(shortcutLaunch(['--launch','--profile',id,pkg]),null);
+});

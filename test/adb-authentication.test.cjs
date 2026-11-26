@@ -77,3 +77,15 @@ test('temporary offline boot probes keep the host daemon alive until Android is 
   assert.equal(result.error, 'end of probe test');
   assert.equal(resets, 0);
 });
+
+
+test('Google Play userdata keeps its selected language without a privileged framework restart', () => {
+  const {EmulatorEngine} = require('../src/core/emulator');
+  const engine = new EmulatorEngine(__dirname);
+  engine._guestLocale = () => 'vi-VN';
+  engine.imageChoice = () => ({tag:'google_apis_playstore'});
+  assert.ok(!engine.buildArgs({snapshot:false}).includes('-change-locale'));
+  engine.imageChoice = () => ({tag:'default'});
+  const args = engine.buildArgs({snapshot:false});
+  assert.equal(args[args.indexOf('-change-locale') + 1], 'vi-VN');
+});

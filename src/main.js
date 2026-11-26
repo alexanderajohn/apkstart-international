@@ -39,7 +39,7 @@ const { signedExport,verifySignedFile,exportRotationCheckpoint,verifyCheckpointF
 const { SafeKeyQuarantine } = require('./core/safe-key-quarantine');
 const performance = require('./core/performance');
 const { validPackageName } = require('./core/pkgname');
-const { shortcutProfile, shortcutIdentity } = require('./core/shortcut-profile');
+const { shortcutProfile, shortcutLaunch, shortcutIdentity } = require('./core/shortcut-profile');
 const { Installer } = require('./core/installer');
 const { Sharer } = require('./core/sharer');
 const { parseApk } = require('./core/apk');
@@ -293,14 +293,10 @@ let splashDone = () => {};
 
 function parseArgs(argv) {
   const args = argv.slice(IS_DEV ? 2 : 1).filter((a) => !a.startsWith('--allow-file-access'));
-  const out = { apk: null, launch: null, profile:shortcutProfile(args), silent:false };
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '--launch') {
-      // Electron 会往 argv 里塞自己的开关和 app 路径，只认形如 com.foo.bar 的包名
-      const v = args.slice(i + 1).find((x) => x && /^[a-zA-Z][\w]*(\.[\w]+)+$/.test(x));
-      if (v) { out.launch = v; out.silent = true; }
-    } else if (a === '--silent' || a === '--autostart') out.silent = true;
+  const launch = shortcutLaunch(args);
+  const out = { apk: null, launch, profile:shortcutProfile(args), silent:Boolean(launch) };
+  for (const a of args) {
+    if (a === '--silent' || a === '--autostart') out.silent = true;
     else if (/\.(apk|xapk|apks)$/i.test(a) && !a.startsWith('--')) out.apk = a;
   }
   return out;
@@ -3121,12 +3117,21 @@ function registerIpc() {
 
 // ---------------- 生命周期 ----------------
 
-const gotLock = app.requestSingleInstanceLock();
+const initialIntent = parseArgs(process.argv);
+const gotLock = app.requestSingleInstanceLock(initialIntent.launch ? {
+  shortcut: ['--launch=' + initialIntent.launch, '--profile=' + (initialIntent.profile || '')],
+} : {});
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', (_evt, argv) => {
+  app.on('second-instance', (_evt, argv, _workingDirectory, data) => {
     const args = parseArgs(argv);
+    if (Array.isArray(data?.shortcut) && data.shortcut.length === 2 &&
+        data.shortcut.every(value => typeof value === 'string' && value.length <= 512)) {
+      args.launch = shortcutLaunch(data.shortcut);
+      args.profile = shortcutProfile(data.shortcut);
+    }
+    if (args.launch) appLog('Received shortcut for ' + args.launch + ' in Profile ' + args.profile);
     if (args.launch && args.profile !== store.profiles.currentId()) {
       showWindow();
       send('toast',{type:'error',message:'Switch to the Android Profile named in this shortcut before launching it.'});

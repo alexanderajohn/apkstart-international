@@ -36,7 +36,8 @@ function appManagerDenyControl(xml, controller) {
   const prompt = dialog.find(n=>/\bApp Manager\b/i.test(n.text) && /(?:^|:)id\/permission_message$/.test(n['resource-id']));
   if (!prompt) return null;
   const denyIds = ['com.android.permissioncontroller:id/permission_deny_button',
-    'com.android.permissioncontroller:id/permission_deny_dont_ask_again_button'];
+    'com.android.permissioncontroller:id/permission_deny_dont_ask_again_button',
+    'com.android.permissioncontroller:id/permission_deny_and_dont_ask_again_button'];
   const deny = dialog.filter(n=>n.clickable==='true' && n.enabled==='true' && denyIds.includes(n['resource-id']));
   if (deny.length!==1) return null;
   const bounds = /^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$/.exec(deny[0].bounds);

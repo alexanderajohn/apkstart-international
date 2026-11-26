@@ -699,7 +699,7 @@ class Runtime {
     const fs = require('fs');
     const path = require('path');
     const want = String(locale || 'zh-CN');
-    if (want === 'off' || want === 'en-US') return;
+    if (want === 'off' || want === 'en-US' || this.emulator.imageChoice().tag === 'google_apis_playstore') return;
     // 已经生效（system_locales 是目标语言，或语言列表里第一项是它）
     const cur = await client.shell('settings get system system_locales', { timeout: 8000 }).catch(() => '');
     const s = String(cur).trim();

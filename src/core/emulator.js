@@ -571,14 +571,11 @@ class EmulatorEngine {
     // 显式声明不限速：默认值虽然是 full，但某些 -gpu / -net 组合下会被带上
     // 模拟器的保守配置，视频类应用（红果、抖音）首屏就会明显慢半拍。
     args.push('-netdelay', 'none', '-netspeed', 'full');
-    // 系统语言：默认简体中文。
-    // 实测 `-prop persist.sys.locale=zh-CN` 完全无效 —— 模拟器会拦截 persist.sys.*
-    // 这类受保护属性，ro.product.locale 又被镜像 build.prop 覆盖；guest 里 getprop
-    // 一个都看不到。官方专门给了 -change-locale：它会真正改系统语言并重启 framework，
-    // 且会写进 /data，从快照恢复也能保留。
-    // 用户可在设置里改成其它 locale 或关掉（engine.locale='off'）。
+    // Release Google Play images have no su. The emulator's -change-locale
+    // command repeatedly calls su and restarts the framework on first boot.
+    // Keep the language selected in Android Settings on those images.
     const locale = this._guestLocale();
-    if (locale) args.push('-change-locale', locale);
+    if (locale && this.imageChoice().tag !== 'google_apis_playstore') args.push('-change-locale', locale);
     // DNS：安卓默认用 10.0.2.3（转发到主机 DNS）。主机走 VPN / 公司网 / 某些运营商
     // 时，一次解析能拖到几百毫秒，表现为「页面转圈半天才开始加载」。给一份国内公共
     // DNS 作为首选，失败时系统仍会回退。用户可在设置里关掉（内网域名场景）。
