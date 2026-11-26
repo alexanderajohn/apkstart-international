@@ -8,6 +8,7 @@ on:
       - 'scripts/asi/hosted-android.cjs'
       - 'scripts/asi/guest-evidence.cjs'
       - 'scripts/asi/prepare-split-fixtures.py'
+      - 'scripts/asi/windows-shell-smoke.ps1'
       - 'src/core/apk-bundle.js'
       - 'src/core/adb.js'
       - 'src/core/installer.js'
@@ -22,11 +23,14 @@ permissions:
 
 jobs:
   guest:
-    name: Signed apps, two AVDs and encrypted restore (${{ matrix.os }})
+    name: ${{ matrix.task }} (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2025]
+        include:
+          - {os: ubuntu-24.04, task: Android guest}
+          - {os: windows-2025, task: Android guest}
+          - {os: windows-2025, task: Packaged desktop}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 110
     steps:
@@ -92,7 +96,21 @@ jobs:
         run: |
           curl --proto '=https' --proto-redir '=https' -fLsS --retry 2 'https://raw.githubusercontent.com/MuntashirAkon/AppManager/dc4154f4c04399602895f31f9390bb66b25ea8a0/app/src/test/resources/AppManager_v2.5.22.apks' -o upstream.apks
           python "$GITHUB_WORKSPACE/scripts/asi/prepare-split-fixtures.py" .
+      - name: Package the Windows desktop launcher
+        if: matrix.task == 'Packaged desktop'
+        run: |
+          npm exec --offline -- install-electron
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run pack
+      - name: Install a signed APK through Explorer and open its Windows shortcut
+        if: matrix.task == 'Packaged desktop'
+        shell: powershell
+        env:
+          ASI_RUNNER_KIND: ${{ runner.environment }}
+        run: |
+          ./scripts/asi/windows-shell-smoke.ps1 -InstallLiveApk -Executable 'dist/ApkStart-International-win64-portable/ApkStart International.exe'
       - name: Boot, install, launch, isolate and restore
+        if: matrix.task == 'Android guest'
         env:
           TEST_RUNNER_ENVIRONMENT: ${{ runner.environment }}
         shell: bash
@@ -102,7 +120,7 @@ jobs:
           fi
           exec node scripts/asi/hosted-android.cjs
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && matrix.task == 'Android guest'
         with:
           name: ${{ runner.os == 'Windows' && 'windows-android-14-guest-evidence' || 'android-14-guest-evidence' }}
           path: ${{ runner.temp }}/guest-evidence/

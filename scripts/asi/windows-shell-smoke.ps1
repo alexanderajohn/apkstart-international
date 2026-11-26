@@ -1,6 +1,6 @@
 # Exercise the packaged application's normal Windows shell entry points.
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$Executable)
+param([Parameter(Mandatory)][string]$Executable, [switch]$InstallLiveApk)
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:ASI_RUNNER_KIND -ne 'github-hosted' -or $env:RUNNER_OS -ne 'Windows') {
     throw 'Requires a disposable hosted Windows runner'
@@ -9,7 +9,7 @@ $exe = (Resolve-Path -LiteralPath $Executable).Path
 $root = Join-Path $env:RUNNER_TEMP ('asi-shell-' + [guid]::NewGuid().ToString('N'))
 $env:APPDATA = Join-Path $root 'roaming'
 $env:ASI_SHELL_EXE = $exe
-$env:ASI_SHELL_USERDATA = Join-Path $root 'chromium'
+$env:ASI_SHELL_USERDATA = if ($InstallLiveApk) { '' } else { Join-Path $root 'chromium' }
 New-Item -ItemType Directory -Path $env:APPDATA | Out-Null
 $extension = 'HKCU:\Software\Classes\.apk'
 function Get-Handler {
@@ -21,7 +21,8 @@ if ((Get-Handler) -or (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersio
 function Register-App {
     @'
 const {registerAssociation} = require('./src/core/assoc');
-registerAssociation(process.env.ASI_SHELL_EXE, undefined, '--user-data-dir="' + process.env.ASI_SHELL_USERDATA + '"');
+const data = process.env.ASI_SHELL_USERDATA;
+registerAssociation(process.env.ASI_SHELL_EXE, undefined, data ? '--user-data-dir="' + data + '"' : '');
 '@ | node
     if ($LASTEXITCODE -ne 0 -or (Get-Handler) -ne 'ApkStartInternational.apk') {throw 'Registration failed'}
 }
@@ -56,34 +57,45 @@ public static class ShellWindowState {
     },IntPtr.Zero);
     return found.ToArray();
   }
-  public static bool Cancel(IntPtr dialog) {
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern IntPtr SendMessageTimeout(IntPtr h, uint msg, UIntPtr w, StringBuilder l, uint flags, uint timeout, out UIntPtr result);
+  [DllImport("user32.dll")] private static extern int GetDlgCtrlID(IntPtr h);
+  [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr h);
+  public static bool Click(IntPtr dialog, string name) {
     IntPtr button=IntPtr.Zero;
     EnumChildWindows(dialog,delegate(IntPtr h, IntPtr extra) {
-      if (WindowClass(h)=="Button" && Caption(h).Replace("&","").Trim()=="Cancel") button=h;
+      if (WindowClass(h)=="Button") {
+        var label=new StringBuilder(512); UIntPtr result;
+        SendMessageTimeout(h,0x000D,(UIntPtr)512,label,2,1000,out result);
+        Console.WriteLine("Native button {0} [{1}] enabled={2}",GetDlgCtrlID(h),label,IsWindowEnabled(h));
+        if (label.ToString().Replace("&","").Trim()==name && IsWindowEnabled(h)) button=h;
+      }
       return true;
     },IntPtr.Zero);
-    return button!=IntPtr.Zero ? PostMessage(button,0x00F5,IntPtr.Zero,IntPtr.Zero)
-                               : PostMessage(dialog,0x0010,IntPtr.Zero,IntPtr.Zero);
+    // TDM_CLICK_BUTTON activates the identified TaskDialog control through
+    // the same callback that processes a user's click.
+    if (button==IntPtr.Zero) return false;
+    int id=GetDlgCtrlID(button);
+    return id>0 && PostMessage(dialog,0x0400+102,new IntPtr(id),IntPtr.Zero);
   }
 }
 '@
 $UI = [System.Windows.Automation.AutomationElement]
 $scope = [System.Windows.Automation.TreeScope]
 $any = [System.Windows.Automation.Condition]::TrueCondition
-function Find-Approval([string]$Digest) {
+function Find-Approval([string]$Digest, [string]$ProfileId) {
     [int[]]$owned = @(Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exe)) -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -eq $exe } | ForEach-Object { $_.Id })
     foreach ($hwnd in [ShellWindowState]::Dialogs($owned)) {
         $native = $UI::FromHandle($hwnd)
         $labels = ($native.FindAll($scope::Descendants,$any) | ForEach-Object { $_.Current.Name }) -join "`n"
-        if ($labels.Contains($Digest) -and $labels.Contains('Profile: default')) {
+        if ($labels.Contains($Digest) -and $labels.Contains('Profile: ' + $ProfileId)) {
             return [pscustomobject]@{Handle=$hwnd; ProcessId=$native.Current.ProcessId; Labels=$labels}
         }
     }
 }
-function Open-AndCancel([string]$Name) {
+function Open-Apk([string]$Name, [string]$Source, [string]$Package, [string]$ProfileId, [string]$Button) {
     $apk = Join-Path $root $Name
-    Copy-Item -LiteralPath 'assets/PinyinIME.apk' -Destination $apk
+    Copy-Item -LiteralPath $Source -Destination $apk
     $sha = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
     # Use ShellExecute on the APK itself, with the same file association used by Explorer.
     $start = New-Object Diagnostics.ProcessStartInfo
@@ -93,7 +105,7 @@ function Open-AndCancel([string]$Name) {
     $deadline = [datetime]::UtcNow.AddSeconds(60)
     do {
         Start-Sleep -Milliseconds 400
-        $dialog = Find-Approval $sha
+        $dialog = Find-Approval $sha $ProfileId
     } until ($null -ne $dialog -or [datetime]::UtcNow -ge $deadline)
     if (!$dialog) {
         Get-Item -LiteralPath 'HKCU:\Software\Classes\ApkStartInternational.apk\shell\open\command' | ForEach-Object {Write-Host "Registered command $($_.GetValue(''))"}
@@ -106,22 +118,68 @@ function Open-AndCancel([string]$Name) {
         }
         throw "Windows did not open the native APK approval for $Name"
     }
-    foreach ($needle in @($Name,$sha,'Profile: default','Package: com.android.inputmethod.pinyin')) {
-        if (!$dialog.Labels.Contains($needle)) {throw "Native approval did not identify $needle"}
+    foreach ($needle in @($Name,$sha,('Profile: ' + $ProfileId),('Package: ' + $Package))) {
+        if (!($dialog.Labels.Contains($needle))) {throw "Native approval did not identify $needle"}
     }
-    if (![ShellWindowState]::Cancel($dialog.Handle)) {throw 'Could not dismiss the identified APK dialog'}
+    if (![ShellWindowState]::Click($dialog.Handle,$Button)) {throw "Could not activate $Button in the identified approval dialog"}
     $deadline = [datetime]::UtcNow.AddSeconds(10)
     while ([ShellWindowState]::IsWindow($dialog.Handle) -and [datetime]::UtcNow -lt $deadline) {Start-Sleep -Milliseconds 200}
     if ([ShellWindowState]::IsWindow($dialog.Handle)) {throw 'Native APK dialog remained open after cancellation'}
     if ((Get-Process -Id $dialog.ProcessId -ErrorAction SilentlyContinue).Path -ne $exe) {throw 'Packaged app exited when the dialog was cancelled'}
-    node -e "if(require('./src/core/store').getApps().length) process.exit(1)"
-    if ($LASTEXITCODE -ne 0) {throw 'Cancelled APK was added to the Profile catalog'}
-    Write-Output "SHELL_APK_CANCEL_OK $Name $sha"
+    if ($Button -eq 'Cancel') {
+        node -e "if(require('./src/core/store').getApps().length) process.exit(1)"
+        if ($LASTEXITCODE -ne 0) {throw 'Cancelled APK was added to the Profile catalog'}
+        Write-Output "SHELL_APK_CANCEL_OK $Name $sha"
+    }
 }
 try {
     Register-App
-    Open-AndCancel 'APK first launch.apk'
-    Open-AndCancel 'APK secondary launch.apk'
+    if ($InstallLiveApk) {
+        $env:ASI_SHORTCUT_DIR = Join-Path $root 'shortcuts'
+        New-Item -ItemType Directory -Path $env:ASI_SHORTCUT_DIR | Out-Null
+        $profileId = @'
+const store = require('./src/core/store');
+const id = store.profiles.create('Desktop CI').id;
+store.profiles.activate(id);
+store.ensureDirs();
+store.saveSettings({runtime:{dir:process.env.ANDROID_HOME}, engine:{prewarm:false},
+                    shortcutDir:process.env.ASI_SHORTCUT_DIR, createShortcutOnInstall:true, createStartMenuShortcut:false});
+console.log(id);
+'@ | node
+        if ($LASTEXITCODE -ne 0 -or $profileId -notmatch '^p_[a-f0-9]{16}$') {throw 'Expected a new owned Profile'}
+        $src = Join-Path $env:RUNNER_TEMP 'guest-fixtures/api.apk'
+        if ((Get-FileHash $src -Algorithm SHA256).Hash -ne 'a9eecf37b26cd084855c530db81c2bb1b91f4c1b095a04f47aa7c20e2791f686') {throw 'Unexpected fixture APK'}
+        $pkg = 'io.appium.android.apis'
+        Open-Apk 'API Demos from Explorer.apk' $src $pkg $profileId 'Install to Desktop CI'
+        $deadline = [datetime]::UtcNow.AddMinutes(18)
+        do {
+            Start-Sleep -Seconds 3
+            $links = @(Get-ChildItem -LiteralPath $env:ASI_SHORTCUT_DIR -Filter '*.lnk')
+        } until ($links.Count -or [datetime]::UtcNow -gt $deadline)
+        if ($links.Count -ne 1) {throw 'Packaged application did not install and create the expected shortcut'}
+        $link = (New-Object -ComObject WScript.Shell).CreateShortcut($links[0].FullName)
+        if ($link.TargetPath -ne $exe -or $link.Arguments -ne ('--launch "'+$pkg+'" --profile '+$profileId)) {throw 'Shortcut target or Profile does not match'}
+        $log = Join-Path $env:APPDATA 'apkstart-international/logs/app.log'
+        $owner = Get-Content -Raw (Join-Path $env:APPDATA "apkstart-international/profiles/$profileId/runtime-owner.json") | ConvertFrom-Json
+        if ($owner.profileId -ne $profileId -or $owner.serial -notmatch '^emulator-\d+$') {throw 'Unknown emulator owner'}
+        $env:ANDROID_ADB_SERVER_PORT = '5044'
+        $adb = Join-Path $env:ANDROID_HOME 'platform-tools/adb.exe'
+        $installed = & $adb -s $owner.serial shell pm path $pkg
+        if ($LASTEXITCODE -ne 0 -or $installed -notmatch 'package:/.*base.apk') {throw 'Installed package file not found'}
+        Start-Process -FilePath $links[0].FullName
+        $deadline = [datetime]::UtcNow.AddMinutes(5)
+        do {
+            Start-Sleep -Seconds 2
+            $attached = Select-String -LiteralPath $log -SimpleMatch "launch $pkg embed=true","launch $pkg detached=true" -Quiet
+        } until ($attached -or [datetime]::UtcNow -gt $deadline)
+        if (!$attached) {throw 'Packaged launcher did not attach the app display'}
+        $activity = & $adb -s $owner.serial shell dumpsys activity activities | Select-String 'topResumedActivity.*io\.appium\.android\.apis/'
+        if ($LASTEXITCODE -ne 0 -or !$activity) {throw 'API Demos did not reach the foreground'}
+        Write-Output "LIVE_DESKTOP_INSTALL_LAUNCH_OK $profileId $($owner.serial) $($activity[0].Line.Trim())"
+    } else {
+        Open-Apk 'APK first launch.apk' 'assets/PinyinIME.apk' 'com.android.inputmethod.pinyin' 'default' 'Cancel'
+        Open-Apk 'APK secondary launch.apk' 'assets/PinyinIME.apk' 'com.android.inputmethod.pinyin' 'default' 'Cancel'
+    }
     Unregister-App
     if (Get-Handler) {throw 'Initial empty association was not restored'}
     Set-Item -LiteralPath $extension -Value 'ASI.Test.Previous'
@@ -133,6 +191,12 @@ try {
     Unregister-App
     if ((Get-Handler) -ne 'ASI.Test.LaterSelection') {throw 'A subsequent handler choice was overwritten'}
     Write-Output 'SHELL_HANDLER_PRESERVATION_OK'
+} catch {
+    $logs = Join-Path $env:APPDATA 'apkstart-international/logs'
+    foreach ($name in @('app.log','emulator.log')) {
+        if (Test-Path (Join-Path $logs $name)) {Get-Content (Join-Path $logs $name) -Tail 45 | Write-Host}
+    }
+    throw
 } finally {
     if ((Get-Handler) -eq 'ApkStartInternational.apk') {Unregister-App}
     if ((Get-Handler) -in @('ASI.Test.Previous','ASI.Test.LaterSelection')) {Set-Item -LiteralPath $extension -Value ''}
