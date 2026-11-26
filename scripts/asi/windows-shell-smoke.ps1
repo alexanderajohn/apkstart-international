@@ -1,4 +1,4 @@
-# Exercise the packaged application's normal Windows shell entry points.
+﻿# Exercise the packaged application's normal Windows shell entry points.
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$Executable, [switch]$InstallLiveApk)
 $ErrorActionPreference = 'Stop'
@@ -100,18 +100,18 @@ public static class ShellWindowState {
 $UI = [System.Windows.Automation.AutomationElement]
 $scope = [System.Windows.Automation.TreeScope]
 $any = [System.Windows.Automation.Condition]::TrueCondition
-function Find-Approval([string]$Digest, [string]$ProfileId) {
+function Find-Approval([string]$Digest, [string]$ProfileId, [string]$ProfileField) {
     [int[]]$owned = @(Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exe)) -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -eq $exe } | ForEach-Object { $_.Id })
     foreach ($hwnd in [ShellWindowState]::Dialogs($owned)) {
         $native = $UI::FromHandle($hwnd)
         $labels = ($native.FindAll($scope::Descendants,$any) | ForEach-Object { $_.Current.Name }) -join "`n"
-        if ($labels.Contains($Digest) -and $labels.Contains('Profile: ' + $ProfileId)) {
+        if ($labels.Contains($Digest) -and $labels.Contains($ProfileField + ': ' + $ProfileId)) {
             return [pscustomobject]@{Handle=$hwnd; ProcessId=$native.Current.ProcessId; Labels=$labels}
         }
     }
 }
-function Open-Apk([string]$Name, [string]$Source, [string]$Package, [string]$ProfileId, [string]$Button) {
+function Open-Apk([string]$Name, [string]$Source, [string]$Package, [string]$ProfileId, [string]$Button, [string]$ProfileField='Profile', [string]$PackageField='Package') {
     $apk = Join-Path $root $Name
     Copy-Item -LiteralPath $Source -Destination $apk
     $sha = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -123,7 +123,7 @@ function Open-Apk([string]$Name, [string]$Source, [string]$Package, [string]$Pro
     $deadline = [datetime]::UtcNow.AddSeconds(60)
     do {
         Start-Sleep -Milliseconds 400
-        $dialog = Find-Approval $sha $ProfileId
+        $dialog = Find-Approval $sha $ProfileId $ProfileField
     } until ($null -ne $dialog -or [datetime]::UtcNow -ge $deadline)
     if (!$dialog) {
         Get-Item -LiteralPath 'HKCU:\Software\Classes\ApkStartInternational.apk\shell\open\command' | ForEach-Object {Write-Host "Registered command $($_.GetValue(''))"}
@@ -136,7 +136,7 @@ function Open-Apk([string]$Name, [string]$Source, [string]$Package, [string]$Pro
         }
         throw "Windows did not open the native APK approval for $Name"
     }
-    foreach ($needle in @($Name,$sha,('Profile: ' + $ProfileId),('Package: ' + $Package))) {
+    foreach ($needle in @($Name,$sha,($ProfileField + ': ' + $ProfileId),($PackageField + ': ' + $Package))) {
         if (!($dialog.Labels.Contains($needle))) {throw "Native approval did not identify $needle"}
     }
     if (![ShellWindowState]::Click($dialog.Handle,$Button)) {throw "Could not activate $Button in the identified approval dialog"}
@@ -144,7 +144,7 @@ function Open-Apk([string]$Name, [string]$Source, [string]$Package, [string]$Pro
     while ([ShellWindowState]::IsWindow($dialog.Handle) -and [datetime]::UtcNow -lt $deadline) {Start-Sleep -Milliseconds 200}
     if ([ShellWindowState]::IsWindow($dialog.Handle)) {throw 'Native APK dialog remained open after selecting the button'}
     if ((Get-Process -Id $dialog.ProcessId -ErrorAction SilentlyContinue).Path -ne $exe) {throw 'Packaged app exited after closing its APK dialog'}
-    if ($Button -eq 'Cancel') {
+    if ($Button -in @('Cancel','Hủy','取消')) {
         node -e "if(require('./src/core/store').getApps().length) process.exit(1)"
         if ($LASTEXITCODE -ne 0) {throw 'Cancelled APK was added to the Profile catalog'}
         Write-Output "SHELL_APK_CANCEL_OK $Name $sha"
@@ -201,6 +201,15 @@ console.log(id);
     } else {
         Open-Apk 'APK first launch.apk' 'assets/PinyinIME.apk' 'com.android.inputmethod.pinyin' 'default' 'Cancel'
         Open-Apk 'APK secondary launch.apk' 'assets/PinyinIME.apk' 'com.android.inputmethod.pinyin' 'default' 'Cancel'
+        foreach ($language in @(
+            @{Code='vi'; Button='Hủy'; Profile='Hồ sơ'; Package='Mã gói'},
+            @{Code='zh-CN'; Button='取消'; Profile='配置文件'; Package='包名'}
+        )) {
+            $env:ASI_TEST_LOCALE = $language.Code
+            node -e "require('./src/core/store').saveSettings({uiLocale:process.env.ASI_TEST_LOCALE})"
+            if ($LASTEXITCODE -ne 0) {throw 'Could not set the disposable UI language'}
+            Open-Apk ('APK ' + $language.Code + '.apk') 'assets/PinyinIME.apk' 'com.android.inputmethod.pinyin' 'default' $language.Button $language.Profile $language.Package
+        }
     }
     Unregister-App
     if (Get-Handler) {throw 'Initial empty association was not restored'}

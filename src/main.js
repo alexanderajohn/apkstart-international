@@ -44,7 +44,8 @@ const { Installer } = require('./core/installer');
 const { Sharer } = require('./core/sharer');
 const { parseApk } = require('./core/apk');
 const { inspectApk } = require('./core/smartcheck');
-const { prepareInstall, approvalText } = require('./core/apk-install-guard');
+const { prepareInstall } = require('./core/apk-install-guard');
+const { installConfirmation } = require('./core/install-confirmation');
 const { withApprovedCopy } = require('./core/install-staging');
 const { drawAppIcon } = require('./core/png');
 
@@ -918,11 +919,8 @@ async function runInstall(filePath) {
     const profile=store.profiles.list().profiles.find(p=>p.id===profileId);
     const existing=!!(preview.package&&store.getApp(preview.package));
     const approval=await dialog.showMessageBox(mainWindow||undefined,{
-      type:'warning',buttons:['Cancel','Install to '+(profile?.name||profileId)],
-      defaultId:0,cancelId:0,noLink:true,
-      title:'Confirm Android APK installation',
-      message:existing?'Confirm update of an Android app':'Confirm APK installation',
-      detail:approvalText(preview,{existing})
+      ...installConfirmation(preview, {existing, profileName:profile?.name, locale:store.getSettings().uiLocale || app.getLocale()}),
+      type:'warning',defaultId:0,cancelId:0,noLink:true
     });
     if(approval.response!==1) {
       send('install:cancelled',{file:filePath});
@@ -3545,6 +3543,7 @@ if (!gotLock) {
                       picker.value = code;
                       picker.dispatchEvent(new Event('change'));
                       await new Promise(resolve => requestAnimationFrame(resolve));
+                      if ((await window.apkstart.getSettings()).uiLocale !== code) return false;
                       if (document.documentElement.lang !== code ||
                           document.getElementById('btnRuntimeStart').textContent.trim() !== expected) return false;
                     }

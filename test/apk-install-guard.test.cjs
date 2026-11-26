@@ -50,3 +50,27 @@ test('native approval summary includes SHA, exact Profile and warns for split pa
  assert.match(t,new RegExp(p.sha256));
  assert.match(t,/Cancel is the default/);
 }));
+
+test('native install and update confirmations preserve identity and consent in every UI language', () => {
+  const {installConfirmation} = require('../src/core/install-confirmation');
+  const preview = {profileId:'p_0123456789abcdef', fileName:'Ứng dụng.apk', package:'com.example.notes',
+    label:'Ghi chú', sha256:'3d'.repeat(32)};
+  for (const [locale, cancel, install, pkg, profile, source, signing] of [
+    ['en-US','Cancel','Install to ','Package','Profile','Source','cryptographically'],
+    ['vi-VN','Hủy','Cài vào ','Mã gói','Hồ sơ','Tệp nguồn','chữ ký số'],
+    ['zh-CN','取消','安装到 ','包名','配置文件','源文件','签名'],
+  ]) {
+    const fresh = installConfirmation(preview, {locale, profileName:'Hải'});
+    const update = installConfirmation(preview, {locale, existing:true});
+    assert.deepEqual(fresh.buttons, [cancel, install + 'Hải']);
+    assert.notEqual(update.message, fresh.message);
+    for (const value of [pkg + ': ' + preview.package, profile + ': ' + preview.profileId,
+      source + ': ' + preview.fileName, preview.sha256, signing]) {
+      assert.ok(fresh.detail.includes(value));
+      assert.ok(update.detail.includes(value));
+    }
+    const bundle = installConfirmation({...preview, package:null}, {locale});
+    assert.ok(bundle.detail.includes(preview.sha256));
+    assert.ok(!bundle.detail.includes('undefined'));
+  }
+});

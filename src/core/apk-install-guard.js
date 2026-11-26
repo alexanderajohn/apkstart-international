@@ -50,15 +50,7 @@ async function verifyInstallSource(preview,activeProfile,{sha256=sha256File}={})
     throw Error('APK content changed after approval; select and inspect it again');
   return preview.path;
 }
-function approvalText(preview,{existing=false}={}){
-  if(!preview||typeof preview.fileName!=='string')throw Error('Invalid approval preview');
-  const type=preview.package?('App: '+(preview.label||preview.package)+'\nPackage: '+preview.package):
-    'Split APK bundle: package identity not available in the static preview';
-  return type+'\nProfile: '+preview.profileId+
-    '\nSource: '+preview.fileName+
-    '\nSHA-256: '+preview.sha256+
-    '\n'+(existing?'Existing app: this may UPDATE it while retaining Android user data.':'Install to the selected Profile only.')+
-    '\nWARNING: SmartCheck does not cryptographically verify APK signing or prove malware safety.'+
-    '\nCancel is the default. No Android installation occurs before approval.';
+function approvalText(preview, options){
+  return require('./install-confirmation').installConfirmation(preview, options).detail;
 }
 module.exports={prepareInstall,verifyInstallSource,approvalText};

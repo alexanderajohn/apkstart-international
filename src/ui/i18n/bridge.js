@@ -51,10 +51,26 @@ function schedule() {
 function setLanguage(value) {
   locale = util.normalize(value);
   try {localStorage.setItem(localeKey,locale);} catch (_) {}
+  window.apkstart?.setSettings?.({uiLocale:locale}).catch(() => {});
   schedule();
   window.dispatchEvent(new CustomEvent('asi-language-change', {detail:locale}));
 }
 function init() {
+  // Older releases kept the language only in this window's local storage.
+  const initial = locale;
+  window.apkstart?.getSettings?.().then(settings => {
+    if (locale !== initial) return;
+    if (util.codes.includes(settings.uiLocale)) {
+      if (locale !== settings.uiLocale) {
+        locale = settings.uiLocale;
+        try {localStorage.setItem(localeKey,locale);} catch (_) {}
+        schedule();
+        window.dispatchEvent(new CustomEvent('asi-language-change', {detail:locale}));
+      }
+    } else {
+      return window.apkstart.setSettings({uiLocale:locale});
+    }
+  }).catch(() => {});
   const picker = document.createElement('select');
   picker.id = 'asi-language';
   picker.className = 'asi-language-select';
