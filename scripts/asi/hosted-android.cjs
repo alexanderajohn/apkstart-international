@@ -149,7 +149,7 @@ async function run() {
     const component=await client.resolveLauncher(pkg);
     assert(component?.startsWith(pkg+'/'),'No launcher for '+pkg);
     await client.startApp(pkg,component,{freeform:false});
-    const end=Date.now()+45000;
+    const end=Date.now()+(pkg===splitPkg?90000:45000);
     let activity;
     let resumed=[];
     let visibleSince;
@@ -159,7 +159,8 @@ async function run() {
       const output=await client.shell('dumpsys activity activities');
       resumed=output.split('\n').filter(s=>/(?:topResumedActivity|mResumedActivity|ResumedActivity):?\s*[=:]/.test(s))
         .map(s=>s.match(/\bu0\s+([\w.$]+\/[\w.$]+)/)?.[1]).filter(Boolean);
-      const visible=resumed.find(c=>c.startsWith(pkg+'/'));
+      const visible=resumed.find(c=>c.startsWith(pkg+'/') &&
+        (pkg!==splitPkg || legacySplitFixture || !c.endsWith('.main.SplashActivity')));
       if (visible) {
         visibleSince ??= Date.now();
         if (Date.now()-visibleSince>=1500) activity=visible;
@@ -176,15 +177,16 @@ async function run() {
             await client.exec(['shell','rm','-f',uiFile],{timeout:5000}).catch(()=>{});
           }
           const button=appManagerDenyControl(xml,grant.split('/')[0]);
-          if (button && !handled.has(button.prompt)) {
+          const decisionKey=button && JSON.stringify([button.prompt,button.control]);
+          if (button && !handled.has(decisionKey)) {
             await verifyOwner(client,registry,registry.currentId());
             await client.exec(['shell','input','tap',String(button.x),String(button.y)]);
-            handled.add(button.prompt);
-            const decision={profile:registry.currentId(),package:pkg,button:'deny',prompt:button.prompt};
+            handled.add(decisionKey);
+            const decision={profile:registry.currentId(),package:pkg,button:button.control,prompt:button.prompt};
             report.permissionInteractions.push(decision);
             console.log('Permission interaction',JSON.stringify(decision));
           } else if (!button && !handled.has('diagnostic')) {
-            console.log('Unrecognized test permission dialog',xml.match(/<node[^>]+(?:permission_message|deny_button)[^>]*>/g) || 'No matching permission controls');
+            console.log('Unrecognized test permission dialog',xml.match(/<node[^>]+(?:permission_message|android.widget.Button)[^>]*>/g) || 'No permission buttons');
             handled.add('diagnostic');
           }
         }

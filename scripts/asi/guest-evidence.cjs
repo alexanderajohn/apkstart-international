@@ -35,13 +35,14 @@ function appManagerDenyControl(xml, controller) {
   const dialog = nodes.filter(n=>n.package === controller);
   const prompt = dialog.find(n=>/\bApp Manager\b/i.test(n.text) && /(?:^|:)id\/permission_message$/.test(n['resource-id']));
   if (!prompt) return null;
-  const deny = dialog.filter(n=>n.clickable==='true' && n.enabled==='true' &&
-    /:id\/permission_deny_button$/.test(n['resource-id']));
+  const denyIds = ['com.android.permissioncontroller:id/permission_deny_button',
+    'com.android.permissioncontroller:id/permission_deny_dont_ask_again_button'];
+  const deny = dialog.filter(n=>n.clickable==='true' && n.enabled==='true' && denyIds.includes(n['resource-id']));
   if (deny.length!==1) return null;
   const bounds = /^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$/.exec(deny[0].bounds);
   if (!bounds) return null;
   const [left,top,right,bottom]=bounds.slice(1).map(Number);
   if (left>=right || top>=bottom) return null;
-  return {prompt:prompt.text, x:Math.floor((left+right)/2), y:Math.floor((top+bottom)/2)};
+  return {prompt:prompt.text, control:deny[0]['resource-id'], x:Math.floor((left+right)/2), y:Math.floor((top+bottom)/2)};
 }
 module.exports = { packagePresent, verifyCanary, launchAndObserve, appManagerDenyControl };

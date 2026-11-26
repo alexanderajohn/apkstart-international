@@ -225,7 +225,7 @@ console.log(id);
 } catch {
     $logs = Join-Path $env:APPDATA 'apkstart-international/logs'
     foreach ($name in @('app.log','emulator.log')) {
-        if (Test-Path (Join-Path $logs $name)) {Get-Content (Join-Path $logs $name) -Tail 45 | Write-Host}
+        if (Test-Path (Join-Path $logs $name)) {Get-Content (Join-Path $logs $name) -Encoding UTF8 -Tail 80 | Write-Host}
     }
     throw
 } finally {
