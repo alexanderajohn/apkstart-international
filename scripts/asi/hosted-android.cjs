@@ -11,7 +11,6 @@ const splitFiles = ['base.apk','split_config.en.apk','split_config.x86_64.apk','
 const fixtures = [
   {file:'api.apk', pkg:'io.appium.android.apis'},
   {file:'calculator.apk', pkg:'org.fossify.math'},
-  {file:'device.apks', pkg:splitPkg},
 ];
 
 async function run() {
@@ -131,13 +130,24 @@ async function run() {
     await client.startApp(pkg,component,{freeform:false});
     const end=Date.now()+20000;
     let activity;
+    let resumed=[];
     do {
       await delay(500);
       const output=await client.shell('dumpsys activity activities');
-      activity=output.split('\n').filter(s=>/(?:topResumedActivity|mResumedActivity|ResumedActivity):?\s*[=:]/.test(s))
-        .map(s=>s.match(/\bu0\s+([\w.$]+\/[\w.$]+)/)?.[1]).find(c=>c?.startsWith(pkg+'/'));
+      resumed=output.split('\n').filter(s=>/(?:topResumedActivity|mResumedActivity|ResumedActivity):?\s*[=:]/.test(s))
+        .map(s=>s.match(/\bu0\s+([\w.$]+\/[\w.$]+)/)?.[1]).filter(Boolean);
+      activity=resumed.find(c=>c.startsWith(pkg+'/'));
     } while(!activity && Date.now()<end);
-    assert(activity,'No resumed Activity belonging to '+pkg);
+    if (!activity) {
+      const crashes=await client.shell('logcat -d -b crash -t 80').catch(()=> '');
+      const focus=await client.shell('dumpsys window windows').catch(()=> '');
+      console.error('Foreground diagnostic',JSON.stringify({
+        pkg,launcher:component,resumed,
+        focused:focus.split('\n').filter(s=>s.includes('mCurrentFocus')).slice(-2),
+        crash:crashes.split('\n').filter(s=>s.includes(pkg)||/Exception|Caused by|FATAL/.test(s)).slice(-10)
+      }));
+      throw Error('No resumed Activity belonging to '+pkg+'; foreground: '+resumed.join(', '));
+    }
     assert.match((await client.shell('pidof '+pkg)).trim(),/^\d+(?:\s+\d+)*$/);
     return activity;
   }
@@ -176,11 +186,23 @@ async function run() {
       }).sort();
       assert.deepEqual(installedParts,splitFiles);
     }
+    if (installedParts) console.log('Android installed split set',JSON.stringify({profileId,format:approved.format,installedParts}));
     const firstActivity=await foreground(fixture.pkg);
     await client.exec(['shell','am','force-stop','--user','0',fixture.pkg]);
     assert(!(await client.shell('ps -A -o NAME')).trim().split(/\s+/).includes(fixture.pkg),'App process did not stop');
     const secondActivity=await foreground(fixture.pkg);
     return {format:approved.format,installedParts,pkg:fixture.pkg,version:approved.version,sha256:approved.sha256,firstActivity,secondActivity};
+  }
+  // A split failure is reported at the end so the other Profile, cold boots
+  // and recovery can still be independently exercised on this runner.
+  const splitFailures=[];
+  async function splitPhase(name,file,profileId) {
+    try {
+      await phase(name,()=>exerciseInstallation({file,pkg:splitPkg},profileId));
+    } catch (error) {
+      await verifyOwner(client,registry,profileId);
+      splitFailures.push(error);
+    }
   }
   async function checkDefaultPermissions() {
     await verifyOwner(client,registry,primary);
@@ -216,6 +238,7 @@ async function run() {
     for(const fixture of fixtures) {
       await phase('install-close-relaunch-'+fixture.pkg,()=>exerciseInstallation(fixture,primary));
     }
+    await splitPhase('install-close-relaunch-apks','device.apks',primary);
     await phase('verify-default-permissions',checkDefaultPermissions);
     await phase('write-private-canary',()=>writeCanary(canary));
     await phase('shutdown-primary',stop);
@@ -228,13 +251,13 @@ async function run() {
     });
     await phase('cold-boot-secondary',()=>boot(secondary));
     await phase('verify-isolated-secondary',async()=>{
-      for(const {pkg} of fixtures){
+      for(const pkg of [...fixtures.map(f=>f.pkg),splitPkg]){
         assert(!await packagePresent(client,pkg));
         assert(!store.getApp(pkg));
       }
-      return {absent:fixtures.map(x=>x.pkg)};
+      return {absent:[...fixtures.map(x=>x.pkg),splitPkg]};
     });
-    await phase('install-close-relaunch-xapk',()=>exerciseInstallation({file:'device.xapk',pkg:splitPkg},secondary));
+    await splitPhase('install-close-relaunch-xapk','device.xapk',secondary);
     await phase('shutdown-secondary',stop);
     const beforeRestore=await phase('cold-boot-original',async()=>{
       const b=await boot(primary);
@@ -268,6 +291,7 @@ async function run() {
       return {...resumed,snapshot:SNAPSHOT_NAME,...await checkInstalled()};
     });
     await phase('shutdown-after-quick-boot',stop);
+    if (splitFailures.length) throw new AggregateError(splitFailures,'Split validation failed. See both Profile observations.');
     report.complete=true;
   } finally {
     if(active())guest.kill('SIGTERM');
