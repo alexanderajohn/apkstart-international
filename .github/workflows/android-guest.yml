@@ -1,6 +1,12 @@
 name: Android 14 guest validation
 on:
   workflow_dispatch:
+    inputs:
+      split_fixture:
+        type: choice
+        description: Signed AppManager distribution
+        default: current
+        options: [current, legacy]
   push:
     branches: [feature/international-foundation]
     paths:
@@ -20,6 +26,9 @@ on:
 
 permissions:
   contents: read
+
+env:
+  ASI_SPLIT_FIXTURE: ${{ inputs.split_fixture || 'current' }}
 
 jobs:
   guest:
@@ -94,7 +103,12 @@ jobs:
         shell: bash
         working-directory: ${{ runner.temp }}/guest-fixtures
         run: |
-          curl --proto '=https' --proto-redir '=https' -fLsS --retry 2 'https://raw.githubusercontent.com/MuntashirAkon/AppManager/dc4154f4c04399602895f31f9390bb66b25ea8a0/app/src/test/resources/AppManager_v2.5.22.apks' -o upstream.apks
+          case "$ASI_SPLIT_FIXTURE" in
+            current) url='https://github.com/MuntashirAkon/AppManager/releases/download/v4.1.1/AppManager_v4.1.1.apks' ;;
+            legacy) url='https://raw.githubusercontent.com/MuntashirAkon/AppManager/dc4154f4c04399602895f31f9390bb66b25ea8a0/app/src/test/resources/AppManager_v2.5.22.apks' ;;
+            *) exit 2 ;;
+          esac
+          curl --proto '=https' --proto-redir '=https' -fLsS --retry 2 "$url" -o upstream.apks
           python "$GITHUB_WORKSPACE/scripts/asi/prepare-split-fixtures.py" .
       - name: Package the Windows desktop launcher
         if: matrix.task == 'Packaged desktop'

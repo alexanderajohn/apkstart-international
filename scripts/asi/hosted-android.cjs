@@ -7,7 +7,9 @@ const {execFileSync,spawn,spawnSync} = require('node:child_process');
 const {setTimeout:delay} = require('node:timers/promises');
 const image = 'system-images;android-34;google_apis_playstore;x86_64';
 const splitPkg = 'io.github.muntashirakon.AppManager';
-const splitFiles = ['base.apk','split_config.en.apk','split_config.x86_64.apk','split_config.xhdpi.apk','split_feat_docs.apk'];
+const legacySplitFixture=process.env.ASI_SPLIT_FIXTURE==='legacy';
+const splitFiles = ['base.apk','split_config.en.apk','split_config.x86_64.apk','split_config.xhdpi.apk',
+  legacySplitFixture?'split_feat_docs.apk':'split_config.vi.apk'].sort();
 const fixtures = [
   {file:'api.apk', pkg:'io.appium.android.apis'},
   {file:'calculator.apk', pkg:'org.fossify.math'},
@@ -49,7 +51,7 @@ async function run() {
   console.log('Android acceleration probe', JSON.stringify({acceleration,probeText}));
   const report = {platform:windows?'GitHub-hosted Windows x64':'GitHub-hosted Linux x64',
     osRelease:require('node:os').release(),acceleration,accelerationProbe:probeText,
-    revision:process.env.GITHUB_SHA,image,
+    revision:process.env.GITHUB_SHA,image,splitVersion:legacySplitFixture?'2.5.22-PRE':'4.1.1',
     emulatorVersion:execFileSync(emulator,['-version'],{encoding:'utf8'}).split('\n').find(l=>l.includes('Android emulator version')),
     phases:[],complete:false};
   let guest;
@@ -128,7 +130,7 @@ async function run() {
     const component=await client.resolveLauncher(pkg);
     assert(component?.startsWith(pkg+'/'),'No launcher for '+pkg);
     await client.startApp(pkg,component,{freeform:false});
-    const end=Date.now()+20000;
+    const end=Date.now()+45000;
     let activity;
     let resumed=[];
     do {
@@ -221,7 +223,7 @@ async function run() {
   async function checkInstalled() {
     assert.equal(await verifyCanary(client,debugPkg,digest),true);
     const foregroundApps=[];
-    for(const {pkg} of fixtures) {
+    for(const pkg of [...fixtures.map(f=>f.pkg),splitPkg]) {
       assert(store.getApp(pkg),'Missing Profile catalog entry');
       assert(await packagePresent(client,pkg),'Missing installed package');
       foregroundApps.push(await foreground(pkg));

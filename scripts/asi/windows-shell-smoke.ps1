@@ -60,6 +60,14 @@ public static class ShellWindowState {
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern IntPtr SendMessageTimeout(IntPtr h, uint msg, UIntPtr w, StringBuilder l, uint flags, uint timeout, out UIntPtr result);
   [DllImport("user32.dll")] private static extern int GetDlgCtrlID(IntPtr h);
   [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr h);
+  [StructLayout(LayoutKind.Sequential)] private struct Rect { public int left,top,right,bottom; }
+  [StructLayout(LayoutKind.Sequential)] private struct Point { public int x,y; }
+  [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr h,out Rect r);
+  [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(Point p);
+  [DllImport("user32.dll")] private static extern bool IsChild(IntPtr parent, IntPtr child);
+  [DllImport("user32.dll")] private static extern bool SetCursorPos(int x,int y);
+  [DllImport("user32.dll")] private static extern void mouse_event(uint flags,uint dx,uint dy,uint data,UIntPtr extra);
   public static bool Click(IntPtr dialog, string name) {
     IntPtr button=IntPtr.Zero;
     EnumChildWindows(dialog,delegate(IntPtr h, IntPtr extra) {
@@ -71,11 +79,21 @@ public static class ShellWindowState {
       }
       return true;
     },IntPtr.Zero);
-    // TDM_CLICK_BUTTON activates the identified TaskDialog control through
-    // the same callback that processes a user's click.
     if (button==IntPtr.Zero) return false;
-    int id=GetDlgCtrlID(button);
-    return id>0 && PostMessage(dialog,0x0400+102,new IntPtr(id),IntPtr.Zero);
+    SetForegroundWindow(dialog);
+    Rect rect;
+    if (!GetWindowRect(button,out rect)) return false;
+    var point=new Point {x=(rect.left+rect.right)/2,y=(rect.top+rect.bottom)/2};
+    IntPtr hit=WindowFromPoint(point);
+    if (hit!=button && !IsChild(button,hit)) {
+      // UIA may virtualize controls under DirectUI. BM_CLICK still targets only
+      // the verified, enabled button on this dialog, regardless of focus.
+      return PostMessage(button,0x00F5,IntPtr.Zero,IntPtr.Zero);
+    }
+    if (!SetCursorPos(point.x,point.y)) return false;
+    mouse_event(2,0,0,0,UIntPtr.Zero);
+    mouse_event(4,0,0,0,UIntPtr.Zero);
+    return true;
   }
 }
 '@
