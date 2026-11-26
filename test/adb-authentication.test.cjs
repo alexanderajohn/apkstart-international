@@ -40,3 +40,40 @@ test('launcher resolution follows the guest now using the same emulator serial',
   component = 'No activity found';
   assert.equal(await client.resolveLauncher(pkg), null);
 });
+
+test('temporary offline boot probes keep the host daemon alive until Android is ready', async (t) => {
+  const {Runtime} = require('../src/core/engine');
+  const serial = 'emulator-5554';
+  let time = Date.now();
+  t.mock.method(Date, 'now', () => time);
+  let online = false;
+  let resets = 0;
+  const client = {
+    serial,
+    async shell() {
+      if (!online) throw Error('device offline');
+      return '1\npackage:/system/framework/framework-res.apk';
+    },
+    async deviceState() { return 'offline'; },
+  };
+  const runtime = {
+    settings: {engine: {}},
+    _probeClient: client,
+    emulator: {
+      running: () => true,
+      async resetAdbServer() { resets++; },
+      async start({probe}) {
+        for (let i = 0; i < 8; i++) {
+          time += 5000;
+          assert.equal(await probe({serial}), 'pending');
+        }
+        online = true;
+        assert.equal(await probe({serial}), 'ok');
+        return {ok:false, error:'end of probe test'};
+      },
+    },
+  };
+  const result = await Runtime.prototype.bootEmulator.call(runtime, {env:{accel:{ok:true}}});
+  assert.equal(result.error, 'end of probe test');
+  assert.equal(resets, 0);
+});

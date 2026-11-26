@@ -167,8 +167,15 @@ async function run() {
         visibleSince=undefined;
         const grant=resumed.find(c=>/^(?:com\.google\.android|com\.android)\.permissioncontroller\/.*\.GrantPermissionsActivity$/.test(c));
         if (grant && pkg===splitPkg) {
-          const dump=await client.exec(['shell','uiautomator','dump','/dev/tty'],{timeout:10000});
-          const button=appManagerDenyControl(dump.stdout,grant.split('/')[0]);
+          const uiFile='/data/local/tmp/asi-ui-'+crypto.randomUUID()+'.xml';
+          let xml;
+          try {
+            await client.exec(['shell','uiautomator','dump',uiFile],{timeout:25000});
+            xml=(await client.exec(['shell','cat',uiFile],{timeout:5000})).stdout;
+          } finally {
+            await client.exec(['shell','rm','-f',uiFile],{timeout:5000}).catch(()=>{});
+          }
+          const button=appManagerDenyControl(xml,grant.split('/')[0]);
           if (button && !handled.has(button.prompt)) {
             await verifyOwner(client,registry,registry.currentId());
             await client.exec(['shell','input','tap',String(button.x),String(button.y)]);
@@ -177,7 +184,7 @@ async function run() {
             report.permissionInteractions.push(decision);
             console.log('Permission interaction',JSON.stringify(decision));
           } else if (!button && !handled.has('diagnostic')) {
-            console.log('Unrecognized test permission dialog',dump.stdout.slice(-7000));
+            console.log('Unrecognized test permission dialog',xml.match(/<node[^>]+(?:permission_message|deny_button)[^>]*>/g) || 'No matching permission controls');
             handled.add('diagnostic');
           }
         }

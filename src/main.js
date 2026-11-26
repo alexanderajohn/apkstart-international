@@ -929,14 +929,29 @@ async function runInstall(filePath) {
       return {ok:false,canceled:true};
     }
     send('install:start', { file: filePath });
+    appLog('APK installation approved');
+    let lastStage;
+    const onProgress = progress => {
+      if (progress.stage !== lastStage) {
+        lastStage = progress.stage;
+        appLog('APK installation stage ' + lastStage);
+      }
+      if (progress.stage === 'runtime' || progress.stage === 'shortcut-warn') {
+        const detail = require('./core/diagnostic-privacy').redactText(progress.message).replace(/[\r\n]+/g, ' ').slice(0, 500);
+        appLog('APK installation ' + progress.stage + ': ' + detail);
+      }
+      send('install:progress', progress);
+    };
     const result = await withApprovedCopy(preview, store.profiles.currentId(), staged =>
-      installer.install(staged, existing, progress => send('install:progress', progress)));
+      installer.install(staged, existing, onProgress));
     send('install:done', result);
     // 新建的桌面图标要让资源管理器立刻刷新，否则用户会以为「没创建快捷方式」
     windowctl.refreshShell().catch(() => {});
     notify('安装完成', `${result.app.label} 已安装${result.app.shortcutPath ? '，桌面快捷方式已创建' : ''}`);
     return result;
   } catch (e) {
+    const detail = require('./core/diagnostic-privacy').redactText(e.message).replace(/[\r\n]+/g, ' ').slice(0, 500);
+    appLog('APK installation failed: ' + detail);
     send('install:error', { message: e.message, file: filePath });
     if (e.needsSetup) send('ui:navigate', 'setup');
     // 同一条错误 8 秒内只弹一次系统通知：连续重试时不会在右下角刷屏

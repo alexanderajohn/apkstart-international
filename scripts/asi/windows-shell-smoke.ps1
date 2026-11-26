@@ -142,8 +142,8 @@ function Open-Apk([string]$Name, [string]$Source, [string]$Package, [string]$Pro
     if (![ShellWindowState]::Click($dialog.Handle,$Button)) {throw "Could not activate $Button in the identified approval dialog"}
     $deadline = [datetime]::UtcNow.AddSeconds(10)
     while ([ShellWindowState]::IsWindow($dialog.Handle) -and [datetime]::UtcNow -lt $deadline) {Start-Sleep -Milliseconds 200}
-    if ([ShellWindowState]::IsWindow($dialog.Handle)) {throw 'Native APK dialog remained open after cancellation'}
-    if ((Get-Process -Id $dialog.ProcessId -ErrorAction SilentlyContinue).Path -ne $exe) {throw 'Packaged app exited when the dialog was cancelled'}
+    if ([ShellWindowState]::IsWindow($dialog.Handle)) {throw 'Native APK dialog remained open after selecting the button'}
+    if ((Get-Process -Id $dialog.ProcessId -ErrorAction SilentlyContinue).Path -ne $exe) {throw 'Packaged app exited after closing its APK dialog'}
     if ($Button -eq 'Cancel') {
         node -e "if(require('./src/core/store').getApps().length) process.exit(1)"
         if ($LASTEXITCODE -ne 0) {throw 'Cancelled APK was added to the Profile catalog'}
@@ -169,15 +169,19 @@ console.log(id);
         if ((Get-FileHash $src -Algorithm SHA256).Hash -ne 'a9eecf37b26cd084855c530db81c2bb1b91f4c1b095a04f47aa7c20e2791f686') {throw 'Unexpected fixture APK'}
         $pkg = 'io.appium.android.apis'
         Open-Apk 'API Demos from Explorer.apk' $src $pkg $profileId 'Install to Desktop CI'
+        $log = Join-Path $env:APPDATA 'apkstart-international/logs/app.log'
         $deadline = [datetime]::UtcNow.AddMinutes(18)
         do {
             Start-Sleep -Seconds 3
+            if (Test-Path -LiteralPath $log) {
+                $failure = Select-String -LiteralPath $log -SimpleMatch 'APK installation failed:' | Select-Object -Last 1
+                if ($failure) {throw $failure.Line}
+            }
             $links = @(Get-ChildItem -LiteralPath $env:ASI_SHORTCUT_DIR -Filter '*.lnk')
         } until ($links.Count -or [datetime]::UtcNow -gt $deadline)
         if ($links.Count -ne 1) {throw 'Packaged application did not install and create the expected shortcut'}
         $link = (New-Object -ComObject WScript.Shell).CreateShortcut($links[0].FullName)
         if ($link.TargetPath -ne $exe -or $link.Arguments -ne ('--launch "'+$pkg+'" --profile '+$profileId)) {throw 'Shortcut target or Profile does not match'}
-        $log = Join-Path $env:APPDATA 'apkstart-international/logs/app.log'
         $owner = Get-Content -Raw (Join-Path $env:APPDATA "apkstart-international/profiles/$profileId/runtime-owner.json") | ConvertFrom-Json
         if ($owner.profileId -ne $profileId -or $owner.serial -notmatch '^emulator-\d+$') {throw 'Unknown emulator owner'}
         $env:ANDROID_ADB_SERVER_PORT = '5044'

@@ -365,15 +365,12 @@ class Runtime {
       // probe 交给 EmulatorEngine 的开机循环：进程退出/致命日志时它会换一组参数重试
       // 每轮只发一次 adb 命令：以前是 get-state + getprop + pm path 三次进程拉起，
       // 快照恢复时一轮就差 300~500ms，正好卡在「点开应用」的观感上。
-      let probeStart = Date.now();
-      let errStreak = 0;
-      let lastHeal = 0;
+      let lastAdbState;
       let authHealed = false;  // 本次 start() 是否已因「未授权」作废旧快照冷启动过
       const diagUnauthorized = () => ({
         code: 'ADB_UNAUTHORIZED',
         title: '安卓调试授权未完成（授权对话框）',
-        hint: '系统卡在「允许 USB 调试？」对话框，已自动作废旧快照并冷启动一次让运行时'
-          + '重新注入 adb 公钥。若反复出现，请删除 %USERPROFILE%\\.android\\adbkey* 后重试。',
+        hint: 'Check the debugging authorization prompt in the selected Android Profile, then retry.',
       });
       const probe = async ({ serial }) => {
         if (!this.emulator.running()) return 'fatal';
@@ -386,23 +383,18 @@ class Runtime {
           const lines = out.split(/\r?\n/).map((l) => l.trim());
           const booted = lines[0] === '1' || /^1$/.test(lines[0] || '');
           const pmReady = lines.some((l) => /^package:/.test(l));
-          errStreak = 0;
+          lastAdbState = 'online';
           if (booted && pmReady) return 'ok';
           return booted ? 'pending' : 'booting';
         } catch (e) {
-          errStreak += 1;
           // 关键分支：adb shell 报错可能是「还没开机」也可能是「授权对话框卡住」。
           // 后者每轮 shell 都抛异常，旧实现只当普通 offline：重启 server 后继续按
           // 240s×4 组参数干等，最后报「运行时未能完成开机」，让用户以为是显卡/虚拟化。
           // 这里先按报错文本、再按 devices 的 state 列（get-state 分不清 authorized）
           // 双重确认 unauthorized，命中就作废旧快照冷启动 + 给出准确诊断，不再空等。
           const raw = String((e && (e.raw || e.stdout || e.message)) || '');
-          let unauthorized = isUnauthorizedError(raw);
-          if (!unauthorized) {
-            const st = await c.deviceState().catch(() => '');
-            unauthorized = st === 'unauthorized';
-          }
-          if (unauthorized) {
+          const state = isUnauthorizedError(raw) ? 'unauthorized' : await c.deviceState().catch(() => 'unavailable');
+          if (state === 'unauthorized') {
             this.emulator.lastDiagnosis = diagUnauthorized();
             if (!authHealed) {
               authHealed = true;
@@ -415,13 +407,11 @@ class Runtime {
             // 交给 start() 立刻换一组参数重试；冷启动后 dialog 问题会消失
             return 'fatal';
           }
-          // 其它 adb 传输异常：沿用原来的重启 server 自愈
-          const now = Date.now();
-          if (errStreak >= 6 && now - probeStart > 25000 && now - lastHeal > 30000) {
-            lastHeal = now;
-            onLog('adb 连接异常，重启 adb server 后继续等待…');
-            await this.emulator.resetAdbServer().catch(() => {});
-            this._probeClient = null;
+          // Boot and a framework locale change both temporarily take adbd offline.
+          // Restarting the host daemon here can interrupt the same reconnection.
+          if (state !== lastAdbState) {
+            onLog('Waiting for Android debugging connection (' + (state || 'not listed') + ')');
+            lastAdbState = state;
           }
           return 'pending';
         }
