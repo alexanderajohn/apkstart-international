@@ -25,7 +25,8 @@ test('wrong, unavailable, or spoofed AVD identity fails closed',async()=>{
 });
 test('offline/unauthorized guest is refused before any console query',async()=>{
  for(const state of ['unauthorized','offline','no-device']){
-  const f=fake({state});await assert.rejects(()=>run(f),/offline or unauthorized/);
+  const f=fake({state});await assert.rejects(()=>run(f),err=>err.message.endsWith('is '+state) &&
+   (err.code==='ADB_DISCONNECTED')===(state!=='unauthorized'));
   assert.deepEqual(f.log,['devices']);
  }
 });

@@ -10,7 +10,7 @@
 const { spawn, execFile } = require('child_process');
 const net = require('net');
 const fs = require('fs');
-const { identifyGuest, readOwner, recordOwner, verifyOwner } = require('./runtime-owner');
+const { identifyGuest, identifyStartedGuest, readOwner, recordOwner, verifyOwner } = require('./runtime-owner');
 const path = require('path');
 const { AdbClient, isUnauthorizedError } = require('./adb');
 const store = require('./store');
@@ -451,7 +451,12 @@ class Runtime {
       this.emuSerial = st.serial || this.emulator.serial;
       const client = this.client(this.emuSerial);
       if (st.reused) await verifyOwner(client, store.profiles, profileId);
-      else recordOwner(store.profiles, await identifyGuest(client, store.profiles, profileId));
+      else {
+        const owner = api34
+          ? await identifyStartedGuest(client, store.profiles, profileId, previousReadyBoot)
+          : await identifyGuest(client, store.profiles, profileId);
+        recordOwner(store.profiles, owner);
+      }
       this._profileOwnedRuntime = true;
       await this.prepare(client);
       // 快照改成「空闲时再存」：立刻存要写 1~3GB，会和用户刚点开的应用抢磁盘 I/O

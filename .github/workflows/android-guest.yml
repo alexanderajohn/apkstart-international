@@ -60,8 +60,19 @@ jobs:
       - name: Prepare Google SDK and isolated hardware acceleration
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libpulse0 libnss3 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libgl1 libvulkan1
+          packages=(libpulse0 libnss3 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libgl1 libvulkan1)
+          missing=()
+          for package in "${packages[@]}"; do
+            if [[ $(dpkg-query -W -f='${Status}' "$package" 2>/dev/null) != 'install ok installed' ]]; then missing+=("$package"); fi
+          done
+          if (( ${#missing[@]} )); then
+            sources=/etc/apt/sources.list.d/ubuntu.sources
+            [[ -s "$sources" ]] || sources=/etc/apt/sources.list
+            test -s "$sources"
+            opts=(-o "Dir::Etc::sourcelist=$sources" -o 'Dir::Etc::sourceparts=-' -o 'Acquire::Retries=3')
+            sudo apt-get "${opts[@]}" update --error-on=any -qq
+            sudo apt-get "${opts[@]}" install -y --no-install-recommends "${missing[@]}"
+          fi
           test -c /dev/kvm
           sudo usermod -aG kvm "$(id -un)"
           sudo install -d /run/udev/rules.d

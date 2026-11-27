@@ -14,6 +14,23 @@ async function identifyGuest(client, profiles, profileId) {
     throw Error('Cannot verify the active Android boot');
   return { profileId, serial, boot };
 }
+// The startup probe observed this kernel before first ownership registration.
+async function identifyStartedGuest(client, profiles, id, boot) {
+  if (!uuid.test(boot)) throw Error('Missing Android startup boot identity');
+  const serial = client.serial;
+  const deadline = Date.now() + 90000;
+  for (;;) {
+    if (client.serial !== serial || profiles.currentId() !== id) throw Error('Android startup target changed');
+    try {
+      const owner = await identifyGuest(client, profiles, id);
+      if (owner.boot !== boot) throw Error('Android boot identity changed during startup');
+      return owner;
+    } catch (error) {
+      if (error.code !== 'ADB_DISCONNECTED' || Date.now() >= deadline) throw error;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+}
 function ownerFile(profiles, id) { return path.join(profiles.profileRoot(id), 'runtime-owner.json'); }
 function readOwner(profiles, id) {
   const file = ownerFile(profiles,id);
@@ -56,4 +73,4 @@ async function waitForOwnedReconnect(client, profiles, id, owner) {
   }
   return false;
 }
-module.exports = { identifyGuest, readOwner, recordOwner, verifyOwner, waitForOwnedReconnect };
+module.exports = { identifyGuest, identifyStartedGuest, readOwner, recordOwner, verifyOwner, waitForOwnedReconnect };

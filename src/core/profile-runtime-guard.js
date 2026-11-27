@@ -26,8 +26,12 @@ async function assertProfileGuest({expectedProfileId,getProfileId,client,serial,
     assertProfileUnchanged(expectedProfileId,getProfileId);
     return {ok:true,profileId:expectedProfileId,legacyQemu:true};
   }
-  if(await client.deviceState()!=='device')
-    throw Error('ADB device is offline or unauthorized');
+  const state=await client.deviceState();
+  if(state!=='device') {
+    const error=Error('Selected Android ADB device is '+state);
+    if(state==='offline'||state==='no-device') error.code='ADB_DISCONNECTED';
+    throw error;
+  }
   let name=null;
   try{
     const result=await client.exec(['emu','avd','name'],{timeout:8000});

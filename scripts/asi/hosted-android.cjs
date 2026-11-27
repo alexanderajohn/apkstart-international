@@ -27,7 +27,7 @@ async function run() {
   process.env.ANDROID_ADB_SERVER_PORT = '5044';
   const {AdbClient} = require('../../src/core/adb');
   const {inspectRuntime} = require('../../src/core/runtime-readiness');
-  const {identifyGuest,recordOwner,verifyOwner} = require('../../src/core/runtime-owner');
+  const {identifyStartedGuest,recordOwner,verifyOwner} = require('../../src/core/runtime-owner');
   const {prepareInstall} = require('../../src/core/apk-install-guard');
   const {withApprovedCopy} = require('../../src/core/install-staging');
   const {EncryptedBackupCenter} = require('../../src/core/encrypted-backup');
@@ -143,8 +143,7 @@ async function run() {
           broadcastBarrier=error.message.slice(0,240);
           console.log('Android broadcast diagnostic',broadcastBarrier);
         }
-        const owner=await identifyGuest(client,registry,id);
-        assert.equal(owner.boot,bootId);
+        const owner=await identifyStartedGuest(client,registry,id,bootId);
         recordOwner(registry,owner);
         await client.exec(['shell','input','keyevent','KEYCODE_WAKEUP']);
         await client.exec(['shell','wm','dismiss-keyguard']);
@@ -204,9 +203,10 @@ async function run() {
             await client.exec(['shell','rm','-f',uiFile],{timeout:5000}).catch(()=>{});
           }
           if (xml.includes('resource-id="android:id/aerr_wait"')) {
-            const diagnostic=await client.shell('dumpsys activity lastanr').catch(()=> '');
-            const reason=diagnostic.split('\n').filter(l=>/ANR in |Reason:|Subject:/.test(l)).slice(0,3);
-            throw Error('Android displayed an application-not-responding dialog. '+reason.join(' ').slice(0,450));
+            const events=await client.shell('logcat -d -b events -s am_anr:I').catch(()=> '');
+            const last=events.split('\n').filter(l=>l.includes('am_anr')).at(-1);
+            const title=xml.match(/text="([^"]*)" resource-id="android:id\/alertTitle"/)?.[1];
+            throw Error('Android displayed an application-not-responding dialog. '+(title||'')+' '+(last||'').slice(0,400));
           }
           const button=appManagerDenyControl(xml,grant.split('/')[0]);
           const decisionKey=button && JSON.stringify([button.prompt,button.control]);
@@ -289,9 +289,9 @@ async function run() {
   // A split failure is reported at the end so the other Profile, cold boots
   // and recovery can still be independently exercised on this runner.
   const splitFailures=[];
-  async function splitPhase(name,file,profileId) {
+  async function splitPhase(name,profileId,operation) {
     try {
-      await phase(name,()=>exerciseInstallation({file,pkg:splitPkg},profileId));
+      await phase(name,operation);
     } catch (error) {
       await verifyOwner(client,registry,profileId);
       splitFailures.push(error);
@@ -314,12 +314,18 @@ async function run() {
   async function checkInstalled() {
     assert.equal(await verifyCanary(client,debugPkg,digest),true);
     const foregroundApps=[];
-    for(const pkg of [...fixtures.map(f=>f.pkg),splitPkg]) {
+    for(const {pkg} of fixtures) {
       assert(store.getApp(pkg),'Missing Profile catalog entry');
       assert(await packagePresent(client,pkg),'Missing installed package');
       foregroundApps.push(await foreground(pkg));
     }
     return {canaryVerified:true,foregroundApps,permissionsDenied:await checkDefaultPermissions()};
+  }
+
+  async function checkRestoredSplit() {
+    assert(store.getApp(splitPkg),'Split package missing from Profile catalog');
+    assert(await packagePresent(client,splitPkg),'Split package missing on Android');
+    return {activity:await foreground(splitPkg)};
   }
 
   try {
@@ -331,7 +337,7 @@ async function run() {
     for(const fixture of fixtures) {
       await phase('install-close-relaunch-'+fixture.pkg,()=>exerciseInstallation(fixture,primary));
     }
-    await splitPhase('install-close-relaunch-apks','device.apks',primary);
+    await splitPhase('install-close-relaunch-apks',primary,()=>exerciseInstallation({file:'device.apks',pkg:splitPkg},primary));
     await phase('verify-default-permissions',checkDefaultPermissions);
     await phase('write-private-canary',()=>writeCanary(canary));
     await phase('shutdown-primary',stop);
@@ -350,13 +356,14 @@ async function run() {
       }
       return {absent:[...fixtures.map(x=>x.pkg),splitPkg]};
     });
-    await splitPhase('install-close-relaunch-xapk','device.xapk',secondary);
+    await splitPhase('install-close-relaunch-xapk',secondary,()=>exerciseInstallation({file:'device.xapk',pkg:splitPkg},secondary));
     await phase('shutdown-secondary',stop);
     const beforeRestore=await phase('cold-boot-original',async()=>{
       const b=await boot(primary);
       assert.notEqual(b.boot,first.boot,'Expected another cold boot');
       return {...b,...await checkInstalled()};
     });
+    await splitPhase('foreground-split-after-cold-boot',primary,checkRestoredSplit);
     await phase('change-private-canary-after-backup',()=>writeCanary(crypto.randomBytes(48)));
     await phase('shutdown-before-restore',stop);
     await phase('encrypted-offline-restore',async()=>{
@@ -371,6 +378,7 @@ async function run() {
       assert.notEqual(b.boot,beforeRestore.boot,'Expected a cold boot of the restored AVD');
       return {...b,...await checkInstalled()};
     });
+    await splitPhase('foreground-split-after-restore',primary,checkRestoredSplit);
     await phase('save-restored-snapshot',async()=>{
       await verifyOwner(client,registry,primary);
       assert(await runtime.emulator.saveSnapshotNow(adb,{timeout:120000}),'Named snapshot save failed');
@@ -383,6 +391,7 @@ async function run() {
       assert.equal(resumed.boot,restoredBoot.boot,'Emulator cold-booted instead of resuming the saved Android kernel');
       return {...resumed,snapshot:SNAPSHOT_NAME,...await checkInstalled()};
     });
+    await splitPhase('foreground-split-after-quick-boot',primary,checkRestoredSplit);
     await phase('shutdown-after-quick-boot',stop);
     if (splitFailures.length) throw new AggregateError(splitFailures,'Split validation failed. See both Profile observations.');
     report.complete=true;

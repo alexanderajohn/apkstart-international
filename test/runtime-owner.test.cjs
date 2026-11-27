@@ -66,3 +66,20 @@ test('write recovery refuses a different boot or unauthorized transport on the s
   client.exec=async args=>({stdout:args[0]==='emu'?'apkstart_'+id+'\nOK':randomUUID()});
   await assert.rejects(waitForOwnedReconnect(client,profiles,id,owner), /boot identity/);
 });
+
+test('first ownership after offline startup requires the observed kernel, exact AVD and authorized serial', async () => {
+  const {identifyStartedGuest} = require('../src/core/runtime-owner');
+  const boot = randomUUID(), id = 'default';
+  let avd = 'apkstart', actual = boot, state = 'offline';
+  const profiles = {currentId:()=>id};
+  const client = {serial:'emulator-5554',
+    deviceState:async()=>{const observed=state;state='device';return observed;},
+    exec:async args=>({stdout:args[0]==='emu'?avd+'\nOK':actual})};
+  assert.deepEqual(await identifyStartedGuest(client,profiles,id,boot), {serial:client.serial,profileId:id,boot});
+  state='unauthorized';
+  await assert.rejects(identifyStartedGuest(client,profiles,id,boot), /unauthorized/);
+  actual=randomUUID();
+  await assert.rejects(identifyStartedGuest(client,profiles,id,boot), /boot identity changed/);
+  avd='foreign';
+  await assert.rejects(identifyStartedGuest(client,profiles,id,boot), /exact Android AVD/);
+});
