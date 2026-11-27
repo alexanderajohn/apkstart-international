@@ -4,43 +4,17 @@
 
 ApkStart International hướng tới trải nghiệm chạy ứng dụng Android trên Windows bằng cửa sổ riêng, cùng giao diện tiếng Anh, tiếng Việt và tiếng Trung giản thể.
 
-## Đã triển khai trong bộ mã khởi tạo
+## Dùng thử trên Windows
 
-- Bộ từ điển giao diện EN / VI / ZH-CN và nút đổi ngôn ngữ.
-- Ghi nhớ lựa chọn ngôn ngữ; tự nhận diện ngôn ngữ hệ điều hành khi chưa chọn.
-- Cấu hình tên sản phẩm, App ID, URL dự án và kênh GitHub của fork.
-- Vô hiệu hóa lệnh build MSIX/AppX liên quan danh tính Microsoft Store của tác giả gốc.
-- Kiểm thử i18n và kiểm tra cấu hình cơ bản chạy tự động.
-- Giữ LICENSE và lưu lại README gốc để ghi công.
+**Phiên bản 1.0.0-rc.1 đang ở trạng thái Release Blocked.** GitHub Actions đã chạy APK thật trên Android 14 với Windows Server và Linux. Kiểm thử trên máy Windows 10/11, kiểm tra đầy đủ ba ngôn ngữ và ký bản phân phối vẫn còn mở.
 
-## Những phần chưa xong
+1. Chọn một commit đã đạt Windows CI trong [bảng kết quả và tải xuống](docs/DEVELOPMENT_PROGRESS.md). Tải **Portable** hoặc **Setup** ở đúng dòng của commit đó. Cả hai bản đều chưa ký.
+2. Với Portable, giải nén toàn bộ vào một thư mục rồi mở `ApkStart International.exe`. Với Setup, giải nén và đối chiếu SHA-256 của tệp cài đặt với `SHA256SUMS`. Sao lưu Profile và AVD trước khi thử nâng cấp.
+3. Mở ứng dụng và làm theo hướng dẫn thiết lập Android. Bộ công cụ Android và ảnh hệ thống được tải riêng. Xem [hướng dẫn cài đặt và khôi phục phiên bản](docs/CANDIDATE_VALIDATION.md).
 
-Đây vẫn là **bản chuẩn bị source**, chưa phải bộ cài Windows hoàn thiện. Bộ từ điển hiện chỉ bao phủ các chuỗi đã có mục dịch; một số thông báo và màn hình chưa được dịch. Cần kiểm thử cập nhật, thư mục dữ liệu, liên kết `.apk`, hành vi xóa dữ liệu ứng dụng và giấy phép các thành phần Android/QEMU trước khi phát hành.
+## SmartCheck trước khi cài
 
-## Cách áp dụng vào fork
-
-Cài Node.js 20+, Git. Fork repo `RoutineMiku/apkstart` qua GitHub, tải repo về máy và chạy:
-
-```powershell
-node .\apply.mjs --target C:\path\to\your\fork --repo TEN_GITHUB_CUA_ANH/apkstart-international
-```
-
-Hoặc chạy `node .\apply.mjs --clone --repo TEN_GITHUB_CUA_ANH/apkstart-international` từ thư mục bộ mã khởi tạo để tự clone upstream (yêu cầu có kết nối mạng và Git).
-
-Tiếp theo kiểm thử:
-
-```powershell
-npm run test:international
-npm run audit:international
-npm run i18n:build
-```
-
-Dự án gốc: https://github.com/RoutineMiku/apkstart — tác giả RoutineMiku, giấy phép MIT. Đọc thêm [CREDITS.md](CREDITS.md) và [docs/RELEASE_BLOCKERS.md](docs/RELEASE_BLOCKERS.md).
-## SmartCheck — kiểm tra APK trước khi cài
-
-Chọn hoặc kéo tệp APK vào giao diện để kiểm tra ngay trên máy: Android tối thiểu, target SDK, CPU ABI, quyền ứng dụng, dấu hiệu chữ ký (chưa xác minh mật mã) và SHA-256. Không tải APK lên máy chủ. Chỉ bắt đầu cài khi người dùng nhấn xác nhận.
-
-Gói .apks/.xapk hiện chỉ kiểm tra giới hạn, kèm cảnh báo. SmartCheck không phải công cụ diệt virus và không bảo đảm APK chạy được. Cài trực tiếp qua liên kết tệp Windows hoặc dòng lệnh chưa đi qua hộp thoại này.
+Chọn hoặc kéo APK vào giao diện để xem yêu cầu Android, kiến trúc CPU, quyền và SHA-256. Với bộ APKS/XAPK được hỗ trợ, SmartCheck đọc cả APK cơ sở lẫn các APK thành phần. Dấu hiệu chữ ký trong bản xem trước chưa xác nhận danh tính nhà phát triển. Khi mở APK từ Explorer hoặc dòng lệnh, hộp thoại Windows yêu cầu xác nhận trước khi cài vào Profile đã chọn.
 
 ## Auto-Repair 2.0 — chẩn đoán và sửa lỗi an toàn
 
@@ -54,15 +28,11 @@ Vào **Settings → Performance & Resource Usage → Smart Performance Engine �
 
 Trên màn hình chính có thanh **Android Profiles** để tạo môi trường như Công việc / Giải trí / Thử nghiệm. Mỗi profile phụ có danh sách APK, cache, AVD, ứng dụng và dữ liệu Android riêng. Profile **Mặc định** giữ nguyên vị trí dữ liệu cũ, không di chuyển hay xóa gì. Thành phần Android Emulator và ảnh hệ thống được dùng chung để tiết kiệm dung lượng.
 
-Chỉ chạy **một profile tại một thời điểm**. Trước khi chuyển, anh cần dừng runtime trong Settings và đóng ứng dụng; nếu còn máy ảo mở, hệ thống từ chối chuyển để tránh gắn nhầm dữ liệu. Chuyển xong ApkStart tự khởi động lại. Shortcut của profile phụ tạm thời không tạo để tránh mở sai Android. Chưa hỗ trợ nhân bản/xóa profile hay chuyển dữ liệu giữa chúng. Xem [tài liệu Android Profiles](docs/ANDROID_PROFILES.md).
+Dừng Android và đóng các cửa sổ ứng dụng trước khi chuyển Profile. ApkStart kiểm tra máy ảo còn chạy và khởi động lại sau khi chuyển. Shortcut mới ghi cả tên gói lẫn mã Profile. Mỗi Profile có cấu hình thư mục chia sẻ riêng. [Hướng dẫn Android Profiles](docs/ANDROID_PROFILES.md)
 
-## Backup & Restore Center - Sao luu va khoi phuc Android
+## Sao lưu và khôi phục Android
 
-Mo **Backup & Restore Center** ngay duoi thanh Android Profiles. Phan mem sao luu **profile dang duoc chon** thanh mot **thu muc** (chua phai ZIP), gom danh sach ung dung, APK/icon da luu va AVD Android chua userdata/snapshot. **Dung Android trong Settings truoc khi sao luu/khôi phuc.** Ban sao luu gan voi ID profile; neu chuyen sang may moi, can giu `profiles.json` rieng de khong mat dinh danh profile phu.
-
-Moi file duoc kiem tra SHA-256; truoc khoi phuc se kiem tra dung luong con trong va buoc anh nhap `RESTORE`. Du lieu cu duoc giu lai duoi ten `.before-restore`, khong tu dong xoa. Khoi dong lai ApkStart sau khi khoi phuc.
-
-**Luu y bao mat:** Thu muc sao luu **KHONG MA HOA**, co the chua thong tin dang nhap va du lieu ca nhan. Nen luu tren o dia da ma hoa; tuyet doi khong cong khai. Khong upload len server. Chi ho tro AVD cua Android Emulator, khong sao luu QEMU/ISO va runtime binary. Xem [tai lieu ky thuat](docs/BACKUP_RESTORE.md).
+Dừng Android rồi mở **Backup & Restore Center** để sao lưu Profile đang chọn. Khi chuyển sang máy khác, tạo một Profile phụ có cấu hình AVD tương thích và dùng chức năng nhập bản sao lưu mã hóa. Việc chuyển giữa hai máy Windows thật vẫn đang chờ kiểm chứng. [Hướng dẫn chuyển Profile](docs/PORTABLE_MIGRATION.md)
 
 ## Encrypted Backup & Recovery — sao lưu mã hóa bằng mật khẩu
 

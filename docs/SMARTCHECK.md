@@ -1,32 +1,19 @@
-# SmartCheck — offline pre-install APK review
+# SmartCheck before Android installation
 
-Status: developer preview. Static analysis is NOT antivirus, signature verification, Google Play Protect or a guarantee of compatibility.
+SmartCheck reads a selected file locally and shows the package identity, Android API requirements, permissions, native ABIs and SHA-256 digest. The presence of a certificate file or APK signing block is a structural observation. Android’s package manager enforces signing and update rules during installation.
 
-## What is inspected
+## APK and split package review
 
-- A new read-only Electron IPC method uses the existing streaming ZIP/AXML APK reader.
-- The APK manifest yields minSdkVersion, targetSdkVersion, requested permissions and required hardware features.
-- APK native library folders reveal bundled ABI architectures (including x86, x86_64 and ARM).
-- A SHA-256 digest is calculated by streaming the selected local file, not uploading it.
-- The checker detects META-INF certificate files or APK Signing Block presence but DOES NOT verify cryptographic signatures or attest developer identity.
-- Android 14 is API 34. Requiring minSdkVersion > 34 prevents in-app installation; older target SDKs and ARM-only binaries show warnings.
+For a supported APKS or XAPK archive, SmartCheck inspects the base and split APKs. A device-specific set must contain one base APK, consistent package and version identifiers, unique split names and the required split dependencies. The preview combines permissions, features and native ABIs and records a digest for each APK. Bundles containing external OBB assets require a different distribution. Packages requiring an API newer than Android 14 are blocked. ARM-only native code and older target SDKs can produce compatibility warnings.
 
-## Explicit consent
+## Approval and installation
 
-Selecting or dragging an APK in the application opens SmartCheck before the installer starts. The user may cancel. The install button stays disabled until analysis succeeds, and a known minimum API mismatch blocks it by default. A static scan cannot prove that an APK is safe or will execute.
+The picker and drag-and-drop flows show the renderer preview. Opening an APK from Explorer or the command line also goes through main-process approval, with the active Profile, package and digest shown in a native dialog. Cancellation ends the operation.
 
-Split .apks/.xapk packages currently show only file size and hash; internal APKs are not yet inspected. They require a warning and direct user confirmation to proceed.
+After approval, the installer copies the selected file to a private staging directory and compares its digest, size, package, version, format and split digests with the approval. It checks the guest identity and streams each APK into an Android package-manager session while verifying its length and digest. If the result of the Android commit is unknown, inspect the package in that Profile before retrying.
 
-## Known gaps and safety notes
+## Verification and limits
 
-- Windows file-association / command-line installation still uses the legacy path and does not use the renderer SmartCheck confirmation dialog.
-- Signing evidence is NOT cryptographic validation. Treat the signature as unverified.
-- Large package hashing has no user-visible progress indicator or cancellation; do not use untrusted giant packages in a preview release.
-- Files may change between scan and installation; hash pinning is not yet implemented.
-- Corrupt APKs or compressed ZIP anomalies need additional fuzz testing.
-- There is no malware detection, remote reputation lookup, automated network upload or Android runtime boot in SmartCheck.
-- Only consent for picker and drag/drop flows has been tested. Full runtime APK install needs manual Windows validation.
+Run `npm run test:international` for the SmartCheck, approval, staging, session and Profile regression tests. Hosted Android 14 runs exercise signed APKs and device-specific split sets. The packaged Windows jobs open APKs through Explorer and confirm the resulting package from its original shortcut. [Revision-specific results](DEVELOPMENT_PROGRESS.md)
 
-## Automated tests
-
-Run npm run test:international. Synthetic APK fixtures test SDK bounds, native ABI, permissions, sensitive permissions, signing markers, hash generation and the frontend IPC/consent wiring. Tests do not mean third-party APKs are guaranteed to install.
+SmartCheck cannot determine whether an application is trustworthy. The preview has no progress or cancellation control during large-file hashing. Physical Windows 10/11 coverage and further testing with malformed archives remain open.

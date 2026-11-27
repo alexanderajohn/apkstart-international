@@ -32,7 +32,7 @@ npm run audit:international
 npm run dev
 ```
 
-Development changes are proposed in feature branches until reviewed and merged. Installation and production Windows runtime compatibility remain unverified.
+Windows CI builds and smoke-tests the launcher. The hosted Android workflow exercises signed APKs on Linux/KVM and Windows Server/WHPX. Physical Windows 10/11 testing remains open.
 
 ## Language workflow
 
@@ -46,7 +46,7 @@ Development changes are proposed in feature branches until reviewed and merged. 
 
 ## Build notes
 
-The original upstream has an Electron/Windows runtime build process. Do not assume `npm run build:exe` is safe or production-ready without resolving [release blockers](docs/RELEASE_BLOCKERS.md) and validating on Windows. CI here runs static checks, not QEMU integration tests.
+Use the feature branch’s Windows CI for the unsigned evaluation builds. The separate Android workflow boots Google Play API 34 guests, installs fixtures, checks the foreground Activity and tests persistent Profile data. See the [release gates](docs/CANDIDATE_VALIDATION.md).
 
 ## Credits and license
 
@@ -60,9 +60,9 @@ The original [ApkStart project](https://github.com/RoutineMiku/apkstart) is by *
 
 SmartCheck performs a local read-only inspection when the user selects or drags an APK in the Electron UI. It displays Android API requirements, native ABIs, requested/sensitive permissions, APK signing **evidence only (not a cryptographic signature verification)** and SHA-256. No content is uploaded, Android does not start during analysis, and installation requires a deliberate confirmation click.
 
-For Android 14 (API 34), APKs requiring a minimum API higher than 34 cannot proceed through the SmartCheck dialog. Older target SDKs and ARM-only binaries produce compatibility warnings, not safety verdicts. Split .apks/.xapk bundles get a limited filename/size/hash preview with a conspicuous warning.
+SmartCheck inspects the base and split manifests in supported APKS/XAPK sets, aggregates permissions and ABIs, and records a digest for each APK. It blocks packages requiring a newer Android API than 34. Older target SDKs and ARM-only packages can produce warnings.
 
-Static inspection cannot establish that an APK is safe or will work. Direct command-line and Windows file-association installs are not yet covered by the renderer's confirmation UI. See [SmartCheck details](docs/SMARTCHECK.md).
+Opening an APK from Explorer or the command line shows a native approval dialog. Approval binds the selected Profile, package and file digest. Android’s package manager checks the installation. See [SmartCheck details](docs/SMARTCHECK.md).
 
 ## Auto-Repair 2.0 — safe troubleshooting preview
 
@@ -84,17 +84,11 @@ Create **Work / Games / Testing** environments from the new Android Profiles bar
 
 **Only one profile may run at a time.** Stop Android using Settings → Runtime → Stop Runtime, close app windows and finish installs before switching. If any emulator port is still live, switching fails closed; the app never kills unrelated QEMU/Android Studio processes to force it. A successful switch restarts ApkStart rather than hot-swapping disk paths while Android is running.
 
-Secondary-profile desktop shortcuts are deliberately disabled in this preview: unqualified legacy Windows shortcuts continue to refer to Default, never to whatever profile happens to be active. Profile deletion, cloning, and cross-profile app-data migration are **not implemented**. General UI/runtime settings stay shared, while APK data and guest userdata are isolated.
+New shortcuts identify the Android package and its Profile. Legacy shortcuts without a Profile refer to Default. Each Profile has its own shared-folder settings. [Android Profiles](docs/ANDROID_PROFILES.md)
 
-See [Android Profiles technical and safety notes](docs/ANDROID_PROFILES.md).
+## Backup & Restore Center
 
-## Backup & Restore Center (developer preview)
-
-Open **Backup & Restore Center** under Android Profiles. The app creates a **portable backup folder** (not a ZIP) for the *currently active* Android profile, containing its APK catalog, cached APKs and icons, plus Android Emulator's persistent AVD userdata/snapshots, when present. The existing Default paths are preserved. **Stop Android in Settings and close all apps before creating or applying a backup.** A backup can be imported only into the *same profile ID*, so users should retain `profiles.json` separately if moving computers.
-
-Each backup contains a SHA-256 manifest. Restore always starts with a full integrity and free-disk-space check, followed by a one-time token and explicit typed `RESTORE` consent. Restored files are staged and verified **before** target paths are renamed; old data is kept in `.before-restore` safety copies, not silently deleted. Restart ApkStart after restoring, then check the Android app data and manage safety-copy disk usage manually.
-
-**Privacy warning:** Backups are **NOT encrypted** and may contain sensitive app sessions, tokens, messages and passwords. Store on a trusted encrypted drive, never upload or share them casually. No network upload or automatic retention/deletion is performed. This preview excludes shared SDK/system images, general settings and legacy external QEMU/ISO disks. See [Backup & Restore technical notes](docs/BACKUP_RESTORE.md).
+Stop Android and close app windows before backing up or restoring a Profile. The encrypted backup directory includes the app catalog, cached APKs and icons, and persistent AVD data when present. Restore checks integrity and space, requires explicit consent, and retains previous components in safety copies. For a transfer to a different Windows PC, use a compatible secondary Profile and the dedicated [migration procedure](docs/PORTABLE_MIGRATION.md). Cross-machine validation remains open.
 
 ## Encrypted Backup & Recovery (developer preview)
 

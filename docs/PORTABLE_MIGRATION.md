@@ -11,6 +11,8 @@ ApkStart International can transfer an Android profile between Windows machines 
 5. Type **MIGRATE**, confirm the renderer warning, and approve the **native OS** dialog. Re-enter the password. The program reauthenticates the data, rechecks target compatibility and stages decrypted payloads on the destination drive.
 6. Only after successful staging is the target replaced. Existing target components are renamed into individual `.before-restore` safety copies and are **never automatically deleted**. Restart ApkStart before booting Android.
 
+The import binds catalog APK and icon paths to package-owned files in the authenticated archive and the destination Profile. The import clears source desktop and Start Menu shortcut paths. AVD compatibility uses the Android target from the AVD descriptor when a generated `config.ini` omits it. Conflicting targets block import.
+
 The destination's machine-specific AVD `config.ini` is kept rather than importing path values from the source computer. Files are written only inside the selected profile's known data components; system binaries, system images, general settings and unrelated profiles are not imported. The source backup remains encrypted and unchanged.
 
 ## Fail-closed behavior and limitations

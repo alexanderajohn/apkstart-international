@@ -20,6 +20,7 @@ const {
   checkManifest,within,safe,safeStat,walk,checkSpace,shaFile
 }=require('./backup-center');
 const {assertRestoreFinished}=require('./restore-journal');
+const {validPackageName}=require('./pkgname');
 const scrypt=promisify(crypto.scrypt);
 const ENC_FORMAT='apkstart-international-encrypted-backup',ENC_VERSION=1;
 const KDF={name:'scrypt',N:32768,r:8,p:1,keyBytes:32};
@@ -114,12 +115,21 @@ function parseAvdConfig(raw){
   }
   return out;
 }
+async function readAvdMetadata(file){
+  let stat;
+  try {stat=await safeStat(file);}
+  catch(error){if(error.code==='ENOENT')return {};throw error;}
+  if(!stat.isFile()||stat.size>1024*1024)throw Error('Invalid Android AVD configuration file');
+  return parseAvdConfig(await p.readFile(file,'utf8'));
+}
 async function avdCompatibility(dir){
-  const file=path.join(dir,'config.ini');
-  if(!fs.existsSync(file))return null;
-  const stat=await safeStat(file);
-  if(!stat.isFile()||stat.size>1024*1024)throw Error('Invalid AVD config.ini');
-  const result=parseAvdConfig(await p.readFile(file,'utf8'));
+  const result=await readAvdMetadata(path.join(dir,'config.ini'));
+  if(!Object.keys(result).length)return null;
+  // ApkStart and avdmanager store the platform target in the sibling AVD descriptor.
+  const descriptor=await readAvdMetadata(path.join(path.dirname(dir),path.basename(dir,'.avd')+'.ini'));
+  if(result.target&&descriptor.target&&result.target!==descriptor.target)
+    throw Error('Incompatible platform targets in Android AVD configuration');
+  result.target ||= descriptor.target;
   return AVD_KEYS.every(k=>result[k]&&result[k].length<=512)?result:null;
 }
 function requireCompatible(source,target){
@@ -128,6 +138,33 @@ function requireCompatible(source,target){
     if(typeof source[k]!=='string'||typeof target[k]!=='string'||source[k]!==target[k])
       throw Error('Incompatible Android AVD '+k+': use matching SDK, ABI, architecture and system image');
   }
+}
+// Host paths in a catalog belong to the exporting machine. Only bind files
+// present in the authenticated inventory to this destination's directories.
+async function relocateCatalog(file,layout,manifest){
+  if((await safeStat(file)).size>MANIFEST_LIMIT)throw Error('App catalog exceeds the migration size limit');
+  const catalog=JSON.parse(await p.readFile(file,'utf8'));
+  if(!Array.isArray(catalog?.apps))throw Error('Invalid app catalog in migration backup');
+  const files=new Set(manifest.files.map(entry=>entry.path));
+  const packages=new Set();
+  for(const app of catalog.apps){
+    if(!validPackageName(app?.package)||packages.has(app.package))
+      throw Error('Invalid or duplicated package in migration catalog');
+    packages.add(app.package);
+    const cache=typeof app.apkPath==='string'?path.win32.basename(app.apkPath):'';
+    const prefix=app.package+'-';
+    const ownsCache=cache.startsWith(prefix)&&/^[A-Za-z0-9_-]+\.(?:apk|apks|xapk)$/i.test(cache.slice(prefix.length));
+    app.apkPath=ownsCache&&files.has('apks/'+cache)?path.join(layout.targets.apks,cache):null;
+    for(const [field,extension] of [['iconPath','.png'],['icoPath','.ico']]){
+      const name=app.package+extension;
+      app[field]=files.has('icons/'+name)?path.join(layout.targets.icons,name):null;
+    }
+    app.shortcutPath=null;
+    app.startMenuPath=null;
+  }
+  const bytes=Buffer.from(JSON.stringify(catalog,null,2)+'\n');
+  await p.writeFile(file,bytes);
+  return {size:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex')};
 }
 function localVaultPath(dataDir,profileId){
   if(profileId!=='default'&&!/^p_[a-f0-9]{16}$/.test(profileId))
@@ -383,13 +420,13 @@ class EncryptedBackupCenter extends BackupCenter {
               const targetFile=rel?safe(stage,rel):stage;
               await p.mkdir(path.dirname(targetFile),{recursive:true});
               if(pending.migration&&f.path==='avd/config.ini'){
-                 // Keep the destination's system image and machine-specific AVD paths.
-                 // The encrypted source was authenticated during verification.
-                 await p.copyFile(path.join(layout.targets.avd,'config.ini'),targetFile,fs.constants.COPYFILE_EXCL);
-                 overrides.set(f.path,await shaFile(targetFile));
-               }else{
-                 await decryptFile(path.join(v.directory,'payload',f.blob+'.bin'),targetFile,key,f);
-               }
+                await p.copyFile(path.join(layout.targets.avd,'config.ini'),targetFile,fs.constants.COPYFILE_EXCL);
+                overrides.set(f.path,await shaFile(targetFile));
+              }else{
+                await decryptFile(path.join(v.directory,'payload',f.blob+'.bin'),targetFile,key,f);
+                if(pending.migration&&c==='apps.json')
+                  overrides.set(f.path,await relocateCatalog(targetFile,layout,m));
+              }
               this.progress('decrypt-stage',f.size,m.totalBytes);
             }
           }

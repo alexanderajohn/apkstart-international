@@ -266,6 +266,7 @@ async function run() {
   const canary=crypto.randomBytes(48);
   const digest=crypto.createHash('sha256').update(canary).digest('hex');
   const debugPkg=fixtures[0].pkg;
+  const {sha256File}=require('../../src/core/smartcheck');
   async function writeCanary(bytes) {
     await verifyOwner(client,registry,primary);
     await client.exec(['shell','run-as',debugPkg,'mkdir','-p','files']);
@@ -341,11 +342,69 @@ async function run() {
     return {activity:await foreground(splitPkg)};
   }
 
+  async function exerciseMigration() {
+    const fixture=fixtures[0];
+    await phase('migration-source-cold-boot',()=>boot(primary));
+    await phase('migration-source-install',()=>exerciseInstallation(fixture,primary));
+    await phase('migration-source-private-data',()=>writeCanary(canary));
+    await phase('migration-source-stop',stop);
+    const sourceCatalog=fs.readFileSync(registry.paths(primary).appsFile);
+    const exportsDir=path.join(root,'migration-export');
+    fs.mkdirSync(exportsDir);
+    let archive;
+    await phase('migration-encrypted-export',async()=>{
+      archive=await center.create(exportsDir,password);
+      return {source:primary,bytes:archive.bytes,files:archive.files};
+    });
+
+    const clean=await phase('migration-destination-cold-boot',()=>boot(secondary));
+    await phase('migration-destination-empty',async()=>{
+      assert(!await packagePresent(client,fixture.pkg));
+      assert(!store.getApp(fixture.pkg));
+      return {destination:secondary,packageAbsent:true};
+    });
+    await phase('migration-destination-stop',stop);
+    const dest=registry.paths(secondary);
+    const configFile=path.join(dest.avdHome,registry.avdName(secondary)+'.avd','config.ini');
+    const originalConfig=fs.readFileSync(configFile);
+    await phase('migration-import-and-verify',async()=>{
+      const preflight=await center.previewMigration(archive.path,password);
+      assert.equal(preflight.sourceProfileId,primary);
+      assert.equal(preflight.profileId,secondary);
+      const result=await center.restore(preflight.token,password);
+      assert(result.ok&&result.migration&&result.profileId===secondary);
+      assert(result.preserved.some(file=>file.includes(registry.avdName(secondary)+'.avd.')));
+      assert.deepEqual(fs.readFileSync(configFile),originalConfig);
+      assert.deepEqual(fs.readFileSync(registry.paths(primary).appsFile),sourceCatalog);
+      const record=store.getApp(fixture.pkg);
+      assert(record?.apkPath&&path.dirname(record.apkPath)===dest.apkDir);
+      assert.equal(await sha256File(record.apkPath),
+        await sha256File(path.join(temp,'guest-fixtures',fixture.file)));
+      assert.equal(record.shortcutPath,null);
+      assert.equal(record.startMenuPath,null);
+      return {source:primary,destination:secondary,bytes:result.bytes,files:result.files,
+        originalsPreserved:result.preserved.length,sourceCatalogIntact:true,destinationConfigIntact:true};
+    });
+    await phase('migration-destination-launch-and-persistence',async()=>{
+      const restored=await boot(secondary);
+      assert.notEqual(restored.boot,clean.boot);
+      assert(await packagePresent(client,fixture.pkg));
+      assert(await verifyCanary(client,fixture.pkg,digest));
+      return {...restored,privateDataVerified:true,foreground:await foreground(fixture.pkg)};
+    });
+    await phase('migration-final-stop',stop);
+  }
+
   try {
     save();
     createAvd(primary);
     createAvd(secondary);
     await client.exec(['start-server'],{withSerial:false});
+    if(process.env.ASI_GUEST_SCENARIO==='migration'){
+      await exerciseMigration();
+      report.complete=true;
+      return;
+    }
     const first=await phase('cold-boot-primary',()=>boot(primary));
     for(const fixture of fixtures) {
       await phase('install-close-relaunch-'+fixture.pkg,()=>exerciseInstallation(fixture,primary));

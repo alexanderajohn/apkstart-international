@@ -22,12 +22,12 @@ Because earlier ApkStart versions can leave detached emulators running, a new pr
 
 - No automatic userdata reset, APK migration, AVD deletion, guest clone, Windows account change or cloud upload.
 - No profile delete/clone operations in this preview.
-- Secondary profile Windows shortcuts are disabled until launch arguments carry the exact profile ID. Legacy unqualified shortcuts are restricted to Default when other profiles are active.
-- Direct Windows `.apk` association may still install into the currently selected profile without the SmartCheck consent UI; this existing limitation must be resolved before public release.
+- New Windows shortcuts carry the package and Profile ID. Legacy unqualified shortcuts refer to Default.
+- Opening an APK through Explorer requires native install consent bound to the selected Profile, package and digest.
 - Runtime launch fallback to shared legacy QEMU/ISO disks is blocked for non-default profiles.
 - An explicit custom Android data directory can move secondary profile AVD locations, but it never changes the original Default AVD path.
 - Installations inside each profile require official Android Emulator and a supported system image. The same APK can be independently installed in multiple profiles; this has not yet been verified on actual Windows runtime hardware.
 
 ## Verification
 
-The `test/profiles.test.cjs` regression suite verifies the default path, isolated metadata storage, invalid-name handling, corruption refusal, unique AVD identities and UI safety gates. GitHub Actions builds a Windows Electron preview and smoke-tests profile creation without switching a live Android VM. A full two-profile install/login/restart test on Windows is still required.
+The `test/profiles.test.cjs` regression suite verifies the default path, isolated metadata storage, invalid-name handling, corruption refusal, unique AVD identities and UI safety gates. GitHub Actions builds a Windows Electron preview and smoke-tests profile creation without switching a live Android VM. The [hosted Android matrix](DEVELOPMENT_PROGRESS.md) records real guest and desktop results separately. Login, restart and isolation on physical Windows 10/11 remain release gates.

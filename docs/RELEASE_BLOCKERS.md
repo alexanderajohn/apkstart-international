@@ -1,6 +1,6 @@
 # Stable 1.0 release blockers
 
-**Release Blocked.** The engineering candidate is `1.0.0-rc.1`. See [current gates](CANDIDATE_VALIDATION.md), [security review](SECURITY_REVIEW.md) and [revision-specific Windows build evidence](DEVELOPMENT_PROGRESS.md). Physical Android 14 install/boot/isolation, real Profile migration and power loss, full international workflows, signed upgrades and distribution rights are still open.
+**Release Blocked.** The engineering candidate is `1.0.0-rc.1`. See [current gates](CANDIDATE_VALIDATION.md), [security review](SECURITY_REVIEW.md) and [revision-specific Windows build evidence](DEVELOPMENT_PROGRESS.md). The default Windows Server/WHPX and Linux/KVM Android 14 guests passed 26/26 phases on `5548b25a`. The 720p Windows guest encountered system ANR dialogs during split launches. Physical Windows 10/11 with Android 14, independent host migration, power interruption, complete international workflows, signed upgrades and redistribution review remain open. [Hosted Android results](https://github.com/alexanderajohn/apkstart-international/actions/runs/45980869178)
 
 ## Historical gate checklist
 

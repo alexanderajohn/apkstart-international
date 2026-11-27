@@ -2,7 +2,9 @@
 
 - Verify approved APK and split payloads in private staging and stream verified bytes into an Android package-manager session.
 - Bind desktop launches, ADB connections and emulator reuse to the selected Profile. Preserve previous installations, userdata and snapshots during recovery and runtime cleanup.
-- Add a real-device harness for signed APKs, app-private persistence and repeated launch timings. Physical Windows/Android results are pending.
+- Add hosted Android 14 tests on Windows Server/WHPX and Linux/KVM for signed APKs, split packages, app-private persistence, encrypted restore and Quick Boot. Physical Windows 10/11 validation is pending.
+- Scope shared folders to the selected Profile, verify transfers against the running guest and retain conflicting files. Localize the app window controls and preserve the running guest while waiting for Android to authorize ADB.
+- Bind imported APK cache and icon paths to the destination Profile and clear source-machine shortcut paths. Support AVDs whose platform target is recorded in the SDK descriptor.
 - Verify plain and encrypted restores after the final renames. Persist an interruption journal, preserve original data and roll back failed verification.
 - Add Windows Setup lifecycle tests, a portable inventory, dependency SBOM and offline release-manifest verification. Keep production distribution gated.
 - Extend three-language settings coverage and pin Electron 45.3.4. See the [quality gates](docs/CANDIDATE_VALIDATION.md) for the current release decision.

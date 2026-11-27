@@ -47,6 +47,7 @@ jobs:
           - {os: ubuntu-24.04, task: Android guest}
           - {os: windows-2025, task: Android guest}
           - {os: windows-2025, task: Android guest, panel: 720p, name: Android guest 720p}
+          - {os: windows-2025, task: Android guest, scenario: migration, name: Encrypted Profile migration}
           - {os: windows-2025, task: Packaged desktop, fixture: api}
           - {os: windows-2025, task: Packaged desktop, fixture: calculator, name: Packaged desktop Calculator}
     runs-on: ${{ matrix.os }}
@@ -120,6 +121,7 @@ jobs:
           java -jar "$signer" verify --verbose --print-certs api.apk
           java -jar "$signer" verify --verbose --print-certs calculator.apk
       - name: Verify signed splits and prepare device-specific archives
+        if: matrix.scenario != 'migration'
         shell: bash
         working-directory: ${{ runner.temp }}/guest-fixtures
         run: |
@@ -148,6 +150,7 @@ jobs:
         if: matrix.task == 'Android guest'
         env:
           TEST_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          ASI_GUEST_SCENARIO: ${{ matrix.scenario }}
           ASI_GUEST_PANEL: ${{ matrix.panel }}
         shell: bash
         run: |
@@ -158,7 +161,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always() && matrix.task == 'Android guest'
         with:
-          name: ${{ matrix.panel == '720p' && 'windows-android-14-720p-evidence' || runner.os == 'Windows' && 'windows-android-14-guest-evidence' || 'android-14-guest-evidence' }}
+          name: ${{ matrix.scenario == 'migration' && 'windows-profile-migration-evidence' || matrix.panel == '720p' && 'windows-android-14-720p-evidence' || runner.os == 'Windows' && 'windows-android-14-guest-evidence' || 'android-14-guest-evidence' }}
           path: ${{ runner.temp }}/guest-evidence/
           if-no-files-found: warn
           retention-days: 14

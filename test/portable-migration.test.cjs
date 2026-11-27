@@ -17,8 +17,14 @@ async function fixture(fn){
   try{await fn({data,avd,out,registry,svc,setOnline:v=>online=v});}
   finally{await p.rm(root,{recursive:true,force:true});}
 }
-async function prepare(x){
-  await write(path.join(x.data,'apps.json'),'SOURCE_APPS_PRIVATE');
+const pkg='org.example.migrated';
+const sourceCatalog=JSON.stringify({apps:[{package:pkg,label:'Backup test',pinned:true,
+  apkPath:'C:/Source/Profile/apks/'+pkg+'-cur.apk',iconPath:'C:/Source/Profile/icons/'+pkg+'.png',
+  icoPath:'C:/Source/Profile/icons/'+pkg+'.ico',shortcutPath:'C:/Source/Desktop/App.lnk',startMenuPath:'C:/Source/Menu/App.lnk'}]});
+async function prepare(x,catalog=sourceCatalog){
+  await write(path.join(x.data,'apps.json'),catalog);
+  await write(path.join(x.data,'icons',pkg+'.png'),'test icon');
+  await write(path.join(x.data,'apks',pkg+'-cur.apk'),'test APK cache');
   await write(path.join(x.avd,'apkstart.avd','config.ini'),CONFIG);
   await write(path.join(x.avd,'apkstart.avd','userdata-qemu.img'),'SOURCE_USERDATA');
   const b=await x.svc.create(x.out,PASSWORD);
@@ -40,10 +46,16 @@ test('portable migration authenticates source, checks AVD and preserves destinat
   assert.equal(result.migration,true);assert.equal(result.ok,true);
   assert.equal(await p.readFile(path.join(targetAvd,'config.ini'),'utf8'),local);
   assert.equal(await p.readFile(path.join(targetAvd,'userdata-qemu.img'),'utf8'),'SOURCE_USERDATA');
-  assert.equal(await p.readFile(x.registry.paths(target.id).appsFile,'utf8'),'SOURCE_APPS_PRIVATE');
+  const dest=x.registry.paths(target.id);
+  const [app]=JSON.parse(await p.readFile(dest.appsFile,'utf8')).apps;
+  assert.equal(app.package,pkg);assert.equal(app.pinned,true);
+  assert.equal(app.apkPath,path.join(dest.apkDir,pkg+'-cur.apk'));
+  assert.equal(await p.readFile(app.apkPath,'utf8'),'test APK cache');
+  assert.equal(app.iconPath,path.join(dest.iconsDir,pkg+'.png'));
+  assert.equal(app.icoPath,null);assert.equal(app.shortcutPath,null);assert.equal(app.startMenuPath,null);
   const safety=result.preserved.find(v=>v.includes('.avd.'));
   assert.ok(safety);assert.equal(await p.readFile(path.join(safety,'userdata-qemu.img'),'utf8'),'EXISTING_USERDATA');
-  assert.equal(await p.readFile(x.registry.paths('default').appsFile,'utf8'),'SOURCE_APPS_PRIVATE');
+  assert.equal(await p.readFile(x.registry.paths('default').appsFile,'utf8'),sourceCatalog);
   await assert.rejects(()=>x.svc.restore(preview.token,PASSWORD),/expired/);
 }));
 test('wrong password and incompatible AVD cannot touch existing destination',()=>fixture(async x=>{
@@ -72,4 +84,33 @@ test('Default cannot be migrated over; unknown AVD metadata fails closed',()=>fi
   const b=await x.svc.create(x.out,PASSWORD);
   await assert.rejects(()=>x.svc.previewMigration(b.path,PASSWORD),/separate Android profile/);
   assert.throws(()=>requireCompatible(parseAvdConfig(CONFIG),parseAvdConfig('target=android-34')),/Incompatible/);
+}));
+
+test('migration reads the actual AVD descriptor target and refuses conflicting sources',()=>fixture(async x=>{
+  const {targetAvd,b}=await prepare(x);
+  await write(path.join(targetAvd,'config.ini'),CONFIG.replace('target=android-34',''));
+  await write(targetAvd.slice(0,-4)+'.ini','target=android-34');
+  assert.equal((await x.svc.previewMigration(b.path,PASSWORD)).compatibility.target,'android-34');
+  await write(path.join(targetAvd,'config.ini'),CONFIG);
+  await write(targetAvd.slice(0,-4)+'.ini','target=android-35');
+  await assert.rejects(()=>x.svc.previewMigration(b.path,PASSWORD),/Incompatible platform targets/);
+}));
+test('invalid migration catalog leaves the destination and source untouched',()=>fixture(async x=>{
+  const {target,b,targetAvd}=await prepare(x,'malformed catalog');
+  const approval=await x.svc.previewMigration(b.path,PASSWORD);
+  await assert.rejects(()=>x.svc.restore(approval.token,PASSWORD),SyntaxError);
+  assert.equal(await p.readFile(x.registry.paths(target.id).appsFile,'utf8'),'EXISTING_APPS');
+  assert.equal(await p.readFile(path.join(targetAvd,'userdata-qemu.img'),'utf8'),'EXISTING_USERDATA');
+  assert.equal(await p.readFile(x.registry.paths('default').appsFile,'utf8'),'malformed catalog');
+}));
+
+test('file references do not bind to another package in the same authenticated backup',()=>fixture(async x=>{
+  const catalog=JSON.stringify({apps:[{package:'org.example.other',
+    apkPath:'C:/Old/apks/'+pkg+'-cur.apk',iconPath:'C:/Old/icons/'+pkg+'.png'}]});
+  const {target,b}=await prepare(x,catalog);
+  const preview=await x.svc.previewMigration(b.path,PASSWORD);
+  await x.svc.restore(preview.token,PASSWORD);
+  const [app]=JSON.parse(await p.readFile(x.registry.paths(target.id).appsFile,'utf8')).apps;
+  for(const field of ['apkPath','iconPath','icoPath','shortcutPath','startMenuPath'])assert.equal(app[field],null);
+  assert.equal(await p.readFile(x.registry.paths('default').appsFile,'utf8'),catalog);
 }));
