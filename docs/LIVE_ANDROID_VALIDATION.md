@@ -108,3 +108,5 @@ The workflow uploads separate JSON reports for each desktop fixture and for each
 ## Profile-specific shared folders
 
 Default keeps the Windows and Android shared folders it used before this revision. Each secondary Profile starts with an empty host folder under its own Profile directory and can select a separate location. Existing files stay where they were. Profile backup covers Android userdata and the catalog. Back up the Windows shared folder separately. Automatic sync requires the recorded emulator, Profile and kernel boot. Linked host paths, overlapping Profile folders and conflicting first-time files stop the affected transfer. Use `npm run selftest -- --sync` for an explicit shared-folder trial, or the hosted guest workflow for a disposable Android round trip and second-Profile isolation.
+
+The hosted Windows guest matrix exercises both the SDK Pixel 2 panel and a separate 720 × 1280, 320 dpi configuration. Android must report the requested physical size and density in the 720p job. Both configurations use the same signed fixtures, permission checks, Profile isolation, restore and Quick Boot assertions. Each publishes a separate report.

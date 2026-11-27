@@ -33,14 +33,22 @@ window.addEventListener('keydown', (e) => {
 
 function applyState(s) {
   if (!s) return;
-  $('appName').textContent = s.label || '应用';
+  const language = window.ASI_TRANSLATOR.normalize(s.locale);
+  const t = value => window.ASI_TRANSLATOR.t(value,language);
+  document.documentElement.lang = language;
+  const labels = {rotate:'横屏 / 竖屏（Ctrl+R）',min:'最小化',max:s.maximized?'还原窗口':'最大化',close:'关闭'};
+  for (const [id, label] of Object.entries(labels)) {
+    btn[id].title = t(label);
+    btn[id].setAttribute('aria-label', t(label));
+  }
+  $('appName').textContent = s.label || t('应用');
   $('bootName').textContent = s.label || '';
   const icon = s.iconUrl || '';
   if (icon) {
     $('appIcon').src = icon;
     $('bootIcon').src = icon;
   }
-  $('bootTip').textContent = s.tip || '';
+  $('bootTip').textContent = t(s.tip || '');
   if (s.ready) {
     const boot = $('boot');
     if (boot) {

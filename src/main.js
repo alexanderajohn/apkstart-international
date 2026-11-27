@@ -550,6 +550,7 @@ async function openAppWindow(pkg, tip) {
   // 先把这个应用的身份切过去，再开窗口：任务栏才会沿用快捷方式里那个应用的图标
   setAumid(shortcutIdentity(pkg,store.profiles.currentId()).aumid);
   appWin.open({
+    locale:store.getSettings().uiLocale || app.getLocale(),
     pkg,
     label,
     iconPath: rec && rec.icoPath,

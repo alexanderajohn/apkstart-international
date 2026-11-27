@@ -149,7 +149,7 @@ class AppWindow {
     // 独立窗口模式下「全屏」要作用在模拟器窗口上（我们这层壳是隐藏的，
     // maximize 一个隐藏窗口没有任何视觉效果，openDetached 会读这个标记）。
     this._wantFullscreen = !!fullscreen;
-    this.state = { label: label || '应用', tip: '正在启动安卓运行时…', ready: false, landscape: false };
+    this.state = { locale:o.locale || 'en', maximized:false, label: label || '应用', tip: '正在启动安卓运行时…', ready: false, landscape: false };
 
     const area = this._area();
     const size = AppWindow.sizeFor(area, this.portrait, false);
@@ -207,8 +207,8 @@ class AppWindow {
     const refit = () => this.scheduleFit(6);
     this.win.on('resize', refit);
     this.win.on('move', refit);
-    this.win.on('maximize', refit);
-    this.win.on('unmaximize', refit);
+    this.win.on('maximize', () => { this.setState({maximized:true}); refit(); });
+    this.win.on('unmaximize', () => { this.setState({maximized:false}); refit(); });
     this.win.on('restore', () => {
       this.agent.show().catch(() => {});
       this.scheduleFit(6);

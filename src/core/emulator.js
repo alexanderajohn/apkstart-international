@@ -1265,6 +1265,7 @@ class EmulatorEngine {
       let ok = false;
       let fatal = false;
       let sawBooting = false;
+      let waitingForConsent = false;
       // 快照恢复往往几秒内就能起，固定 3 秒一次意味着平均要多等 1.5 秒才「发现」
       // 它已经好了。这里从 200ms 起步逐步放宽到 1.2 秒：开机早期能立刻抓到，
       // 长引导过程也不会把 CPU 花在轮询上。
@@ -1281,9 +1282,13 @@ class EmulatorEngine {
         if (state === 'ok') { ok = true; break; }
         if (state === 'fatal') { fatal = true; break; }
         // 只要 adb 能执行 shell，说明内核已经在引导，日志里的普通 Vulkan/EGL 信息不算失败
-        if (state === 'booting') sawBooting = true;
+        if (state === 'unauthorized') waitingForConsent = true;
+        if (state === 'booting') {
+          sawBooting = true;
+          waitingForConsent = false;
+        }
         // 45 秒仍完全没连上，且日志出现明确致命错误 → 提前换方案，不干等 4 分钟
-        if (!sawBooting && Date.now() - started > 45000) {
+        if (!waitingForConsent && !sawBooting && Date.now() - started > 45000) {
           const d = doctor.diagnose(this._attemptLines(logStart, 80));
           if (['GPU_INIT', 'ACCEL', 'GPU_MODE', 'IMAGE', 'DLL', 'MEMORY', 'ACCESS_VIOLATION'].includes(d.code)) {
             this.lastDiagnosis = d;
@@ -1334,6 +1339,12 @@ class EmulatorEngine {
         };
       }
 
+      if (waitingForConsent) {
+        const error = 'Android debugging authorization is pending. Unlock the selected emulator and respond to its prompt. If startup timed out, close that emulator normally before starting this Profile again.';
+        this.attempts.push({plan:plan.label,diagnosis:'ADB_UNAUTHORIZED',timeout:!fatal});
+        onLog(error);
+        return {ok:false,error,attempts:this.attempts};
+      }
       const attemptLines = this._attemptLines(logStart, 80);
       const d = fatal ? (this.lastDiagnosis || doctor.diagnose(attemptLines)) : doctor.diagnose(attemptLines);
       this.attempts.push({ plan: plan.label, diagnosis: d.code, timeout: !fatal, exitCode: this.lastExitCode });

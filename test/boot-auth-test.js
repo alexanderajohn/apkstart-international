@@ -4,7 +4,7 @@
  *
  * 覆盖 0.5.3 两个真实故障的根因修复：
  *  1) 快照在「允许 USB 调试」对话框未确认时拍下 → 每次恢复都 device unauthorized →
- *     探测干等 240s×4 还被误诊成显卡问题。修复：识别 unauthorized、作废旧快照冷启动、
+ *     探测干等 240s×4 还被误诊成显卡问题。修复：识别 unauthorized、保留现有快照并等待 Android 授权、
  *     健康时才存快照。
  *  2) PackageManager 报 installed=true，但 /data/app 文件已被快照/数据不一致弄丢 →
  *     am start 失败。修复：isInstalled 逐个核对 APK 文件真实存在。
@@ -114,14 +114,31 @@ const adbDevices = (line) => `List of devices attached\n${line}\n`;
     assert.ok(/_adbGuestHealthy/.test(stopFn), 'stop() 关机前也要判断健康');
     assert.ok(/invalidateSnapshot\(\)/.test(stopFn), '不健康关机要作废快照');
   });
-  await atest('源码级：开机探测要识别 unauthorized 并冷启动自愈', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'engine.js'), 'utf8');
-    const boot = src.slice(src.indexOf('async bootEmulator('), src.indexOf('async bootEmulator(') + 4200);
-    assert.ok(/isUnauthorizedError/.test(boot), '探测要按报错文本识别 unauthorized');
-    assert.ok(/deviceState\(\)/.test(boot), '探测要按 devices state 列二次确认');
-    assert.ok(/invalidateSnapshot\(\)/.test(boot), '命中授权卡住要作废旧快照');
-    assert.ok(/_coldBoot = true/.test(boot), '要强制冷启动以重新注入 adb 公钥');
-    assert.ok(/ADB_UNAUTHORIZED/.test(boot), '要给出准确诊断，不再误导成显卡问题');
+  await atest('ADB consent can be granted during the same boot without changing snapshots or host keys', async () => {
+    const {Runtime}=require('../src/core/engine');
+    let authorized=false;
+    const serial='emulator-5554', notices=[];
+    const client={serial,shell:async()=>{
+      if (!authorized) throw Error('device unauthorized');
+      return '1\npackage:/system/framework/framework-res.apk';
+    }};
+    const runtime={settings:{engine:{}},_probeClient:client,emulator:{
+      running:()=>true, invalidateSnapshot:()=>assert.fail('Changed snapshot while waiting for consent'),
+      resetAdbServer:()=>assert.fail('Changed ADB transport while waiting for consent'),
+      async start({probe}){
+        assert.equal(await probe({serial}),'unauthorized');
+        assert.equal(await probe({serial}),'unauthorized');
+        assert.equal(this._coldBoot,undefined);
+        assert.equal(this.lastDiagnosis.code,'ADB_UNAUTHORIZED');
+        authorized=true;
+        assert.equal(await probe({serial}),'ok');
+        assert.equal(this.lastDiagnosis,null);
+        return {ok:false,error:'probe complete'};
+      }
+    }};
+    const result=await Runtime.prototype.bootEmulator.call(runtime,{env:{accel:{ok:true}},onLog:text=>notices.push(text)});
+    assert.equal(result.error,'probe complete');
+    assert.equal(notices.filter(text=>text.includes('authorization prompt')).length,1);
   });
   await atest('adb server 注入 ADB_VENDOR_KEYS 以对齐 host/guest 密钥', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'adb.js'), 'utf8');

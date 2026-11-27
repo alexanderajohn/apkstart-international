@@ -369,7 +369,6 @@ class Runtime {
       const api34 = Number(env?.sysimg?.api) >= 34;
       const bootQuery = 'getprop sys.boot_completed; pm path android' +
         (api34 ? '; am get-started-user-state 0; cat /proc/sys/kernel/random/boot_id' : '');
-      let authHealed = false;  // 本次 start() 是否已因「未授权」作废旧快照冷启动过
       const diagUnauthorized = () => ({
         code: 'ADB_UNAUTHORIZED',
         title: '安卓调试授权未完成（授权对话框）',
@@ -386,6 +385,7 @@ class Runtime {
           const lines = out.split(/\r?\n/).map((l) => l.trim());
           const booted = lines[0] === '1' || /^1$/.test(lines[0] || '');
           const pmReady = lines.some((l) => /^package:/.test(l));
+          if (this.emulator.lastDiagnosis?.code === 'ADB_UNAUTHORIZED') this.emulator.lastDiagnosis = null;
           lastAdbState = 'online';
           if (booted && pmReady && !api34) return 'ok';
           if (booted && pmReady && lines.includes('RUNNING_UNLOCKED')) {
@@ -398,25 +398,13 @@ class Runtime {
           return booted ? 'pending' : 'booting';
         } catch (e) {
           previousReadyBoot = undefined;
-          // 关键分支：adb shell 报错可能是「还没开机」也可能是「授权对话框卡住」。
-          // 后者每轮 shell 都抛异常，旧实现只当普通 offline：重启 server 后继续按
-          // 240s×4 组参数干等，最后报「运行时未能完成开机」，让用户以为是显卡/虚拟化。
-          // 这里先按报错文本、再按 devices 的 state 列（get-state 分不清 authorized）
-          // 双重确认 unauthorized，命中就作废旧快照冷启动 + 给出准确诊断，不再空等。
-          const raw = String((e && (e.raw || e.stdout || e.message)) || '');
+          const raw = String(e?.raw || e?.stdout || e?.message || '');
           const state = isUnauthorizedError(raw) ? 'unauthorized' : await c.deviceState().catch(() => 'unavailable');
           if (state === 'unauthorized') {
             this.emulator.lastDiagnosis = diagUnauthorized();
-            if (!authHealed) {
-              authHealed = true;
-              onLog('adb 卡在「允许 USB 调试」授权对话框，正在作废旧快照并冷启动以重新注入公钥…');
-              try { this.emulator.invalidateSnapshot(); } catch (_) { /* ignore */ }
-              this.emulator._coldBoot = true; // 下一轮强制冷启动，让 emulator 重新注入 adb 公钥
-              await this.emulator.resetAdbServer().catch(() => {});
-              this._probeClient = null;
-            }
-            // 交给 start() 立刻换一组参数重试；冷启动后 dialog 问题会消失
-            return 'fatal';
+            if (lastAdbState !== state) onLog(this.emulator.lastDiagnosis.hint);
+            lastAdbState = state;
+            return 'unauthorized';
           }
           // Boot and a framework locale change both temporarily take adbd offline.
           // Restarting the host daemon here can interrupt the same reconnection.

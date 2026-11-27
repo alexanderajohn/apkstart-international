@@ -47,6 +47,9 @@ public static class ShellWindowState {
   [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
   [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hwnd);
   [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hwnd);
+  [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hwnd);
+  [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hwnd, int command);
   public static string WindowClass(IntPtr h) { var s=new StringBuilder(256); GetClassName(h,s,s.Capacity); return s.ToString(); }
   public static string Caption(IntPtr h) { var s=new StringBuilder(1024); GetWindowText(h,s,s.Capacity); return s.ToString(); }
   public static IntPtr[] VisibleWindows(int[] pids, string cls, string caption) {
@@ -115,6 +118,31 @@ function Find-Approval([string]$Digest, [string]$ProfileId, [string]$ProfileFiel
         }
     }
 }
+function Invoke-AppButton([IntPtr]$Handle, [string]$Label) {
+    $window = $UI::FromHandle($Handle)
+    $condition = [System.Windows.Automation.PropertyCondition]::new($UI::NameProperty,$Label)
+    $deadline = [datetime]::UtcNow.AddSeconds(12)
+    do {
+        $buttons = @($window.FindAll($scope::Descendants,$condition) | Where-Object {
+            $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $_.Current.IsEnabled
+        })
+        if ($buttons.Count -eq 1) {
+            $buttons[0].GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+            return
+        }
+        Start-Sleep -Milliseconds 200
+    } until ([datetime]::UtcNow -ge $deadline)
+    throw "Could not identify the app window button '$Label'"
+}
+function Assert-WindowState([IntPtr]$Handle, [bool]$Minimized, [bool]$Maximized) {
+    $deadline = [datetime]::UtcNow.AddSeconds(10)
+    do {
+        if ([ShellWindowState]::IsWindow($Handle) -and
+            [ShellWindowState]::IsIconic($Handle) -eq $Minimized -and [ShellWindowState]::IsZoomed($Handle) -eq $Maximized) {return}
+        Start-Sleep -Milliseconds 200
+    } until ([datetime]::UtcNow -ge $deadline)
+    throw "Window state did not reach minimized=$Minimized maximized=$Maximized"
+}
 function Open-Apk([string]$Name, [string]$Source, [string]$Package, [string]$ProfileId, [string]$Button, [string]$ProfileField='Profile', [string]$PackageField='Package') {
     $apk = Join-Path $root $Name
     Copy-Item -LiteralPath $Source -Destination $apk
@@ -168,12 +196,18 @@ try {
     if ($InstallLiveApk) {
         $env:ASI_SHORTCUT_DIR = Join-Path $root 'shortcuts'
         New-Item -ItemType Directory -Path $env:ASI_SHORTCUT_DIR | Out-Null
+        $uiText = if ($Fixture -eq 'calculator') {
+            @{code='vi'; install='Cài vào Desktop CI'; profile='Hồ sơ'; package='Mã gói'; maximize='Phóng to'; restore='Khôi phục cửa sổ'; minimize='Thu nhỏ'}
+        } else {
+            @{code='en'; install='Install to Desktop CI'; profile='Profile'; package='Package'; maximize='Maximize'; restore='Restore window'; minimize='Minimize'}
+        }
+        $env:ASI_DESKTOP_LANGUAGE = $uiText.code
         $profileId = @'
 const store = require('./src/core/store');
 const id = store.profiles.create('Desktop CI').id;
 store.profiles.activate(id);
 store.ensureDirs();
-store.saveSettings({runtime:{dir:process.env.ANDROID_HOME}, engine:{prewarm:false},
+store.saveSettings({runtime:{dir:process.env.ANDROID_HOME}, uiLocale:process.env.ASI_DESKTOP_LANGUAGE, engine:{prewarm:false},
                     shortcutDir:process.env.ASI_SHORTCUT_DIR, createShortcutOnInstall:true, createStartMenuShortcut:false});
 console.log(id);
 '@ | node
@@ -187,9 +221,10 @@ console.log(id);
         $pkg = $inputApk.package
         $report.profile = $profileId
         $report.package = $pkg
+        $report.language = $uiText.code
         $report.sha256 = $inputApk.hash
         Save-DesktopPhase 'Verified signed fixture digest and created isolated Profile'
-        Open-Apk ($inputApk.title + ' from Explorer.apk') $src $pkg $profileId 'Install to Desktop CI'
+        Open-Apk ($inputApk.title + ' from Explorer.apk') $src $pkg $profileId $uiText.install $uiText.profile $uiText.package
         Save-DesktopPhase 'Approved package, SHA-256 and Profile in native Windows dialog'
         $log = Join-Path $env:APPDATA 'apkstart-international/logs/app.log'
         $deadline = [datetime]::UtcNow.AddMinutes(18)
@@ -229,8 +264,20 @@ console.log(id);
         [int[]]$owned = @(Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exe)) | Where-Object {$_.Path -eq $exe} | ForEach-Object {$_.Id})
         $windows = [ShellWindowState]::VisibleWindows($owned,$null,$label)
         if (!$windows.Count) {throw 'No visible packaged app window with the installed app title'}
+        if ($windows.Count -ne 1) {throw 'App window title matched multiple owned windows'}
         $report.windowTitle = $label
         Save-DesktopPhase 'Opened original shortcut and observed the visible app window'
+        $handle = $windows[0]
+        Invoke-AppButton $handle $uiText.maximize
+        Assert-WindowState $handle $false $true
+        Invoke-AppButton $handle $uiText.restore
+        Assert-WindowState $handle $false $false
+        Invoke-AppButton $handle $uiText.minimize
+        Assert-WindowState $handle $true $false
+        # Bring back the minimized window just as Windows does from its taskbar.
+        $null = [ShellWindowState]::ShowWindowAsync($handle,9)
+        Assert-WindowState $handle $false $false
+        Save-DesktopPhase 'Verified maximize, restore and minimize with the real title bar'
         $activity = & $adb -s $owner.serial shell dumpsys activity activities | Select-String ('topResumedActivity.*' + [regex]::Escape($pkg) + '/')
         if ($LASTEXITCODE -ne 0 -or !$activity) {throw "$pkg did not reach the foreground"}
         $report.activity = @($activity)[0].Line.Trim()

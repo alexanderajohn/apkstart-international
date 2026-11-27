@@ -252,7 +252,13 @@ window.ASI_CATALOGS = {
     "一键卸载": "Uninstall ApkStart",
     "软件更新": "Software updates",
     "使用中国大陆公共 DNS": "Use public DNS servers in mainland China",
-    "默认使用主机的 DNS。开启后，安卓模拟器使用阿里和腾讯的公共 DNS 服务器。": "The emulator uses the host DNS by default. Turn this on to use Alibaba and Tencent public DNS servers."
+    "默认使用主机的 DNS。开启后，安卓模拟器使用阿里和腾讯的公共 DNS 服务器。": "The emulator uses the host DNS by default. Turn this on to use Alibaba and Tencent public DNS servers.",
+    "应用": "App",
+    "正在启动安卓运行时…": "Starting Android…",
+    "横屏 / 竖屏（Ctrl+R）": "Rotate screen (Ctrl+R)",
+    "最小化": "Minimize",
+    "最大化": "Maximize",
+    "还原窗口": "Restore window"
   },
   "vi": {
     "设置": "Cài đặt",
@@ -507,7 +513,13 @@ window.ASI_CATALOGS = {
     "一键卸载": "Gỡ cài đặt ApkStart",
     "软件更新": "Cập nhật phần mềm",
     "使用中国大陆公共 DNS": "Dùng máy chủ DNS công cộng ở Trung Quốc đại lục",
-    "默认使用主机的 DNS。开启后，安卓模拟器使用阿里和腾讯的公共 DNS 服务器。": "Theo mặc định, trình giả lập dùng DNS của máy tính. Bật tùy chọn này để dùng DNS công cộng của Alibaba và Tencent."
+    "默认使用主机的 DNS。开启后，安卓模拟器使用阿里和腾讯的公共 DNS 服务器。": "Theo mặc định, trình giả lập dùng DNS của máy tính. Bật tùy chọn này để dùng DNS công cộng của Alibaba và Tencent.",
+    "应用": "Ứng dụng",
+    "正在启动安卓运行时…": "Đang khởi động Android…",
+    "横屏 / 竖屏（Ctrl+R）": "Xoay màn hình (Ctrl+R)",
+    "最小化": "Thu nhỏ",
+    "最大化": "Phóng to",
+    "还原窗口": "Khôi phục cửa sổ"
   },
   "zh-CN": {
     "设置": "设置",
@@ -762,6 +774,12 @@ window.ASI_CATALOGS = {
     "一键卸载": "一键卸载",
     "软件更新": "软件更新",
     "使用中国大陆公共 DNS": "使用中国大陆公共 DNS",
-    "默认使用主机的 DNS。开启后，安卓模拟器使用阿里和腾讯的公共 DNS 服务器。": "默认使用主机的 DNS。开启后，安卓模拟器使用阿里和腾讯的公共 DNS 服务器。"
+    "默认使用主机的 DNS。开启后，安卓模拟器使用阿里和腾讯的公共 DNS 服务器。": "默认使用主机的 DNS。开启后，安卓模拟器使用阿里和腾讯的公共 DNS 服务器。",
+    "应用": "应用",
+    "正在启动安卓运行时…": "正在启动安卓运行时…",
+    "横屏 / 竖屏（Ctrl+R）": "横屏 / 竖屏（Ctrl+R）",
+    "最小化": "最小化",
+    "最大化": "最大化",
+    "还原窗口": "还原窗口"
   }
 };

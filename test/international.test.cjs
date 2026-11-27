@@ -241,3 +241,27 @@ test('candidate inventory detects a same-size file replacement',async t=>{
   assert.notEqual(first[0].sha256,second[0].sha256);
   assert.throws(()=>validatePayload(second),/missing/);
 });
+
+test('app window labels and accessible controls use the selected language and current window state', () => {
+  const vm = require('node:vm');
+  const elements = new Map();
+  const document = {documentElement:{},addEventListener(){},getElementById(id){
+    if (!elements.has(id)) elements.set(id,{addEventListener(){},setAttribute(key,value){this[key]=value;}});
+    return elements.get(id);
+  }};
+  let update;
+  const window = {ASI_CATALOGS:dict,addEventListener(){},apkstart:{shell:{
+    onState(fn){update=fn;},state:async()=>null,
+  }}};
+  const ctx=vm.createContext({window,document});
+  for (const file of ['i18n/translator.js','shell.js'])
+    vm.runInContext(fs.readFileSync(path.join(root,'src/ui',file),'utf8'),ctx);
+  for (const [locale,max,restore] of [['en','Maximize','Restore window'],['vi','Phóng to','Khôi phục cửa sổ'],['zh-CN','最大化','还原窗口']]) {
+    update({locale,label:'Fossify Calculator',maximized:false});
+    assert.equal(document.documentElement.lang,locale);
+    assert.equal(elements.get('btnMax')['aria-label'],max);
+    update({locale,label:'Fossify Calculator',maximized:true});
+    assert.equal(elements.get('btnMax').title,restore);
+    assert.equal(elements.get('appName').textContent,'Fossify Calculator');
+  }
+});

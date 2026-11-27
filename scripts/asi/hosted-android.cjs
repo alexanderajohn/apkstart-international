@@ -17,6 +17,7 @@ const fixtures = [
 
 async function run() {
   const windows = process.platform==='win32';
+  const panel720 = process.env.ASI_GUEST_PANEL === '720p';
   assert((windows || process.platform==='linux') && process.env.GITHUB_ACTIONS==='true' &&
     process.env.TEST_RUNNER_ENVIRONMENT==='github-hosted','Requires a disposable GitHub-hosted test runner');
   const temp = fs.realpathSync(process.env.RUNNER_TEMP);
@@ -56,6 +57,7 @@ async function run() {
     osRelease:require('node:os').release(),acceleration,accelerationProbe:probeText,
     revision:process.env.GITHUB_SHA,image,guestMemoryMB:memoryMB,guestCores:cores,splitVersion:legacySplitFixture?'2.5.22-PRE':'4.1.1',
     emulatorVersion:execFileSync(emulator,['-version'],{encoding:'utf8'}).split('\n').find(l=>l.includes('Android emulator version')),
+    requestedPanel:panel720?'720x1280 at 320 dpi':'pixel_2 default',
     permissionInteractions:[],phases:[],complete:false};
   let guest;
   let emulatorLog;
@@ -109,7 +111,11 @@ async function run() {
     execFileSync(windows?'cmd.exe':'avdmanager',windows?['/d','/c','avdmanager.bat',...args]:args,
       {input:'no\n',stdio:['pipe','inherit','inherit']});
     const config=path.join(registry.paths().avdHome,registry.avdName()+'.avd','config.ini');
-    const ini=fs.readFileSync(config,'utf8').replace(/^disk\.dataPartition\.size\s*=.*$/gm,'');
+    let ini=fs.readFileSync(config,'utf8').replace(/^disk\.dataPartition\.size\s*=.*$/gm,'');
+    if (panel720) {
+      ini=ini.replace(/^(?:hw\.lcd\.(?:width|height|density)|skin\.(?:name|path))\s*=.*$/gm,'');
+      ini+='\nhw.lcd.width=720\nhw.lcd.height=1280\nhw.lcd.density=320\nskin.name=720x1280\nskin.path=720x1280\n';
+    }
     fs.writeFileSync(config,ini+'\ndisk.dataPartition.size=3G\n');
   }
   async function boot(id,snapshotArgs=['-no-snapshot']) {
@@ -119,7 +125,7 @@ async function run() {
     emulatorLog=log;
     const fd=fs.openSync(log,'wx');
     try {guest=spawn(emulator,['-avd',avd,'-port','5554','-accel',acceleration,'-no-window','-gpu','swiftshader',
-      '-memory',String(memoryMB),'-cores',String(cores),'-noaudio','-no-boot-anim',...snapshotArgs],{stdio:['ignore',fd,fd]});}
+      '-memory',String(memoryMB),'-cores',String(cores),'-noaudio','-no-boot-anim',...(panel720?['-skin','720x1280']:[]),...snapshotArgs],{stdio:['ignore',fd,fd]});}
     finally {fs.closeSync(fd);}
     const end=Date.now()+(acceleration==='off'?18:7)*60000;
     let last;
@@ -147,7 +153,12 @@ async function run() {
         recordOwner(registry,owner);
         await client.exec(['shell','input','keyevent','KEYCODE_WAKEUP']);
         await client.exec(['shell','wm','dismiss-keyguard']);
-        return {profile:id,avd,boot:owner.boot,api:last.sdk,abi:last.abi,userState,broadcastBarrier};
+        const display=await client.shell('wm size; wm density');
+        if (panel720) {
+          assert.match(display,/^Physical size: 720x1280\s*$/m);
+          assert.match(display,/^Physical density: 320\s*$/m);
+        }
+        return {profile:id,avd,boot:owner.boot,api:last.sdk,abi:last.abi,userState,broadcastBarrier,display};
       }
       previousReadyBoot=undefined;
       await delay(2000);

@@ -12,6 +12,8 @@ The review covers Electron IPC entry points, Profile-bound Android package chang
 | Notices | The portable recipe includes upstream MIT, Electron LICENSE and Chromium third-party notices. The native LZMA package declares MIT. The publisher's tagged npm tree lacks a standalone license file. | Confirm complete third-party copyright and native/Rust notices and fork branding before public distribution. Android, IME and Google images are separate from the Preview. |
 | Updates | Local verifier checks detached Ed25519 signature over exact manifest bytes, fork ID, expected version, filename, artifact length and SHA-256 against a separately obtained key. | Establish a fork-owned production key and rollover/revocation process, verify Authenticode, exercise an actual signed upgrade and rollback. Automatic updates remain disabled. |
 
+The runtime waits for Android debugging consent on the selected emulator. An authorization timeout leaves the running guest and its snapshots in place. The startup regression test exercises denial followed by consent on the same boot. The hosted install fixtures normally start with authorized ADB. A physical Android debugging prompt still needs separate validation.
+
 For an offline update or rollback check, supply the expected version and a trusted release public key obtained separately from the download.
 
 ```
