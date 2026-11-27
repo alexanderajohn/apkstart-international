@@ -27,6 +27,8 @@ on:
       - 'src/core/doctor.js'
       - 'src/core/shortcut*.js'
       - 'src/core/appwin.js'
+      - 'src/core/sharer.js'
+      - 'src/core/store.js'
       - 'src/main.js'
 
 permissions:

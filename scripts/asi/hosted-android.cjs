@@ -246,6 +246,8 @@ async function run() {
     async ensure(){await verifyOwner(client,registry,registry.currentId());return {ok:true,engine:'emulator',client};},
     touch(){this.lastUsedAt=Date.now();},
   };
+  const {Sharer}=require('../../src/core/sharer');
+  const share=new Sharer({client:()=>client});
   const installer = new Installer(runtime,{desktopDir:path.join(root,'desktop')});
   const checkIdle=()=>{assert(!active(),'Backup/restore requires a stopped guest');};
   const center=new EncryptedBackupCenter({registry,dataDir:store.DATA_DIR,getAvdHome:()=>registry.paths().avdHome,assertIdle:checkIdle});
@@ -340,6 +342,25 @@ async function run() {
     await splitPhase('install-close-relaunch-apks',primary,()=>exerciseInstallation({file:'device.apks',pkg:splitPkg},primary));
     await phase('verify-default-permissions',checkDefaultPermissions);
     await phase('write-private-canary',()=>writeCanary(canary));
+    const shareName = 'Profile ' + crypto.randomUUID() + '.txt';
+    const remoteName = 'android-' + crypto.randomUUID() + '.txt';
+    await phase('shared-folder-round-trip',async()=>{
+      const folder=store.getSettings().sharedDir;
+      fs.mkdirSync(folder,{recursive:true});
+      fs.writeFileSync(path.join(folder,shareName),canary,{flag:'wx'});
+      let result=await share.sync();
+      assert.deepEqual(result.errors,[]); assert.equal(result.pushed,1);
+      const deviceDir=store.getSettings().deviceSharedDir;
+      const {quoteAndroidPath}=require('../../src/core/adb');
+      const source=quoteAndroidPath(deviceDir+'/'+shareName);
+      const remote=quoteAndroidPath(deviceDir+'/'+remoteName);
+      await verifyOwner(client,registry,primary);
+      await client.shell('cp '+source+' '+remote);
+      result=await share.sync();
+      assert.deepEqual(result.errors,[]); assert.equal(result.pulled,1);
+      assert.deepEqual(fs.readFileSync(path.join(folder,remoteName)),canary);
+      return {profile:primary,bytes:canary.length,sha256:digest};
+    });
     await phase('shutdown-primary',stop);
     const exportsDir=path.join(root,'exports');
     fs.mkdirSync(exportsDir);
@@ -355,6 +376,13 @@ async function run() {
         assert(!store.getApp(pkg));
       }
       return {absent:[...fixtures.map(x=>x.pkg),splitPkg]};
+    });
+    await phase('shared-folder-secondary-isolation',async()=>{
+      assert(!fs.existsSync(path.join(store.getSettings().sharedDir,shareName)));
+      const sync=await share.sync();
+      assert.equal(sync.error,undefined); assert.deepEqual(sync.errors,[]); assert.equal(sync.pushed,0);
+      assert.deepEqual(await client.listRemoteStat(store.getSettings().deviceSharedDir),[]);
+      return {profile:secondary,filesSent:sync.pushed};
     });
     await splitPhase('install-close-relaunch-xapk',secondary,()=>exerciseInstallation({file:'device.xapk',pkg:splitPkg},secondary));
     await phase('shutdown-secondary',stop);

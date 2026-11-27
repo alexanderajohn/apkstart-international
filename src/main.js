@@ -41,7 +41,7 @@ const performance = require('./core/performance');
 const { validPackageName } = require('./core/pkgname');
 const { shortcutProfile, shortcutLaunch, shortcutIdentity } = require('./core/shortcut-profile');
 const { Installer } = require('./core/installer');
-const { Sharer } = require('./core/sharer');
+const { Sharer, checkShareFolder, plainPath } = require('./core/sharer');
 const { parseApk } = require('./core/apk');
 const { inspectApk } = require('./core/smartcheck');
 const { prepareInstall } = require('./core/apk-install-guard');
@@ -655,14 +655,15 @@ function launcherInfo() {
 /** 递归复制目录内容（best-effort，不删源；用于共享目录改路径时一次性搬迁旧文件） */
 function copyDirContents(src, dest) {
   if (!fs.existsSync(src)) return;
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const s = path.join(src, entry.name);
-    const d = path.join(dest, entry.name);
-    try {
-      if (entry.isDirectory()) copyDirContents(s, d);
-      else fs.copyFileSync(s, d);
-    } catch (_) { /* 单文件失败不影响其余 */ }
+  fs.mkdirSync(plainPath(dest), {recursive:true});
+  for (const entry of fs.readdirSync(plainPath(src), {withFileTypes:true})) {
+    if (entry.isSymbolicLink() || entry.name.startsWith('.asi-transfer-')) continue;
+    const source = plainPath(path.join(src,entry.name));
+    const target = plainPath(path.join(dest,entry.name));
+    if (entry.isDirectory()) copyDirContents(source,target);
+    else if (entry.isFile() && !fs.existsSync(target)) {
+      fs.copyFileSync(source,target,fs.constants.COPYFILE_EXCL);
+    }
   }
 }
 
@@ -2045,7 +2046,15 @@ function registerIpc() {
     const newDir = dir.trim();
     const oldDir = store.getSettings().sharedDir;
     try {
-      if (oldDir && oldDir !== newDir) copyDirContents(oldDir, newDir);
+      checkShareFolder(newDir);
+      if (oldDir && path.resolve(oldDir) !== path.resolve(newDir)) {
+        const {within} = require('./core/backup-center');
+        if (within(newDir,oldDir) || within(oldDir,newDir)) throw Error('Choose a folder outside the previous shared folder');
+        // A legacy folder may already overlap another Profile. Leave that content in place.
+        let safeSource = true;
+        try { checkShareFolder(oldDir); } catch { safeSource = false; }
+        if (safeSource) copyDirContents(oldDir,newDir);
+      }
       fs.mkdirSync(newDir, { recursive: true });
       store.saveSettings({ sharedDir: newDir });
       return { ok: true, oldDir, newDir };
@@ -2897,6 +2906,7 @@ function registerIpc() {
   ipcMain.handle('share:sync', async () => sharer.sync({ onLog: (m) => send('runtime:log', m) }));
   ipcMain.handle('share:open', async () => {
     const dir = store.getSettings().sharedDir;
+    checkShareFolder(dir);
     fs.mkdirSync(dir, { recursive: true });
     shell.openPath(dir);
   });

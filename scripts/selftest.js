@@ -3,19 +3,24 @@
  * 运行时自检（不需要打开界面）
  *
  *   npm run selftest                 # 只体检现有运行时
- *   npm run selftest -- --apk a.apk  # 额外走一遍 安装 → 启动 → 截图 → 共享目录
+ *   npm run selftest -- --apk a.apk  # 额外走一遍 安装 → 启动 → 截图；--sync 单独测试共享目录
  *
  * 用途：装好 Android 之后，用一条命令确认「双击装应用、独立窗口、数据互通」这条链路
  * 在当前机器上真的成立，出问题时也能定位到具体环节。
  */
 const fs = require('fs');
-const os = require('os');
+const {randomUUID} = require('node:crypto');
 const path = require('path');
 
 const store = require('../src/core/store');
 const { Runtime } = require('../src/core/engine');
-const { Sharer } = require('../src/core/sharer');
-const { parseApk } = require('../src/core/apk');
+const { Sharer,checkShareFolder } = require('../src/core/sharer');
+const { quoteAndroidPath } = require('../src/core/adb');
+const { readOwner, verifyOwner } = require('../src/core/runtime-owner');
+const { prepareInstall } = require('../src/core/apk-install-guard');
+const { withApprovedCopy } = require('../src/core/install-staging');
+const { installSession } = require('../src/core/install-session');
+const { packagePresent } = require('./asi/guest-evidence.cjs');
 
 const argv = process.argv.slice(2);
 const argOf = (name) => {
@@ -23,6 +28,11 @@ const argOf = (name) => {
   return i >= 0 ? argv[i + 1] : '';
 };
 const APK = argOf('--apk');
+const syncRequested = argv.includes('--sync');
+if (argv.includes('--help')) {
+  console.log('Usage: npm run selftest -- [--serial emulator-NNNN] [--apk reviewed.apk] [--sync]. APK and shared-folder tests require the active owned Profile.');
+  process.exit(0);
+}
 // 留空 = 走产品路径自动拉起内置运行时并用动态 serial；指定时才连接外部设备
 const SERIAL = argOf('--serial') || '';
 
@@ -76,7 +86,6 @@ async function step(name, fn) {
   let client = runtime.client(SERIAL || undefined);
   const online = await step('运行时已就绪', async () => {
     if (SERIAL) {
-      await client.connect().catch(() => false);
       if (!await client.isOnline()) throw new Error(`外部设备不在线：${SERIAL}`);
       return SERIAL;
     }
@@ -101,62 +110,74 @@ async function step(name, fn) {
       if (!s) throw new Error('wm size 无返回');
       return `${s.width}×${s.height}`;
     });
-    await step('freeform 独立窗口', async () => {
-      const ok = await client.ensureFreeform();
-      if (!ok) throw new Error('无法开启 freeform（系统可能不支持多窗口）');
-      return '已开启';
+    await step('Android freeform setting', async () => {
+      const value = await client.shell('settings get global enable_freeform_support');
+      return value === '1' ? 'enabled' : 'disabled';
     });
 
-    console.log('\n[共享目录]');
-    await step('双向同步', async () => {
-      const sharer = new Sharer(runtime);
-      await client.shellMkdir(store.getSettings().deviceSharedDir);
-      const localDir = store.getSettings().sharedDir;
-      fs.mkdirSync(localDir, { recursive: true });
-      const probe = path.join(localDir, `selftest-${Date.now()}.txt`);
-      const payload = `apkstart selftest ${new Date().toISOString()}`;
-      fs.writeFileSync(probe, payload);
+    const profile = store.profiles.currentId();
+    const owner = readOwner(store.profiles,profile);
+    const check = () => verifyOwner(client,store.profiles,profile,owner);
+    if (syncRequested) {
+      await step('双向同步', async () => {
+        await check();
+        const sharer = new Sharer({client:()=>client});
+        checkShareFolder(store.getSettings().sharedDir);
+        const localDir = store.getSettings().sharedDir;
+        fs.mkdirSync(localDir, { recursive: true });
+        const probe = path.join(localDir, `selftest-${randomUUID()}.txt`);
+        const payload = `apkstart selftest ${new Date().toISOString()}`;
+        fs.writeFileSync(probe, payload,{flag:'wx'});
 
-      const up = await sharer.sync();
-      if (up.errors && up.errors.length) throw new Error(up.errors[0]);
-      const remote = `${store.getSettings().deviceSharedDir}/${path.basename(probe)}`;
-      const back = await client.shell(`cat "${remote}" 2>/dev/null`);
-      if (!String(back).includes('apkstart selftest')) throw new Error('本机 → 设备 未同步');
+        const up = await sharer.sync();
+        if (up.error) throw Error(up.error);
+        if (up.errors && up.errors.length) throw new Error(up.errors[0]);
+        const remote = `${store.getSettings().deviceSharedDir}/${path.basename(probe)}`;
+        await check();
+        const back = await client.shell(`cat ${quoteAndroidPath(remote)}`);
+        if (!String(back).includes('apkstart selftest')) throw new Error('本机 → 设备 未同步');
 
-      const reverse = path.join(localDir, `selftest-from-device-${Date.now()}.txt`);
-      await client.shell(`echo device-side > "${store.getSettings().deviceSharedDir}/${path.basename(reverse)}"`);
-      await sharer.sync();
-      if (!fs.existsSync(reverse) || !fs.readFileSync(reverse, 'utf8').includes('device-side')) {
-        throw new Error('设备 → 本机 未同步');
-      }
-      fs.rmSync(probe, { force: true });
-      fs.rmSync(reverse, { force: true });
-      await client.shell(`rm -f "${remote}"`);
-      return '上行 + 下行均正常';
-    });
+        const reverse = path.join(localDir, `selftest-from-device-${randomUUID()}.txt`);
+        await check();
+        await client.shell(`echo device-side > ${quoteAndroidPath(store.getSettings().deviceSharedDir + '/' + path.basename(reverse))}`);
+        await sharer.sync();
+        if (!fs.existsSync(reverse) || !fs.readFileSync(reverse, 'utf8').includes('device-side')) {
+          throw new Error('设备 → 本机 未同步');
+        }
+        fs.rmSync(probe, { force: true });
+        fs.rmSync(reverse, { force: true });
+        await check();
+        await client.shell(`rm -f ${quoteAndroidPath(remote)} ${quoteAndroidPath(store.getSettings().deviceSharedDir + '/' + path.basename(reverse))}`);
+        return '上行 + 下行均正常';
+      });
+    }
 
     if (APK) {
       console.log('\n[应用链路]');
-      let meta = null;
-      await step('解析 APK', async () => {
-        meta = parseApk(APK);
-        return `${meta.label} (${meta.package} v${meta.versionName})`;
+      let approved;
+      const installed = await step('Install reviewed APK in the active Profile', async () => {
+        await check();
+        approved = await prepareInstall(path.resolve(APK),profile);
+        if (await packagePresent(client,approved.package)) throw Error('Package already exists in this Profile');
+        await withApprovedCopy(approved,profile,staged=>installSession(client,[staged],{
+          pkg:approved.package,replace:false,grant:false,checkGuest:check
+        }));
+        await check();
+        if (!await client.isInstalled(approved.package)) throw Error('Android did not confirm the package');
+        return approved.package + ' ' + approved.sha256;
       });
-      if (meta) {
-        await step('安装到设备', async () => {
-          await client.install(APK);
-          const installed = await client.isInstalled(meta.package);
-          if (!installed) throw new Error('pm path 未找到包');
-          return 'pm path 校验通过';
-        });
-        await step('独立窗口启动', async () => {
-          await client.startApp(meta.package, meta.launchActivity, { freeform: true });
+      if (installed) {
+        const launched = await step('独立窗口启动', async () => {
+          await check();
+          const component = await client.resolveLauncher(approved.package);
+          await client.startApp(approved.package, component, {freeform:false});
           await sleep(4000);
           const top = await client.shell('dumpsys activity activities | grep -E "mResumedActivity|topResumedActivity"');
-          if (!String(top).includes(meta.package)) throw new Error('应用未在前台');
-          return meta.package;
+          if (!String(top).includes(approved.package)) throw new Error('应用未在前台');
+          return approved.package;
         });
-        await step('截图', async () => {
+        if (launched) await step('截图', async () => {
+          await check();
           const png = await client.screenshot();
           const out = path.join(__dirname, '..', 'test', 'out');
           fs.mkdirSync(out, { recursive: true });
@@ -173,7 +194,7 @@ async function step(name, fn) {
 
   // 自检自己拉起的运行时要主动停掉：否则 emulator 子进程的 stdio 管道
   // 会让 Node 事件循环一直不退出，命令看起来「卡住」
-  if (!SERIAL && runtime.emulator.running()) {
+  if (!SERIAL && runtime.emulator.proc?.spawnfile && runtime.emulator.running()) {
     await runtime.stop({}).catch(() => {});
   }
 

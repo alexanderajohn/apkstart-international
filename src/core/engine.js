@@ -57,7 +57,6 @@ class Runtime {
     this.installing = false;
     this.lastActivity = Date.now();
     this._watchdog = null;
-    this._freeformReady = false;
     this._client = null;
     this._bootLog = [];
     this._activeApps = new Set();  // 容器会话：当前打开的应用窗口
@@ -240,7 +239,7 @@ class Runtime {
         ]);
         result.android = android;
         result.sdk = sdk;
-        result.freeform = String(ff).trim() === '1' || this._freeformReady;
+        result.freeform = String(ff).trim() === '1';
         this._probeNetworkInBackground();
       }
     } catch (e) {
@@ -668,9 +667,6 @@ class Runtime {
   }
 
   async prepare(client) {
-    if (!this._freeformReady) {
-      try { this._freeformReady = await client.ensureFreeform(); } catch (_) { /* ignore */ }
-    }
     // 中文环境（系统语言 + 中文输入法）每次**开机**只做一次。
     // 系统语言靠 emulator -prop 注入（SELinux 保护，运行时改不了），这里补的是
     // 应用级 locale / 时区，以及静默装好并启用随包带的谷歌拼音输入法。

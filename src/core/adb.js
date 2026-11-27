@@ -96,6 +96,12 @@ function friendlyLaunchError(raw, pkg) {
   return `${pkg || '应用'} 未能启动${t ? `：${t.slice(0, 240)}` : '（进程未存活）'}`;
 }
 
+// adb shell joins argv into a remote shell command even when execFile is used.
+function quoteAndroidPath(value) {
+  if (typeof value !== 'string' || /[\x00-\x1f\x7f]/.test(value)) throw Error('Invalid Android path');
+  return "'" + value.replace(/'/g, "'\\''") + "'";
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -685,20 +691,6 @@ class AdbClient {
     return true;
   }
 
-  /** 开启 freeform（独立窗口）支持，失败不影响主流程 */
-  async ensureFreeform() {
-    // 合成为一次 adb shell：4 次独立 execFile 在 Windows 上要 600ms+，
-    // 而这段正好在「点开应用」的等待里。
-    const out = await this.shell(
-      'settings put global enable_freeform_support 1 ; '
-      + 'settings put global force_resizable_activities 1 ; '
-      + 'settings put global development_settings_enabled 1 ; '
-      + 'settings get global enable_freeform_support',
-      { timeout: 12000 },
-    ).catch(() => '0');
-    return String(out).trim().split(/\r?\n/).pop().trim() === '1';
-  }
-
   async wmSize() {
     const out = await this.shell('wm size');
     const m = /(\d+)x(\d+)/.exec(out.split('\n').pop() || out);
@@ -728,11 +720,11 @@ class AdbClient {
   }
 
   async shellMkdir(remote) {
-    await this.shell(`mkdir -p "${remote}"`);
+    await this.shell(`mkdir -p ${quoteAndroidPath(remote)}`);
   }
 
   async listRemote(remote) {
-    const out = await this.shell(`ls -l "${remote}" 2>/dev/null`);
+    const out = await this.shell(`ls -l ${quoteAndroidPath(remote)} 2>/dev/null`);
     return String(out).split('\n').map((line) => {
       const l = line.trim();
       if (!l || l.startsWith('total ')) return null;
@@ -740,7 +732,7 @@ class AdbClient {
       // "2026-11-12 18:52" 或 "Nov 12 18:52"，用固定正则会全解析不出来。
       // 权限位之后的第 2 个数字即文件大小，最后一段即文件名。
       const parts = l.split(/\s+/);
-      if (parts.length < 6 || !/^[\-dl]/.test(parts[0])) return null;
+      if (parts.length < 6 || !/^[\-d]/.test(parts[0])) return null;
       const sizeIdx = parts.findIndex((p, i) => i >= 2 && /^\d+$/.test(p)
         && /(\d{4}-\d{2}-\d{2}|^[A-Za-z]{3}$)/.test(parts[i + 1] || ''));
       if (sizeIdx < 0) return null;
@@ -760,7 +752,7 @@ class AdbClient {
   async listRemoteStat(remote) {
     let out = '';
     try {
-      out = await this.shell(`cd "${remote}" 2>/dev/null && find . -type f -exec stat -c '%Y|%s|%n' {} + 2>/dev/null`);
+      out = await this.shell(`cd ${quoteAndroidPath(remote)} 2>/dev/null && find . -type f -exec stat -c '%Y|%s|%n' {} + 2>/dev/null`);
     } catch (_) {
       return null;
     }
@@ -1051,6 +1043,7 @@ class AdbClient {
 }
 
 module.exports = {
+  quoteAndroidPath,
   AdbClient, AdbError, parseStatList, friendlyInstallError, friendlyLaunchError,
   componentArg, parseResolvedActivity, parseDeviceState, isUnauthorizedError, parsePmPaths,
 };

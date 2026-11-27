@@ -257,8 +257,14 @@ const store = {
   // 商店（MSIX）打包版标记：main.js 据此关掉自更新、跳过需要管理员权限的内核驱动安装
   STORE_BUILD,
 
-  getSettings() {
+  getSettings(profileId = profileRegistry.currentId()) {
     const s = deepMerge(DEFAULT_SETTINGS, readJson(SETTINGS_FILE, {}));
+    if (profileId !== 'default') {
+      const folders = s.profileShareFolders?.[profileId];
+      s.sharedDir = folders?.sharedDir || path.join(profileRegistry.profileRoot(profileId), 'shared');
+      s.deviceSharedDir = folders?.deviceSharedDir || DEFAULT_SETTINGS.deviceSharedDir;
+    }
+    delete s.profileShareFolders;
     /**
      * 0.5.6 起没有第三方底座了：老配置里的 mode=mumu / fydeos / attach，
      * 或者手改出来的任何其它值，一律当 builtin 处理，并把残留的第三方字段删掉。
@@ -282,13 +288,26 @@ const store = {
   },
 
   saveSettings(patch) {
-    const next = deepMerge(this.getSettings(), patch);
+    const id = profileRegistry.currentId();
+    const globalPatch = {...patch};
+    delete globalPatch.profileShareFolders;
+    const folders = {...readJson(SETTINGS_FILE, {}).profileShareFolders};
+    if (id !== 'default') {
+      for (const key of ['sharedDir','deviceSharedDir']) {
+        if (Object.hasOwn(globalPatch,key)) {
+          folders[id] = {...folders[id], [key]:globalPatch[key]};
+          delete globalPatch[key];
+        }
+      }
+    }
+    const next = deepMerge(this.getSettings('default'), globalPatch);
+    if (Object.keys(folders).length) next.profileShareFolders = folders;
     // 只改了「资源策略」时，把它翻译成具体的三个开关，避免两套配置各说各话
     if (patch && patch.engine && patch.engine.resourceMode) {
       Object.assign(next.engine, resourcePreset(next.engine.resourceMode));
     }
     writeJson(SETTINGS_FILE, next);
-    return next;
+    return this.getSettings(id);
   },
 
   getApps() {

@@ -206,6 +206,16 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
 
   console.log('\n[sharer 不再来回搬运（磁盘写满的元凶）]');
 
+  function testShareClient(localDir, transport) {
+    const store = require('../src/core/store');
+    const {recordOwner} = require('../src/core/runtime-owner');
+    store.saveSettings({sharedDir:localDir,deviceSharedDir:'/sdcard/x'});
+    const serial='emulator-5554', boot=require('crypto').randomUUID();
+    recordOwner(store.profiles,{profileId:'default',serial,boot});
+    return {serial,deviceState:async()=>'device',
+      exec:async args=>({stdout:args[0]==='emu'?'apkstart\nOK':boot}),...transport};
+  }
+
   await test('同一个文件不会每轮都被从设备拉回来', async () => {
     const { Sharer } = require('../src/core/sharer');
     const localDir = path.join(TMP, 'shared');
@@ -214,21 +224,14 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     fs.writeFileSync(file, 'hello');
 
     const calls = { push: 0, pull: 0 };
-    const fakeClient = {
-      isOnline: async () => true,
+    const fakeClient = testShareClient(localDir,{
       shellMkdir: async () => {},
       shell: async () => '',
       push: async () => { calls.push += 1; },
       pull: async (_r, dst) => { calls.pull += 1; fs.writeFileSync(dst, 'hello'); },
-      listRemoteStat: async () => [{ rel: 'a.txt', size: 5, mtime: Date.now() - 60000 }],
-    };
+      listRemoteStat: async () => calls.push ? [{rel:'a.txt',size:5,mtime:1700000000000}] : [],
+    });
     const sh = new Sharer({ client: () => fakeClient });
-    sh.localDirOverride = localDir;
-    // 用真实的路径/状态文件，但目录指向临时目录
-    Object.defineProperty(sh, 'localDir', { get: () => localDir });
-    Object.defineProperty(sh, 'remoteDir', { get: () => '/sdcard/x' });
-    sh.stateFile = path.join(TMP, 'shared-state.json');
-
     await sh.sync();          // 第 1 轮：本机新文件 → 推上去
     const firstPull = calls.pull;
     await sh.sync();          // 第 2 轮
@@ -244,19 +247,16 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     const localDir = path.join(TMP, 'shared2');
     fs.mkdirSync(localDir, { recursive: true });
     let pulled = 0;
-    const fakeClient = {
-      isOnline: async () => true,
+    const fakeClient = testShareClient(localDir,{
       shellMkdir: async () => {},
       shell: async () => '',
       push: async () => {},
       pull: async () => { pulled += 1; },
       listRemoteStat: async () => [{ rel: 'big.mp4', size: 600 * 1024 * 1024, mtime: Date.now() }],
-    };
+    });
     const sh = new Sharer({ client: () => fakeClient });
-    Object.defineProperty(sh, 'localDir', { get: () => localDir });
-    Object.defineProperty(sh, 'remoteDir', { get: () => '/sdcard/x' });
-    sh.stateFile = path.join(TMP, 'shared-state2.json');
-    await sh.sync();
+    const result = await sh.sync();
+    assert(!result.error && result.errors.length===1 && result.errors[0].includes('Unsupported Android shared entry'));
     assert(pulled === 0, '超过 512MB 的文件不应拉回本机');
   });
 
