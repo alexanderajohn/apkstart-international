@@ -14,6 +14,8 @@ Open the main window beneath **Android Profiles**, and click **Check running And
 
 This feature does not measure FPS, install APKs or verify that snapshots survive a restart. It never reboots the emulator to make a check pass.
 
+The [hosted evidence table](DEVELOPMENT_PROGRESS.md) records real Android 14 guest runs separately from the client hardware checks below. Install/relaunch and benchmark checks send Android one force-stop, confirm that the package and its child processes have exited, then launch it again. The hosted report includes the time it took to observe the stop.
+
 ## Manual Windows 10/11 validation — disposable environment required
 
 CI does not provision a physical Windows Android runtime, so the **real** test is an explicit, separately runnable command. A tester must use their own test machine and disposable Android Profile.

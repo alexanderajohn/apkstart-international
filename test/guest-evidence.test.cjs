@@ -29,3 +29,20 @@ test('hosted permission interaction selects only the named fixture and system de
     assert.equal(appManagerDenyControl(xml,owner),null);
   assert.equal(appManagerDenyControl(msg+button,'org.example.fake'),null);
 });
+
+test('Android stop is sent once and relaunch waits for every package process to exit',async()=>{
+  const {stopAndObserve}=require('../scripts/asi/guest-evidence.cjs');
+  const pkg='org.example.fixture';
+  const rows=['NAME\ninit\n'+pkg,'NAME\ninit\n'+pkg+':remote','NAME\ninit\n'+pkg+'2'];
+  let stops=0,checks=0;
+  const client={exec:async args=>{
+    if(args[1]==='am'){assert.deepEqual(args,['shell','am','force-stop','--user','0',pkg]);stops++;return {stdout:''};}
+    assert.deepEqual(args,['shell','ps','-A','-o','NAME']);
+    return {stdout:rows.shift()};
+  }};
+  await stopAndObserve(client,pkg,async()=>{checks++;},{pollMs:0});
+  assert.equal(stops,1);assert.equal(checks,4);assert.equal(rows.length,0);
+  const check=async()=>{};
+  await assert.rejects(stopAndObserve(reply('NAME\ninit\n'+pkg),pkg,check,{timeoutMs:0}),/still present/);
+  await assert.rejects(stopAndObserve(reply(''),pkg,check),/verify Android process list/);
+});

@@ -12,7 +12,7 @@ const { AdbClient } = require('../../src/core/adb');
 const { prepareInstall } = require('../../src/core/apk-install-guard');
 const { withApprovedCopy } = require('../../src/core/install-staging');
 const { installSession } = require('../../src/core/install-session');
-const { packagePresent, verifyCanary, launchAndObserve } = require('./guest-evidence.cjs');
+const { packagePresent, verifyCanary, stopAndObserve, launchAndObserve } = require('./guest-evidence.cjs');
 const {inspectRuntime,expectedAvd}=require('../../src/core/runtime-readiness');
 const PROFILE=/^p_[0-9a-f]{16}$/,PKG=/^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*){2,}$/;
 const HELP='Usage: node scripts/asi/live-runtime-smoke.cjs [--readiness|--install-launch|--verify-existing|--assert-absent|--benchmark]. Set ASI_E2E_ADB_PATH (absolute adb.exe), ASI_E2E_SERIAL (emulator-5554), ASI_E2E_PROFILE_ID. Optional install: ASI_E2E_APK_PATH, ASI_E2E_PACKAGE, ASI_E2E_DISPOSABLE_ACK=I_CREATED_DISPOSABLE_PROFILE.';
@@ -68,8 +68,7 @@ async function run(){
      throw Error('Cannot resolve the benchmark launcher');
    const samples=[];
    for(let i=0; i<6; i++){
-     await check();
-     await client.exec(['shell','am','force-stop','--user','0',pkg]);
+     await stopAndObserve(client,pkg,check);
      const start=performance.now();
      const out=(await client.exec(['shell','am','start','-W','-n',activity],{timeout:60000})).stdout;
      const total=/^TotalTime:\s*(\d+)\s*$/m.exec(out);
@@ -96,8 +95,7 @@ async function run(){
  result.packagePresent=await packagePresent(client,pkg);
  if(!result.packagePresent)throw Error('Android package manager cannot find the committed package');
  await launchAndObserve(client,pkg,check);
- await check();
- await client.exec(['shell','am','force-stop','--user','0',pkg]);
+ await stopAndObserve(client,pkg,check);
  await launchAndObserve(client,pkg,check);
  result.launchesObserved=2;
  if(process.env.ASI_E2E_CANARY_SHA256)

@@ -32,7 +32,7 @@ async function run() {
   const {prepareInstall} = require('../../src/core/apk-install-guard');
   const {withApprovedCopy} = require('../../src/core/install-staging');
   const {EncryptedBackupCenter} = require('../../src/core/encrypted-backup');
-  const {packagePresent,verifyCanary,appManagerDenyControl} = require('./guest-evidence.cjs');
+  const {packagePresent,verifyCanary,stopAndObserve,appManagerDenyControl} = require('./guest-evidence.cjs');
   const store = require('../../src/core/store');
   const {Installer} = require('../../src/core/installer');
   const {EmulatorEngine, SNAPSHOT_NAME} = require('../../src/core/emulator');
@@ -295,10 +295,9 @@ async function run() {
     }
     if (installedParts) console.log('Android installed split set',JSON.stringify({profileId,format:approved.format,installedParts}));
     const firstActivity=await foreground(fixture.pkg);
-    await client.exec(['shell','am','force-stop','--user','0',fixture.pkg]);
-    assert(!(await client.shell('ps -A -o NAME')).trim().split(/\s+/).includes(fixture.pkg),'App process did not stop');
+    const stopObservedMs=await stopAndObserve(client,fixture.pkg,()=>verifyOwner(client,registry,profileId));
     const secondActivity=await foreground(fixture.pkg);
-    return {format:approved.format,installedParts,transferReconnects,pkg:fixture.pkg,version:approved.version,sha256:approved.sha256,firstActivity,secondActivity};
+    return {format:approved.format,installedParts,transferReconnects,stopObservedMs,pkg:fixture.pkg,version:approved.version,sha256:approved.sha256,firstActivity,secondActivity};
   }
   // A split failure is reported at the end so the other Profile, cold boots
   // and recovery can still be independently exercised on this runner.

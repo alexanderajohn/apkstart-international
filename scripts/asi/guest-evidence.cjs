@@ -17,6 +17,21 @@ async function verifyCanary(client, pkg, expected) {
   if (!match || match[1].toLowerCase() !== expected.toLowerCase()) throw Error('Private app data canary differs or is missing');
   return true;
 }
+async function stopAndObserve(client,pkg,check,{timeoutMs=10000,pollMs=300}={}) {
+  if (!validPackageName(pkg)) throw Error('Invalid test package');
+  await check();
+  await client.exec(['shell','am','force-stop','--user','0',pkg]);
+  const started=Date.now();
+  for (;;) {
+    await check();
+    const {stdout}=await client.exec(['shell','ps','-A','-o','NAME'],{timeout:5000});
+    const rows=stdout.trim().split(/\r?\n/).map(row=>row.trim());
+    if (rows.shift()!=='NAME' || !rows.length) throw Error('Cannot verify Android process list');
+    if (!rows.some(name=>name===pkg||name.startsWith(pkg+':'))) return Date.now()-started;
+    if (Date.now()-started>=timeoutMs) throw Error('App process still present after Android force-stop: '+pkg);
+    await new Promise(resolve=>setTimeout(resolve,pollMs));
+  }
+}
 async function launchAndObserve(client,pkg,check) {
   if (!validPackageName(pkg)) throw Error('Invalid test package');
   await check();
@@ -46,4 +61,4 @@ function appManagerDenyControl(xml, controller) {
   if (left>=right || top>=bottom) return null;
   return {prompt:prompt.text, control:deny[0]['resource-id'], x:Math.floor((left+right)/2), y:Math.floor((top+bottom)/2)};
 }
-module.exports = { packagePresent, verifyCanary, launchAndObserve, appManagerDenyControl };
+module.exports = { packagePresent, verifyCanary, stopAndObserve, launchAndObserve, appManagerDenyControl };
