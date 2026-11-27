@@ -265,6 +265,7 @@ let armAgent = async () => ({ ok: false });
 let installer = null;
 let sharer = null;
 let quitting = false;
+let smokeExitCode = 0;
 let winAgent = null;
 let appWin = null;
 let notifier = null;
@@ -3614,28 +3615,30 @@ if (!gotLock) {
             };
             await snap(out);
             if (process.argv.includes('--auto-repair')) {
-              const state = await mainWindow.webContents.executeJavaScript(
-                "(async () => {" +
-                "  document.getElementById('smartCheckCancel').click();" +
-                "  document.getElementById('btnSettings').click();" +
-                "  for (let i=0; i<50; i++) {" +
-                "    if (document.getElementById('settingsMask').classList.contains('on')) break;" +
-                "    await new Promise(r=>setTimeout(r,100));" +
-                "  }" +
-                "  document.getElementById('btnAutoRepairScan').click();" +
-                "  let scanned=false;" +
-                "  for (let i=0; i<120; i++) {" +
-                "    await new Promise(r=>setTimeout(r,100));" +
-                "    const box=document.getElementById('autoRepairResults');" +
-                "    if (box.querySelector('.asi-ar-item,.asi-ar-ok')) { scanned=true; break; }" +
-                "  }" +
-                "  document.getElementById('autoRepairSection').scrollIntoView({block:'center'});" +
-                "  return {scanned,open:document.getElementById('settingsMask').classList.contains('on')};" +
-                "})()"
-              );
-              if (!state || !state.open || !state.scanned) {
-                throw new Error('Auto-Repair 2.0 did not render a diagnostic plan');
-              }
+              await mainWindow.webContents.executeJavaScript(`
+                (async () => {
+                  document.getElementById('smartCheckCancel').click();
+                  const settings = document.getElementById('settingsMask');
+                  if (!settings.classList.contains('on')) document.getElementById('btnSettings').click();
+                  const until = async (check, message) => {
+                    const deadline = Date.now() + 30000;
+                    while (Date.now() < deadline) {
+                      if (check()) return;
+                      await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                    throw Error(message);
+                  };
+                  await until(() => settings.classList.contains('on'), 'Settings did not open');
+                  const box = document.getElementById('autoRepairResults');
+                  document.getElementById('btnAutoRepairScan').click();
+                  await until(() => {
+                    const failure = box.querySelector('.asi-ar-msg.error');
+                    if (failure) throw Error(failure.textContent);
+                    return box.querySelector('.asi-ar-item,.asi-ar-ok');
+                  }, 'Auto-Repair 2.0 did not render a diagnostic plan');
+                  document.getElementById('autoRepairSection').scrollIntoView({block:'center'});
+                })()
+              `);
               console.log('[smoke] Auto-Repair 2.0 diagnosis rendered; no repair executed');
               await snap(out.replace(/\.png$/i, '-auto-repair.png'));
             }
@@ -3981,7 +3984,9 @@ if (!gotLock) {
               await snap(out.replace(/\.png$/i, '-about.png'));
             }
           } catch (e) {
-            console.error('[smoke] 截图失败', e);
+            smokeExitCode = 1;
+            appLog('Packaged smoke failed: ' + (e.stack || e.message || String(e)));
+            console.error('[smoke]', e);
           }
           quitting = true;
           app.quit();
@@ -3995,7 +4000,7 @@ if (!gotLock) {
   app.on('window-all-closed', () => {
     // 正常关闭窗口时只隐藏到托盘（close 事件已拦截），
     // 走到这里说明是真正要退出，必须放行，否则进程会残留并占住单实例锁。
-    if (quitting) app.exit(0);
+    if (quitting) app.exit(smokeExitCode);
   });
 
   let quitReady = false;
@@ -4017,7 +4022,8 @@ if (!gotLock) {
         runtime?.dispose();
         // 隐藏的图标解码窗口也算一个窗口，不关掉会让 window-all-closed 永远不触发
         try { if (decodeWindow && !decodeWindow.isDestroyed()) decodeWindow.destroy(); } catch (_) { /* ignore */ }
-        app.quit();
+        if (smokeExitCode) app.exit(smokeExitCode);
+        else app.quit();
       };
       setTimeout(finish, 400);
       return;

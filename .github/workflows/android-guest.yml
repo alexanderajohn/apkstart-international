@@ -23,6 +23,11 @@ on:
       - 'src/core/encrypted-backup.js'
       - 'src/core/runtime-owner.js'
       - 'src/core/emulator.js'
+      - 'src/core/engine.js'
+      - 'src/core/doctor.js'
+      - 'src/core/shortcut*.js'
+      - 'src/core/appwin.js'
+      - 'src/main.js'
 
 permissions:
   contents: read
@@ -32,14 +37,15 @@ env:
 
 jobs:
   guest:
-    name: ${{ matrix.task }} (${{ matrix.os }})
+    name: ${{ matrix.name || matrix.task }} (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - {os: ubuntu-24.04, task: Android guest}
           - {os: windows-2025, task: Android guest}
-          - {os: windows-2025, task: Packaged desktop}
+          - {os: windows-2025, task: Packaged desktop, fixture: api}
+          - {os: windows-2025, task: Packaged desktop, fixture: calculator, name: Packaged desktop Calculator}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 110
     steps:
@@ -121,8 +127,9 @@ jobs:
         shell: powershell
         env:
           ASI_RUNNER_KIND: ${{ runner.environment }}
+          ASI_DESKTOP_FIXTURE: ${{ matrix.fixture }}
         run: |
-          ./scripts/asi/windows-shell-smoke.ps1 -InstallLiveApk -Executable 'dist/ApkStart-International-win64-portable/ApkStart International.exe'
+          ./scripts/asi/windows-shell-smoke.ps1 -InstallLiveApk -Fixture $env:ASI_DESKTOP_FIXTURE -Executable 'dist/ApkStart-International-win64-portable/ApkStart International.exe'
       - name: Boot, install, launch, isolate and restore
         if: matrix.task == 'Android guest'
         env:
@@ -138,5 +145,12 @@ jobs:
         with:
           name: ${{ runner.os == 'Windows' && 'windows-android-14-guest-evidence' || 'android-14-guest-evidence' }}
           path: ${{ runner.temp }}/guest-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.task == 'Packaged desktop'
+        with:
+          name: windows-desktop-${{ matrix.fixture }}-evidence
+          path: ${{ runner.temp }}/desktop-evidence.json
           if-no-files-found: warn
           retention-days: 14

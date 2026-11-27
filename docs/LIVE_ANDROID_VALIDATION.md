@@ -98,3 +98,9 @@ All 15 phases passed on [revision 5de4c969](https://github.com/alexanderajohn/ap
 
 
 The [21-phase API 34 run](https://github.com/alexanderajohn/apkstart-international/actions/runs/45866659888/job/140071116587) on Linux validated standalone APKs, targeted signed APKS and XAPK, both system notification denial controls, profile isolation, encrypted AVD restore and named Quick Boot. The hosted harness checks the same boot identity and an unlocked Android user across multiple read-only observations. Results for Windows Server 2025 and physical Windows 10/11 are tracked independently in [DEVELOPMENT_PROGRESS.md](DEVELOPMENT_PROGRESS.md).
+
+## Hosted Explorer installation on Windows
+
+The Android 14 guest validation workflow on `feature/international-foundation` exercises the packaged launcher in two disposable Windows Server sessions. Explorer opens Appium API Demos in one and Fossify Calculator in the other. Each job verifies the signed fixture, native consent, installed Android package path, shortcut target and Profile, then opens the original shortcut through the Windows shell. A pass requires a fresh launch event, a visible window owned by the packaged launcher with the installed app title, and the package's resumed Android Activity. The job also checks that removing the APK association restores the prior Windows handler.
+
+The workflow uploads separate JSON reports for each desktop fixture and for each Android guest. The desktop reports contain completed steps, revision, package, Profile and approved digest. After a failure, compare the last completed step with the packaged launcher and emulator logs in the job. A normal Windows CI build exercises cancellation and host-only UI checks. Client Windows 10/11 hardware, prolonged use and power interruption have separate gates.

@@ -1,6 +1,7 @@
 ﻿# Exercise the packaged application's normal Windows shell entry points.
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$Executable, [switch]$InstallLiveApk)
+param([Parameter(Mandatory)][string]$Executable, [switch]$InstallLiveApk,
+      [ValidateSet('api','calculator')][string]$Fixture='api')
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:ASI_RUNNER_KIND -ne 'github-hosted' -or $env:RUNNER_OS -ne 'Windows') {
     throw 'Requires a disposable hosted Windows runner'
@@ -48,11 +49,14 @@ public static class ShellWindowState {
   [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
   public static string WindowClass(IntPtr h) { var s=new StringBuilder(256); GetClassName(h,s,s.Capacity); return s.ToString(); }
   public static string Caption(IntPtr h) { var s=new StringBuilder(1024); GetWindowText(h,s,s.Capacity); return s.ToString(); }
-  public static IntPtr[] Dialogs(int[] pids) {
+  public static IntPtr[] VisibleWindows(int[] pids, string cls, string caption) {
     var found=new List<IntPtr>();
     EnumWindows(delegate(IntPtr h, IntPtr extra) {
-      uint pid; GetWindowThreadProcessId(h,out pid);
-      if (Array.IndexOf(pids,(int)pid)>=0 && IsWindowVisible(h) && WindowClass(h)=="#32770") found.Add(h);
+      uint pid; Rect bounds; GetWindowThreadProcessId(h,out pid);
+      if (Array.IndexOf(pids,(int)pid)>=0 && IsWindowVisible(h) &&
+          (String.IsNullOrEmpty(cls) || WindowClass(h)==cls) &&
+          (String.IsNullOrEmpty(caption) || Caption(h)==caption) &&
+          GetWindowRect(h,out bounds) && bounds.right>bounds.left && bounds.bottom>bounds.top) found.Add(h);
       return true;
     },IntPtr.Zero);
     return found.ToArray();
@@ -103,7 +107,7 @@ $any = [System.Windows.Automation.Condition]::TrueCondition
 function Find-Approval([string]$Digest, [string]$ProfileId, [string]$ProfileField) {
     [int[]]$owned = @(Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exe)) -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -eq $exe } | ForEach-Object { $_.Id })
-    foreach ($hwnd in [ShellWindowState]::Dialogs($owned)) {
+    foreach ($hwnd in [ShellWindowState]::VisibleWindows($owned,'#32770',$null)) {
         $native = $UI::FromHandle($hwnd)
         $labels = ($native.FindAll($scope::Descendants,$any) | ForEach-Object { $_.Current.Name }) -join "`n"
         if ($labels.Contains($Digest) -and $labels.Contains($ProfileField + ': ' + $ProfileId)) {
@@ -150,6 +154,15 @@ function Open-Apk([string]$Name, [string]$Source, [string]$Package, [string]$Pro
         Write-Output "SHELL_APK_CANCEL_OK $Name $sha"
     }
 }
+if ($InstallLiveApk) {
+    $report = [ordered]@{revision=$env:GITHUB_SHA; fixture=$Fixture; phases=@(); complete=$false}
+    $reportPath = Join-Path $env:RUNNER_TEMP 'desktop-evidence.json'
+}
+function Save-DesktopPhase([string]$Name) {
+    $report.phases += $Name
+    $report | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $reportPath -Encoding UTF8
+    Write-Host "Desktop evidence: $Name"
+}
 try {
     Register-App
     if ($InstallLiveApk) {
@@ -165,10 +178,19 @@ store.saveSettings({runtime:{dir:process.env.ANDROID_HOME}, engine:{prewarm:fals
 console.log(id);
 '@ | node
         if ($LASTEXITCODE -ne 0 -or $profileId -notmatch '^p_[a-f0-9]{16}$') {throw 'Expected a new owned Profile'}
-        $src = Join-Path $env:RUNNER_TEMP 'guest-fixtures/api.apk'
-        if ((Get-FileHash $src -Algorithm SHA256).Hash -ne 'a9eecf37b26cd084855c530db81c2bb1b91f4c1b095a04f47aa7c20e2791f686') {throw 'Unexpected fixture APK'}
-        $pkg = 'io.appium.android.apis'
-        Open-Apk 'API Demos from Explorer.apk' $src $pkg $profileId 'Install to Desktop CI'
+        $inputApk = @{
+            api = @{package='io.appium.android.apis'; file='api.apk'; title='API Demos'; hash='a9eecf37b26cd084855c530db81c2bb1b91f4c1b095a04f47aa7c20e2791f686'}
+            calculator = @{package='org.fossify.math'; file='calculator.apk'; title='Fossify Calculator'; hash='7c5443c22d6d62c67dfe80df33ea9161ff0fa440f92590bcb45d7008b57613ed'}
+        }[$Fixture]
+        $src = Join-Path $env:RUNNER_TEMP ('guest-fixtures/' + $inputApk.file)
+        if ((Get-FileHash $src -Algorithm SHA256).Hash -ne $inputApk.hash) {throw 'Unexpected fixture APK'}
+        $pkg = $inputApk.package
+        $report.profile = $profileId
+        $report.package = $pkg
+        $report.sha256 = $inputApk.hash
+        Save-DesktopPhase 'Verified signed fixture digest and created isolated Profile'
+        Open-Apk ($inputApk.title + ' from Explorer.apk') $src $pkg $profileId 'Install to Desktop CI'
+        Save-DesktopPhase 'Approved package, SHA-256 and Profile in native Windows dialog'
         $log = Join-Path $env:APPDATA 'apkstart-international/logs/app.log'
         $deadline = [datetime]::UtcNow.AddMinutes(18)
         do {
@@ -188,6 +210,10 @@ console.log(id);
         $adb = Join-Path $env:ANDROID_HOME 'platform-tools/adb.exe'
         $installed = & $adb -s $owner.serial shell pm path $pkg
         if ($LASTEXITCODE -ne 0 -or $installed -notmatch 'package:/.*base.apk') {throw 'Installed package file not found'}
+        Save-DesktopPhase 'Verified installed package and Profile-qualified shortcut target'
+        $label = node -e "const a=require('./src/core/store').getApp(process.argv[1]); if(!a)process.exit(1); console.log(a.label || a.package)" $pkg
+        if ($LASTEXITCODE -ne 0 -or !($label -is [string]) -or !$label.Trim()) {throw 'Missing desktop app label in this Profile'}
+        $logBefore = @(Get-Content -LiteralPath $log -Encoding UTF8).Count
         $openLink = New-Object Diagnostics.ProcessStartInfo
         $openLink.FileName = $links[0].FullName
         $openLink.UseShellExecute = $true
@@ -195,12 +221,21 @@ console.log(id);
         $deadline = [datetime]::UtcNow.AddMinutes(5)
         do {
             Start-Sleep -Seconds 2
-            $attached = Select-String -LiteralPath $log -SimpleMatch "launch $pkg embed=true","launch $pkg detached=true" -Quiet
-        } until ($attached -or [datetime]::UtcNow -gt $deadline)
-        if (!$attached) {throw 'Packaged launcher did not attach the app display'}
-        $activity = & $adb -s $owner.serial shell dumpsys activity activities | Select-String 'topResumedActivity.*io\.appium\.android\.apis/'
-        if ($LASTEXITCODE -ne 0 -or !$activity) {throw 'API Demos did not reach the foreground'}
-        Write-Output "LIVE_DESKTOP_INSTALL_LAUNCH_OK $profileId $($owner.serial) $($activity[0].Line.Trim())"
+            $newLog = @(Get-Content -LiteralPath $log -Encoding UTF8 | Select-Object -Skip $logBefore)
+            $attached = $newLog | Select-String -SimpleMatch "launch ok $pkg embed=true" -Quiet
+            $received = $newLog | Select-String -SimpleMatch "Received shortcut for $pkg in Profile $profileId" -Quiet
+        } until (($received -and $attached) -or [datetime]::UtcNow -gt $deadline)
+        if (!$received -or !$attached) {throw "Shortcut received=$([bool]$received), desktop display attached=$([bool]$attached)"}
+        [int[]]$owned = @(Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exe)) | Where-Object {$_.Path -eq $exe} | ForEach-Object {$_.Id})
+        $windows = [ShellWindowState]::VisibleWindows($owned,$null,$label)
+        if (!$windows.Count) {throw 'No visible packaged app window with the installed app title'}
+        $report.windowTitle = $label
+        Save-DesktopPhase 'Opened original shortcut and observed the visible app window'
+        $activity = & $adb -s $owner.serial shell dumpsys activity activities | Select-String ('topResumedActivity.*' + [regex]::Escape($pkg) + '/')
+        if ($LASTEXITCODE -ne 0 -or !$activity) {throw "$pkg did not reach the foreground"}
+        $report.activity = @($activity)[0].Line.Trim()
+        Save-DesktopPhase 'Observed installed Android Activity in the foreground'
+        Write-Output "LIVE_DESKTOP_INSTALL_LAUNCH_OK $profileId $($owner.serial) $($report.activity)"
     } else {
         Open-Apk 'APK first launch.apk' 'assets/PinyinIME.apk' 'com.android.inputmethod.pinyin' 'default' 'Cancel'
         Open-Apk 'APK secondary launch.apk' 'assets/PinyinIME.apk' 'com.android.inputmethod.pinyin' 'default' 'Cancel'
@@ -225,7 +260,15 @@ console.log(id);
     Unregister-App
     if ((Get-Handler) -ne 'ASI.Test.LaterSelection') {throw 'A subsequent handler choice was overwritten'}
     Write-Output 'SHELL_HANDLER_PRESERVATION_OK'
+    if ($InstallLiveApk) {
+        $report.complete = $true
+        Save-DesktopPhase 'Verified Windows file association restoration'
+    }
 } catch {
+    if ($InstallLiveApk) {
+        $report.error = $_.Exception.Message
+        $report | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $reportPath -Encoding UTF8
+    }
     $logs = Join-Path $env:APPDATA 'apkstart-international/logs'
     foreach ($name in @('app.log','emulator.log')) {
         if (Test-Path (Join-Path $logs $name)) {Get-Content (Join-Path $logs $name) -Encoding UTF8 -Tail 80 | Write-Host}
