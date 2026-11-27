@@ -42,6 +42,9 @@ async function run() {
   const secondary = registry.create('Guest validation B').id;
   const adb = path.join(process.env.ANDROID_HOME,'platform-tools',windows?'adb.exe':'adb');
   const emulator = path.join(process.env.ANDROID_HOME,'emulator',windows?'emulator.exe':'emulator');
+  const os = require('node:os');
+  const memoryMB = windows && os.totalmem() >= 12*1024**3 ? 4096 : 2048;
+  const cores = windows ? Math.min(4,Math.max(2,os.availableParallelism()-1)) : 2;
   const serial = 'emulator-5554';
   const client = new AdbClient({adbPath:adb,serial});
   const probe=spawnSync(emulator,['-accel-check'],{encoding:'utf8',timeout:30000});
@@ -51,7 +54,7 @@ async function run() {
   console.log('Android acceleration probe', JSON.stringify({acceleration,probeText}));
   const report = {platform:windows?'GitHub-hosted Windows x64':'GitHub-hosted Linux x64',
     osRelease:require('node:os').release(),acceleration,accelerationProbe:probeText,
-    revision:process.env.GITHUB_SHA,image,splitVersion:legacySplitFixture?'2.5.22-PRE':'4.1.1',
+    revision:process.env.GITHUB_SHA,image,guestMemoryMB:memoryMB,guestCores:cores,splitVersion:legacySplitFixture?'2.5.22-PRE':'4.1.1',
     emulatorVersion:execFileSync(emulator,['-version'],{encoding:'utf8'}).split('\n').find(l=>l.includes('Android emulator version')),
     permissionInteractions:[],phases:[],complete:false};
   let guest;
@@ -116,7 +119,7 @@ async function run() {
     emulatorLog=log;
     const fd=fs.openSync(log,'wx');
     try {guest=spawn(emulator,['-avd',avd,'-port','5554','-accel',acceleration,'-no-window','-gpu','swiftshader',
-      '-memory','2048','-cores','2','-noaudio','-no-boot-anim',...snapshotArgs],{stdio:['ignore',fd,fd]});}
+      '-memory',String(memoryMB),'-cores',String(cores),'-noaudio','-no-boot-anim',...snapshotArgs],{stdio:['ignore',fd,fd]});}
     finally {fs.closeSync(fd);}
     const end=Date.now()+(acceleration==='off'?18:7)*60000;
     let last;
@@ -133,19 +136,19 @@ async function run() {
         }
         // First-boot receivers can still be running after CE storage becomes available.
         // The API 34 barrier waits for broadcasts already queued when this command arrives.
+        let broadcastBarrier='completed';
         try {
           await client.exec(['shell','am','wait-for-broadcast-barrier'],{timeout:30000});
         } catch (error) {
-          console.log('Waiting for initial broadcasts',error.message.slice(0,200));
-          previousReadyBoot=undefined;
-          continue;
+          broadcastBarrier=error.message.slice(0,240);
+          console.log('Android broadcast diagnostic',broadcastBarrier);
         }
         const owner=await identifyGuest(client,registry,id);
         assert.equal(owner.boot,bootId);
         recordOwner(registry,owner);
         await client.exec(['shell','input','keyevent','KEYCODE_WAKEUP']);
         await client.exec(['shell','wm','dismiss-keyguard']);
-        return {profile:id,avd,boot:owner.boot,api:last.sdk,abi:last.abi,userState};
+        return {profile:id,avd,boot:owner.boot,api:last.sdk,abi:last.abi,userState,broadcastBarrier};
       }
       previousReadyBoot=undefined;
       await delay(2000);
@@ -199,6 +202,11 @@ async function run() {
             xml=(await client.exec(['shell','cat',uiFile],{timeout:5000})).stdout;
           } finally {
             await client.exec(['shell','rm','-f',uiFile],{timeout:5000}).catch(()=>{});
+          }
+          if (xml.includes('resource-id="android:id/aerr_wait"')) {
+            const diagnostic=await client.shell('dumpsys activity lastanr').catch(()=> '');
+            const reason=diagnostic.split('\n').filter(l=>/ANR in |Reason:|Subject:/.test(l)).slice(0,3);
+            throw Error('Android displayed an application-not-responding dialog. '+reason.join(' ').slice(0,450));
           }
           const button=appManagerDenyControl(xml,grant.split('/')[0]);
           const decisionKey=button && JSON.stringify([button.prompt,button.control]);

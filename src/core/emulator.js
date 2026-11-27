@@ -1260,7 +1260,8 @@ class EmulatorEngine {
       }
 
       const started = Date.now();
-      const timeout = plan.bootTimeoutMs || 240000;
+      // Android must initialize newly allocated userdata on its first cold boot.
+      const timeout = Math.max(plan.bootTimeoutMs || 240000, avd.data?.created ? 420000 : 0);
       let ok = false;
       let fatal = false;
       let sawBooting = false;

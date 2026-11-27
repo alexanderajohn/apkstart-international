@@ -124,7 +124,7 @@ test('Android integrity rejection is reported without replaying the commit', asy
 });
 
 test('only a confirmed abandoned, pre-commit transfer on the same guest can be replayed once', async () => {
-  for (const mode of ['recovered','still-offline','abandon-refused','second-write-fails','commit-lost']) {
+  for (const mode of ['recovered','write-eof','still-offline','abandon-refused','second-write-fails','commit-lost']) {
     let created=0, writes=0, commits=0, waits=0;
     const parts=[{bytes:1,sha256:'a'.repeat(64)}];
     const client={exec:async args=>{
@@ -140,13 +140,13 @@ test('only a confirmed abandoned, pre-commit transfer on the same guest can be r
       write:async()=>{
         writes++;
         if (mode!=='commit-lost' && (writes===1 || mode==='second-write-fails'))
-          throw Object.assign(Error('disconnected during write'),{code:'ADB_WRITE_INTERRUPTED'});
+          throw Object.assign(Error('disconnected during write'),{code:mode==='write-eof'?'EOF':'ADB_WRITE_INTERRUPTED'});
       }
     });
-    if (mode==='recovered') await run;
+    if (mode==='recovered' || mode==='write-eof') await run;
     else await assert.rejects(run,/disconnected|result lost/);
-    assert.equal(created,['recovered','second-write-fails'].includes(mode)?2:1);
-    assert.equal(commits,['recovered','commit-lost'].includes(mode)?1:0);
+    assert.equal(created,['recovered','write-eof','second-write-fails'].includes(mode)?2:1);
+    assert.equal(commits,['recovered','write-eof','commit-lost'].includes(mode)?1:0);
     assert.equal(waits,mode==='commit-lost'?0:1);
   }
 });

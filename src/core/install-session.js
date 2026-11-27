@@ -81,7 +81,7 @@ async function installSession(client, parts, { pkg, replace, grant, checkGuest, 
     const result = await command(['install-commit', id], 1200000);
     if (result !== 'Success') throw Error(result.slice(0, 400));
   } catch (error) {
-    const interrupted = ['ADB_WRITE_INTERRUPTED','EPIPE','ECONNRESET'].includes(error.code);
+    const interrupted = ['ADB_WRITE_INTERRUPTED','EPIPE','ECONNRESET','EOF'].includes(error.code);
     const reconnected = !commitSent && interrupted && recoverWrite && await recoverWrite();
     let abandoned = false;
     try {

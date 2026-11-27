@@ -100,3 +100,31 @@ test('regional public DNS requires an explicit setting', () => {
     assert.equal(args.includes('-dns-server'),value===true);
   }
 });
+
+test('virtual-only Windows display selects software graphics without disabling CPU acceleration', () => {
+  const doctor = require('../src/core/doctor');
+  assert.equal(doctor.gpuVendorFromNames('Microsoft Hyper-V Video | Microsoft Remote Display Adapter'), 'virtual');
+  assert.equal(doctor.gpuVendorFromNames('Microsoft Hyper-V Video | NVIDIA RTX A4000'), 'nvidia');
+  assert.equal(doctor.gpuVendorFromNames('Other Adapter | Microsoft Hyper-V Video'), 'unknown');
+  assert.equal(doctor.gpuCandidates('37.3.8','virtual')[0],'software');
+  assert.equal(doctor.gpuCandidates('35.1.4','virtual')[0],'swiftshader_indirect');
+  assert.ok(doctor.gpuCandidates('37.3.8','virtual').includes('host'));
+});
+
+test('API 34 requires two unlocked observations of the same boot before declaring readiness', async () => {
+  const {Runtime} = require('../src/core/engine');
+  const serial='emulator-5554';
+  const first='10000000-0000-4000-8000-000000000001', next='10000000-0000-4000-8000-000000000002';
+  let state, boot;
+  const client={serial,async shell(){return ['1','package:/system/framework/framework-res.apk',state,boot].join('\n');}};
+  const runtime={settings:{engine:{}},_probeClient:client,emulator:{running:()=>true,async start({probe}){
+    for(const [user,id,expected] of [['RUNNING_LOCKED',first,'pending'],['RUNNING_UNLOCKED',first,'booting'],
+      ['RUNNING_UNLOCKED',next,'booting'],['RUNNING_UNLOCKED',next,'ok']]) {
+      state=user; boot=id;
+      assert.equal(await probe({serial}),expected);
+    }
+    return {ok:false,error:'end of readiness test'};
+  }}};
+  const result=await Runtime.prototype.bootEmulator.call(runtime,{env:{accel:{ok:true},sysimg:{api:34}}});
+  assert.equal(result.error,'end of readiness test');
+});

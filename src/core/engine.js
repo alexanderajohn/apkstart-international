@@ -366,6 +366,10 @@ class Runtime {
       // 每轮只发一次 adb 命令：以前是 get-state + getprop + pm path 三次进程拉起，
       // 快照恢复时一轮就差 300~500ms，正好卡在「点开应用」的观感上。
       let lastAdbState;
+      let previousReadyBoot;
+      const api34 = Number(env?.sysimg?.api) >= 34;
+      const bootQuery = 'getprop sys.boot_completed; pm path android' +
+        (api34 ? '; am get-started-user-state 0; cat /proc/sys/kernel/random/boot_id' : '');
       let authHealed = false;  // 本次 start() 是否已因「未授权」作废旧快照冷启动过
       const diagUnauthorized = () => ({
         code: 'ADB_UNAUTHORIZED',
@@ -379,14 +383,22 @@ class Runtime {
         }
         const c = this._probeClient;
         try {
-          const out = String(await c.shell('getprop sys.boot_completed; pm path android', { timeout: 8000 }));
+          const out = String(await c.shell(bootQuery, { timeout: 8000 }));
           const lines = out.split(/\r?\n/).map((l) => l.trim());
           const booted = lines[0] === '1' || /^1$/.test(lines[0] || '');
           const pmReady = lines.some((l) => /^package:/.test(l));
           lastAdbState = 'online';
-          if (booted && pmReady) return 'ok';
+          if (booted && pmReady && !api34) return 'ok';
+          if (booted && pmReady && lines.includes('RUNNING_UNLOCKED')) {
+            const boot = lines.find(line => /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(line));
+            if (boot && previousReadyBoot === boot) return 'ok';
+            previousReadyBoot = boot;
+            return 'booting';
+          }
+          previousReadyBoot = undefined;
           return booted ? 'pending' : 'booting';
         } catch (e) {
+          previousReadyBoot = undefined;
           // 关键分支：adb shell 报错可能是「还没开机」也可能是「授权对话框卡住」。
           // 后者每轮 shell 都抛异常，旧实现只当普通 offline：重启 server 后继续按
           // 240s×4 组参数干等，最后报「运行时未能完成开机」，让用户以为是显卡/虚拟化。

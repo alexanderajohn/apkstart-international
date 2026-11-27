@@ -66,6 +66,16 @@ function versionNumbers(v) {
  * 结果缓存 10 分钟，避免每次 chooseProfile 都 spawn wmic。
  */
 let _gpuVendorCache = { vendor: 'unknown', at: 0 };
+function gpuVendorFromNames(names) {
+  const lower = String(names).toLowerCase();
+  if (/nvidia|geforce|rtx\s|gtx\s/.test(lower)) return 'nvidia';
+  if (/(?<!virtual\s)(amd|radeon|rx\s\d)/.test(lower)) return 'amd';
+  if (/intel|uhd\s|iris|arc\s/.test(lower)) return 'intel';
+  const adapters=lower.trim().split(/[|\r\n]+/).filter(Boolean);
+  const basic=/microsoft (?:hyper-v video|basic display adapter|remote display adapter)/;
+  if (adapters.length && adapters.every(name=>basic.test(name))) return 'virtual';
+  return 'unknown';
+}
 function detectGpuVendor() {
   if (process.platform !== 'win32') return 'unknown';
   if (Date.now() - _gpuVendorCache.at < 600000) return _gpuVendorCache.vendor;
@@ -85,12 +95,7 @@ function detectGpuVendor() {
           { encoding: 'utf8', windowsHide: true, timeout: 5000 });
       } catch (__) { /* ignore */ }
     }
-    const lower = String(names).toLowerCase();
-    let vendor = 'unknown';
-    // 优先匹配独显（NVIDIA/AMD），虚拟显示适配器排在后面
-    if (/nvidia|geforce|rtx\s|gtx\s/.test(lower)) vendor = 'nvidia';
-    else if (/(?<!virtual\s)(amd|radeon|rx\s\d)/.test(lower)) vendor = 'amd';
-    else if (/intel|uhd\s|iris|arc\s/.test(lower)) vendor = 'intel';
+    const vendor = gpuVendorFromNames(names);
     _gpuVendorCache = { vendor, at: Date.now() };
     return vendor;
   } catch (_) {
@@ -110,13 +115,16 @@ function detectGpuVendor() {
  *   Intel：host 通常 OK，但集显性能弱时 swangle 更稳
  *   unknown：保持默认顺序
  */
-function gpuCandidates(emulatorVersion) {
+function gpuCandidates(emulatorVersion, vendor = detectGpuVendor()) {
   const [major, minor, patch] = versionNumbers(emulatorVersion);
   const modern = major > 36 || (major === 36 && (minor > 4 || (minor === 4 && patch >= 9)));
   const base = modern
     ? ['host', 'swangle', 'software', 'swiftshader']
     : ['host', 'swiftshader_indirect', 'swiftshader'];
-  const vendor = detectGpuVendor();
+  if (vendor === 'virtual') {
+    const software = modern ? 'software' : 'swiftshader_indirect';
+    return [software, ...base.filter(mode => mode !== software)];
+  }
   if (vendor === 'amd' && modern) {
     // AMD 驱动在某些版本下 host 模式会 GL 初始化失败，把 swangle 提到前面
     return ['swangle', 'host', 'software', 'swiftshader'];
@@ -590,7 +598,7 @@ function vcRedistOk() {
 
 module.exports = {
   hostInfo, freeDiskMB, isAsciiPath, shortPath, lcdFor, liteProfile,
-  versionNumbers, gpuCandidates, detectGpuVendor, chooseProfile, planVariants,
+  versionNumbers, gpuCandidates, detectGpuVendor, gpuVendorFromNames, chooseProfile, planVariants,
   overridesFromSettings, autoProfile,
   freePortPair, freeAdbPort, snapshotKey, imageIdentity,
   diagnose, describeProfile, writeReport, vcRedistOk,

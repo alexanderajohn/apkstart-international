@@ -77,10 +77,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber
-          Get-CimInstance Win32_Processor | Select-Object Name, NumberOfLogicalProcessors, VirtualizationFirmwareEnabled, SecondLevelAddressTranslationExtensions
-          Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion
-          Get-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform | Select-Object FeatureName, State
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber | ConvertTo-Json -Compress
+          Get-CimInstance Win32_Processor | Select-Object Name, NumberOfLogicalProcessors, VirtualizationFirmwareEnabled, SecondLevelAddressTranslationExtensions | ConvertTo-Json -Compress
+          Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | ConvertTo-Json -Compress
+          Get-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform | Select-Object FeatureName, State | ConvertTo-Json -Compress
           $sdk = Get-ChildItem "$env:ANDROID_HOME/cmdline-tools" -Recurse -Filter sdkmanager.bat | Select-Object -First 1
           if (!$sdk) { throw 'Android command-line tools missing' }
           & $sdk.FullName "--sdk_root=$env:ANDROID_HOME" --install 'platform-tools' 'emulator' 'build-tools;35.0.0' 'system-images;android-34;google_apis_playstore;x86_64'

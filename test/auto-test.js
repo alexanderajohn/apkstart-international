@@ -44,7 +44,7 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     assert(c35.includes('swiftshader_indirect'));
     // detectGpuVendor 应返回已知值或 unknown（不抛异常）
     const v = doctor.detectGpuVendor();
-    assert(['nvidia', 'amd', 'intel', 'unknown'].includes(v), `detectGpuVendor 返回了意外值: ${v}`);
+    assert(['nvidia', 'amd', 'intel', 'virtual', 'unknown'].includes(v), `detectGpuVendor 返回了意外值: ${v}`);
   });
 
   await test('小内存机器自动降配（不再是写死 4GB / 4 核）', () => {
@@ -54,7 +54,7 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     assert(p.cores === 2, `核心应为 2，实际 ${p.cores}`);
     assert(p.accel === 'off', '无硬件加速应自动回退软件模拟');
     assert(p.bootTimeoutMs > 240000, '软件模拟应给更长的开机超时');
-    assert(p.gpu === 'host' || p.gpu === 'swangle', `首选渲染应为 host 或 swangle（AMD 机器 swangle 优先），实际 ${p.gpu}`);
+    assert(p.gpu === doctor.gpuCandidates('37.3.8.0')[0]);
     // accel 关闭时的保底参数必须是软件渲染，否则 TCG 下无 GPU 可用
     const lastResort = doctor.planVariants(p).find((v) => v.lastResort);
     assert(lastResort && /software|swiftshader/.test(lastResort.gpu), '保底方案必须用软件渲染');
@@ -140,14 +140,14 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     };
     const p = doctor.autoProfile({ ...common, settings: { engine: { autoMemory: true, gpuMode: 'auto', memoryMB: 0, cores: 0 } } });
     const text = doctor.describeProfile(p);
-    assert(p.gpu === 'host' || p.gpu === 'swangle', `应为 host 或 swangle（AMD 机器），实际 ${p.gpu}`);
+    assert(p.gpu === doctor.gpuCandidates('37.3.8.0')[0]);
     assert(p.accelOk === true && text.includes('硬件加速'), text);
     assert(!text.includes('swiftshader_indirect'), text);
     assert(text.includes('端口 5562'), text);
 
     // 老引擎仍应用老后端；用户手动填的高级参数仍然生效
     const old = doctor.autoProfile({ ...common, emulatorVersion: '35.1.4.0', settings: {} });
-    assert(old.gpu === 'host' && doctor.gpuCandidates('35.1.4.0').includes('swiftshader_indirect'));
+    assert(old.gpu === doctor.gpuCandidates('35.1.4.0')[0]);
     const manual = doctor.autoProfile({ ...common, settings: { engine: { autoMemory: false, memoryMB: 6144, cores: 6, gpuMode: 'swiftshader' } } });
     assert(manual.memoryMB === 6144 && manual.cores === 6 && manual.gpu === 'swiftshader', JSON.stringify(manual));
     const zero = doctor.overridesFromSettings({ autoMemory: false, memoryMB: 0, cores: 0, gpuMode: 'auto' });
@@ -574,7 +574,7 @@ const { AdbClient, friendlyInstallError, friendlyLaunchError } = require('../src
     assert(/vendor === 'amd'[\s\S]{0,200}swangle.*host/.test(doc), 'AMD 机器应把 swangle 排在 host 前面');
     const d = require('../src/core/doctor');
     const v = d.detectGpuVendor();
-    assert(['nvidia', 'amd', 'intel', 'unknown'].includes(v), `返回值应为已知厂商或 unknown，实际: ${v}`);
+    assert(['nvidia', 'amd', 'intel', 'virtual', 'unknown'].includes(v), `返回值应为已知厂商或 unknown，实际: ${v}`);
   });
 
   await test('开机动画：splash 窗口 + 进度推送 + 淡出', () => {

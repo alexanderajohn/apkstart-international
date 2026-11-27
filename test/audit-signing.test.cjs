@@ -83,7 +83,9 @@ test('a modified signature or checkpoint field is rejected before local comparis
   await p.writeFile(modified,JSON.stringify(original));
   await assert.rejects(()=>x.signing.verifyExternal(modified),/signature verification failed/);
   const forged=JSON.parse(await p.readFile(dest,'utf8'));
-  forged.signature='A'+forged.signature.slice(1);
+  const bytes=Buffer.from(forged.signature,'base64');
+  bytes[0]^=1;
+  forged.signature=bytes.toString('base64');
   const fake=path.join(x.outside,'signature.json');
   await p.writeFile(fake,JSON.stringify(forged));
   await assert.rejects(()=>x.signing.verifyExternal(fake),/signature verification failed/);
