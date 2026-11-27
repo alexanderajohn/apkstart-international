@@ -177,8 +177,9 @@ function statKey(p) {
 }
 
 class Provisioner {
-  constructor(appRoot) {
+  constructor(appRoot, { probeVersion = run } = {}) {
     this.appRoot = appRoot;
+    this.probeVersion = probeVersion;
     this._hypervisor = null;
     this._cache = { adbVersion: '', qemuVersion: '' };
     this._sources = new Sources(() => store.getSettings());
@@ -721,32 +722,48 @@ class Provisioner {
   }
 
   async emulatorVersion() {
-    if (this._cache.emulatorVersion && this._cache.emulatorVerAt && Date.now() - this._cache.emulatorVerAt < 30000) {
-      return this._cache.emulatorVersion;
-    }
-    const p = this.paths();
-    const candidates = [p.emulatorExe, path.join(this.appRoot, 'engine', 'emulator', 'emulator.exe')];
-    for (const c of candidates) {
-      if (!fs.existsSync(c)) continue;
-      // 上一次会话探测过、且引擎文件没变：直接用落盘结果（省掉一次 1s+ 的进程拉起）
-      const cached = this.envCacheGet(c);
-      if (cached && cached.version && cached.version.ok && Date.now() - (cached.at || 0) < ENV_CACHE_TTL) {
-        this._cache.emulatorVersion = cached.version;
-        this._cache.emulatorVerAt = Date.now();
-        return cached.version;
+    const cache = this._cache;
+    const paths = this.paths();
+    const candidates = new Set([paths.emulatorExe, path.join(this.appRoot, 'engine', 'emulator', 'emulator.exe')]);
+    let reason = 'missing';
+    for (const exe of candidates) {
+      const key = this._envKey(exe);
+      if (!fs.existsSync(exe)) continue;
+      if (cache.emulatorKey === key && Date.now() - cache.emulatorVerAt < 30000)
+        return cache.emulatorVersion;
+      // Status polling and an install can ask for the same cold SDK simultaneously.
+      cache.versionProbes ||= new Map();
+      let probe = cache.versionProbes.get(key);
+      if (!probe) {
+        probe = this.readEmulatorVersion(exe,key,cache).finally(() => cache.versionProbes.delete(key));
+        cache.versionProbes.set(key, probe);
       }
-      // eslint-disable-next-line no-await-in-loop
-      const r = await run(c, ['-version'], { timeout: 20000 });
-      const text = `${r.stdout}${r.stderr}`;
-      const m = /Android emulator version\s+([\d.]+)/i.exec(text);
-      if (m) {
-        this._cache.emulatorVersion = { ok: true, path: c, version: m[1] };
-        this._cache.emulatorVerAt = Date.now();
-        this.envCacheSet(c, { version: this._cache.emulatorVersion });
-        return this._cache.emulatorVersion;
+      const result = await probe;
+      if (!result.ok) { reason = result.reason; continue; }
+      if (this._envKey(exe) !== key) { reason = 'changed'; continue; }
+      if (cache === this._cache) {
+        cache.emulatorVersion = result;
+        cache.emulatorVerAt = Date.now();
+        cache.emulatorKey = key;
       }
+      return result;
     }
-    return { ok: false, path: '', version: '' };
+    return { ok: false, path: '', version: '', reason };
+  }
+
+  async readEmulatorVersion(exe,key,cache) {
+    const cached = this.envCacheGet(exe);
+    if (cached?.version?.ok && cached.version.path === exe && Date.now() - cached.at < ENV_CACHE_TTL)
+      return cached.version;
+    const timedOut = result => result.error?.killed || result.error?.code === 'ETIMEDOUT';
+    let result = await this.probeVersion(exe, ['-version'], { timeout:20000 });
+    if (timedOut(result)) result = await this.probeVersion(exe, ['-version'], { timeout:30000 });
+    if (!result.ok) return {ok:false,reason:timedOut(result) ? 'timeout' : 'execution-failed'};
+    const match = /Android emulator version\s+([\d.]+)/i.exec(result.stdout+' '+result.stderr);
+    if (!match) return {ok:false,reason:'unrecognized-version'};
+    const version = {ok:true,path:exe,version:match[1]};
+    if (cache === this._cache && this._envKey(exe) === key) this.envCacheSet(exe, {version});
+    return version;
   }
 
   /**
@@ -1000,7 +1017,6 @@ class Provisioner {
 
     const v = await this.emulatorVersion();
     if (!v.ok) throw new Error('emulator 解压后无法运行，请检查是否被杀毒软件拦截');
-    this._cache.emulatorVersion = v.version;
     onProgress({ stage: 'done', message: `运行时引擎 ${v.version} 就绪`, percent: 100 });
     return v;
   }

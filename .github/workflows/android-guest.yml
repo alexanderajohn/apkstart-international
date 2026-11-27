@@ -24,6 +24,7 @@ on:
       - 'src/core/runtime-owner.js'
       - 'src/core/emulator.js'
       - 'src/core/engine.js'
+      - 'src/core/provision.js'
       - 'src/core/doctor.js'
       - 'src/core/shortcut*.js'
       - 'src/core/appwin.js'

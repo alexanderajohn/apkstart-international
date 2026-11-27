@@ -919,7 +919,10 @@ class Runtime {
     });
     const env = await this.provisioner.checkEnv();
     if (store.profiles.currentId() !== 'default' && (!env.emulator.ok || !env.sysimg.ok)) {
-      return {ok:false,error:'Secondary Android profiles require an official Android Emulator and system image. Shared QEMU/ISO disks are not supported.'};
+      const missing = [];
+      if (!env.emulator.ok) missing.push('Android Emulator ('+(env.emulator.reason || 'unavailable')+')');
+      if (!env.sysimg.ok) missing.push('Android system image (missing or incomplete)');
+      return {ok:false,env,error:'Cannot start this Android Profile. Check '+missing.join(' and ')+' in Runtime Manager.'};
     }
 
     // emulator 路径：镜像即系统，没有"安装到磁盘"这一步

@@ -4,6 +4,7 @@
 - Bind desktop launches, ADB connections and emulator reuse to the selected Profile. Preserve previous installations, userdata and snapshots during recovery and runtime cleanup.
 - Add hosted Android 14 tests on Windows Server/WHPX and Linux/KVM for signed APKs, split packages, app-private persistence, encrypted restore and Quick Boot. Physical Windows 10/11 validation is pending.
 - Scope shared folders to the selected Profile, verify transfers against the running guest and retain conflicting files. Localize the app window controls and preserve the running guest while waiting for Android to authorize ADB.
+- Share concurrent Android Emulator version checks, retry a timed-out version probe once and report missing SDK components separately.
 - Bind imported APK cache and icon paths to the destination Profile and clear source-machine shortcut paths. Support AVDs whose platform target is recorded in the SDK descriptor.
 - Verify plain and encrypted restores after the final renames. Persist an interruption journal, preserve original data and roll back failed verification.
 - Add Windows Setup lifecycle tests, a portable inventory, dependency SBOM and offline release-manifest verification. Keep production distribution gated.

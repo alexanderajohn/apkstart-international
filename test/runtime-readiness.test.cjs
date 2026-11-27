@@ -111,3 +111,28 @@ test('profile-scoped readiness is wired through IPC and an explicit button, neve
  assert.ok(ui.includes("addEventListener('click',runReadiness)"));
  assert.ok(!ui.includes('innerHTML'));
 });
+
+test('overlapping SDK version checks share one bounded read-only retry and respect a changed SDK',async t=>{
+  const os=require('node:os'),fs=require('node:fs'),path=require('node:path');
+  const {Provisioner}=require('../src/core/provision');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'asi-version-'));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  let exe=path.join(root,'sdk-a'),calls=0;
+  fs.writeFileSync(exe,'test');
+  const checker=new Provisioner(root,{probeVersion:async(file,args)=>{
+    assert.equal(file,exe);assert.deepEqual(args,['-version']);
+    calls++;
+    if(calls===1)return {ok:false,error:{killed:true}};
+    return {ok:true,stdout:'Android emulator version 36.1.2',stderr:''};
+  }});
+  checker.paths=()=>({emulatorExe:exe});
+  checker.envCacheGet=()=>null;checker.envCacheSet=()=>{};
+  const [a,b]=await Promise.all([checker.emulatorVersion(),checker.emulatorVersion()]);
+  assert.deepEqual(a,b);assert.equal(a.version,'36.1.2');assert.equal(calls,2);
+  assert.deepEqual(await checker.emulatorVersion(),a);assert.equal(calls,2);
+  exe=path.join(root,'sdk-b');
+  assert.equal((await checker.emulatorVersion()).reason,'missing');
+  fs.writeFileSync(exe,'other SDK');
+  checker.probeVersion=async()=>{calls++;return {ok:false,error:{code:'EACCES'}};};
+  assert.equal((await checker.emulatorVersion()).reason,'execution-failed');assert.equal(calls,3);
+});
