@@ -1,6 +1,6 @@
 # Stable 1.0 release blockers
 
-**Release Blocked.** The engineering candidate is `1.0.0-rc.1`. See [current gates](CANDIDATE_VALIDATION.md), [security review](SECURITY_REVIEW.md) and [revision-specific Windows build evidence](DEVELOPMENT_PROGRESS.md). The default Windows Server/WHPX and Linux/KVM Android 14 guests passed 26/26 phases on `5548b25a`. The 720p Windows guest encountered system ANR dialogs during split launches. Physical Windows 10/11 with Android 14, independent host migration, power interruption, complete international workflows, signed upgrades and redistribution review remain open. [Hosted Android results](https://github.com/alexanderajohn/apkstart-international/actions/runs/45980869178)
+**Release Blocked.** The engineering candidate is `1.0.0-rc.1`. See [current gates](CANDIDATE_VALIDATION.md), [security review](SECURITY_REVIEW.md) and [revision-specific Windows build evidence](DEVELOPMENT_PROGRESS.md). On `2df10a0a`, both packaged desktop apps passed, Linux completed 26/26 Android phases and encrypted migration between two Profiles on one Windows runner passed 11/11. The default Windows guest completed 22/26. The 720p guest passed 19 phases and stopped during Quick Boot. Windows split foreground reliability, physical Windows 10/11, independent host migration, power interruption, complete international workflows, signed upgrades and redistribution review remain open. [Latest Android evidence](https://github.com/alexanderajohn/apkstart-international/actions/runs/46043742272)
 
 ## Historical gate checklist
 
