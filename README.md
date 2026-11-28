@@ -7,7 +7,7 @@
 
 ## Try the Windows candidate
 
-The [tester guide](docs/preview/TESTING.en.md) covers the unsigned evaluation package and its known limits.
+**[Download the Windows x64 Developer Preview](https://github.com/alexanderajohn/apkstart-international/actions/runs/46101642590/artifacts/15245219964)**. The kit includes Portable, Setup, SHA-256 checksums and an English/Vietnamese tester guide. Sign in to GitHub to download before 12 December 2026 at approximately 03:12 UTC. [Testing instructions](docs/preview/TESTING.en.md)
 
 Download the Portable or Setup artifact for a **verified revision** in the [build and verification table](docs/DEVELOPMENT_PROGRESS.md). Extract the Portable ZIP into its own directory and open `ApkStart International.exe`. For Setup, verify the executable against the revision-specific SHA-256 in the [candidate guide](docs/CANDIDATE_VALIDATION.md). Back up existing Profiles and AVDs before testing upgrades.
 

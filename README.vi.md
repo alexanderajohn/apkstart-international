@@ -6,7 +6,7 @@ ApkStart International hướng tới trải nghiệm chạy ứng dụng Androi
 
 ## Dùng thử trên Windows
 
-[Hướng dẫn dành cho người thử](docs/preview/TESTING.vi.md) có cách kiểm tra tệp tải xuống, dùng Profile riêng và ghi nhận lỗi.
+**[Tải Developer Preview cho Windows x64](https://github.com/alexanderajohn/apkstart-international/actions/runs/46101642590/artifacts/15245219964)**. Gói gồm Portable, Setup, mã SHA-256 và hướng dẫn tiếng Việt. Đăng nhập GitHub để tải trước khoảng 10:12 ngày 12/12/2026 (giờ Việt Nam). [Cách dùng thử](docs/preview/TESTING.vi.md)
 
 **Phiên bản 1.0.0-rc.1 đang ở trạng thái Release Blocked.** GitHub Actions đã chạy APK thật trên Android 14 với Windows Server và Linux. Kiểm thử trên máy Windows 10/11, kiểm tra đầy đủ ba ngôn ngữ và ký bản phân phối vẫn còn mở.
 
