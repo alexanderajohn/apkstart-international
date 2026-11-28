@@ -48,9 +48,12 @@ jobs:
           - {os: ubuntu-24.04, task: Android guest}
           - {os: windows-2025, task: Android guest}
           - {os: windows-2025, task: Android guest, panel: 720p, name: Android guest 720p}
+          - {os: windows-2025, task: Android guest, panel: 720p, scenario: compare-formats, name: Universal and split on one Windows host}
           - {os: windows-2025, task: Android guest, scenario: migration, name: Encrypted Profile migration}
           - {os: windows-2025, task: Packaged desktop, fixture: api}
           - {os: windows-2025, task: Packaged desktop, fixture: calculator, name: Packaged desktop Calculator}
+    env:
+      ASI_SPLIT_FIXTURE: ${{ matrix.scenario == 'compare-formats' && 'current' || inputs.split_fixture || 'current' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 110
     steps:
@@ -122,6 +125,8 @@ jobs:
           java -jar "$signer" verify --verbose --print-certs api.apk
           java -jar "$signer" verify --verbose --print-certs calculator.apk
       - name: Verify signed splits and prepare device-specific archives
+        env:
+          ASI_GUEST_SCENARIO: ${{ matrix.scenario }}
         if: matrix.scenario != 'migration'
         shell: bash
         working-directory: ${{ runner.temp }}/guest-fixtures
@@ -132,7 +137,12 @@ jobs:
             *) exit 2 ;;
           esac
           curl --proto '=https' --proto-redir '=https' -fLsS --retry 2 "$url" -o upstream.apks
-          python "$GITHUB_WORKSPACE/scripts/asi/prepare-split-fixtures.py" .
+          args=()
+          if [[ "$ASI_GUEST_SCENARIO" == compare-formats ]]; then
+            curl --proto '=https' --proto-redir '=https' -fLsS --retry 2 'https://github.com/MuntashirAkon/AppManager/releases/download/v4.1.1/AppManager_v4.1.1.apk' -o universal.apk
+            args+=(--compare-universal)
+          fi
+          python "$GITHUB_WORKSPACE/scripts/asi/prepare-split-fixtures.py" . "${args[@]}"
       - name: Package the Windows desktop launcher
         if: matrix.task == 'Packaged desktop'
         run: |
@@ -162,7 +172,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always() && matrix.task == 'Android guest'
         with:
-          name: ${{ matrix.scenario == 'migration' && 'windows-profile-migration-evidence' || matrix.panel == '720p' && 'windows-android-14-720p-evidence' || runner.os == 'Windows' && 'windows-android-14-guest-evidence' || 'android-14-guest-evidence' }}
+          name: ${{ matrix.scenario == 'compare-formats' && 'windows-universal-vs-split-evidence' || matrix.scenario == 'migration' && 'windows-profile-migration-evidence' || matrix.panel == '720p' && 'windows-android-14-720p-evidence' || runner.os == 'Windows' && 'windows-android-14-guest-evidence' || 'android-14-guest-evidence' }}
           path: ${{ runner.temp }}/guest-evidence/
           if-no-files-found: warn
           retention-days: 14

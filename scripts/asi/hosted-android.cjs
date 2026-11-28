@@ -291,7 +291,12 @@ async function run() {
         assert(line.startsWith('package:/'),'Unexpected package path');
         return path.posix.basename(line);
       }).sort();
-      assert.deepEqual(installedParts,splitFiles);
+      assert.deepEqual(installedParts,approved.format==='apk'?['base.apk']:splitFiles);
+      if(report.formatComparison){
+        report.formatComparison.observations.push({profile:profileId,format:approved.format,package:fixture.pkg,
+          version:approved.version,sha256:approved.sha256,installedParts});
+        save();
+      }
     }
     if (installedParts) console.log('Android installed split set',JSON.stringify({profileId,format:approved.format,installedParts}));
     const firstActivity=await foreground(fixture.pkg);
@@ -339,6 +344,23 @@ async function run() {
     assert(store.getApp(splitPkg),'Split package missing from Profile catalog');
     assert(await packagePresent(client,splitPkg),'Split package missing on Android');
     return {activity:await foreground(splitPkg)};
+  }
+
+  async function comparePackageFormats() {
+    assert(windows && panel720 && !legacySplitFixture,'Comparison requires the pinned Windows 720p fixtures');
+    report.formatComparison={order:['universal','split'],observations:[]};
+    const failures=[];
+    for(const [label,profile,file] of [['universal',primary,'universal.apk'],['split',secondary,'device.apks']]){
+      await phase(label+'-cold-boot',()=>boot(profile));
+      try {
+        await phase(label+'-install-close-relaunch',()=>exerciseInstallation({file,pkg:splitPkg},profile));
+      } catch(error) {
+        await verifyOwner(client,registry,profile);
+        failures.push(error);
+      }
+      await phase(label+'-shutdown',stop);
+    }
+    if(failures.length)throw new AggregateError(failures,'App Manager comparison failed. See each Profile observation.');
   }
 
   async function exerciseMigration() {
@@ -399,6 +421,11 @@ async function run() {
     createAvd(primary);
     createAvd(secondary);
     await client.exec(['start-server'],{withSerial:false});
+    if(process.env.ASI_GUEST_SCENARIO==='compare-formats'){
+      await comparePackageFormats();
+      report.complete=true;
+      return;
+    }
     if(process.env.ASI_GUEST_SCENARIO==='migration'){
       await exerciseMigration();
       report.complete=true;

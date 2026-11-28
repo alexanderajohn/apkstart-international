@@ -1,0 +1,82 @@
+name: Verified Windows tester download
+on:
+  push:
+    branches: [feature/international-foundation]
+    paths:
+      - 'docs/preview/windows-rc.json'
+      - 'scripts/asi/fetch-preview.ps1'
+      - '.github/workflows/tester-preview.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/feature/international-foundation'
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch and hash the tested Windows archives
+        id: source
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./scripts/asi/fetch-preview.ps1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.revision }}
+          path: tested-source
+          persist-credentials: false
+      - name: Verify Portable inventory and the Setup executable
+        working-directory: tested-source
+        shell: pwsh
+        env:
+          TEST_REVISION: ${{ steps.source.outputs.revision }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($kind in @('portable','setup')) {
+              Expand-Archive -LiteralPath "$env:RUNNER_TEMP/tester-kit/$kind.zip" -DestinationPath "$env:RUNNER_TEMP/verified-$kind"
+          }
+          $setupDir = "$env:RUNNER_TEMP/verified-setup"
+          $inventory = @(Get-ChildItem $setupDir -File -Recurse -Filter candidate-files.json)
+          $setup = @(Get-ChildItem $setupDir -File -Recurse -Filter '*-Setup.exe')
+          if ($inventory.Count -ne 1 -or $setup.Count -ne 1) { throw 'Missing or ambiguous candidate files' }
+          node scripts/asi/candidate-files.cjs verify "$env:RUNNER_TEMP/verified-portable" $inventory[0].FullName $env:TEST_REVISION
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $checksum = (Get-Content -Raw (Join-Path $setup[0].DirectoryName 'SHA256SUMS')).Trim()
+          $hash = (Get-FileHash $setup[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($checksum -cne "$hash  $($setup[0].Name)") { throw 'Setup executable checksum mismatch' }
+          "TEST_SETUP=$($setup[0].FullName)" >> $env:GITHUB_ENV
+      - name: Exercise downloaded Portable through Explorer
+        working-directory: tested-source
+        shell: powershell
+        env:
+          ASI_RUNNER_KIND: ${{ runner.environment }}
+        run: ./scripts/asi/windows-shell-smoke.ps1 -Executable "$env:RUNNER_TEMP/verified-portable/ApkStart International.exe"
+      - name: Install and remove downloaded Setup on the disposable runner
+        working-directory: tested-source
+        shell: pwsh
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: ./scripts/asi/setup-smoke.ps1 -Setup $env:TEST_SETUP
+      - uses: actions/upload-artifact@v4
+        id: kit
+        with:
+          name: ApkStart-International-Windows-Tester-Preview
+          path: ${{ runner.temp }}/tester-kit/
+          retention-days: 14
+          if-no-files-found: error
+          compression-level: 0
+      - name: Link the tested download
+        shell: pwsh
+        env:
+          KIT_URL: ${{ steps.kit.outputs.artifact-url }}
+          KIT_DIGEST: ${{ steps.kit.outputs.artifact-digest }}
+        run: |
+          "Unsigned Windows tester preview. [Download]($env:KIT_URL). Archive SHA-256 $env:KIT_DIGEST." >> $env:GITHUB_STEP_SUMMARY

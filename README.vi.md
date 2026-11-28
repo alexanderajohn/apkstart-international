@@ -6,6 +6,8 @@ ApkStart International hướng tới trải nghiệm chạy ứng dụng Androi
 
 ## Dùng thử trên Windows
 
+[Hướng dẫn dành cho người thử](docs/preview/TESTING.vi.md) có cách kiểm tra tệp tải xuống, dùng Profile riêng và ghi nhận lỗi.
+
 **Phiên bản 1.0.0-rc.1 đang ở trạng thái Release Blocked.** GitHub Actions đã chạy APK thật trên Android 14 với Windows Server và Linux. Kiểm thử trên máy Windows 10/11, kiểm tra đầy đủ ba ngôn ngữ và ký bản phân phối vẫn còn mở.
 
 1. Chọn một commit đã đạt Windows CI trong [bảng kết quả và tải xuống](docs/DEVELOPMENT_PROGRESS.md). Tải **Portable** hoặc **Setup** ở đúng dòng của commit đó. Cả hai bản đều chưa ký.
