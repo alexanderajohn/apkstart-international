@@ -9,6 +9,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const store = require('./store');
+const { installVariants } = require('./permission-policy');
 
 /**
  * 平板排版的逻辑密度。
@@ -46,13 +47,13 @@ function friendlyInstallError(raw) {
   const table = {
     INSTALL_FAILED_NO_MATCHING_ABIS:
       '安装失败：这个应用只提供 ARM 原生库（多数国产应用如此），'
-      + '当前系统镜像没有 ARM 转译层。ApkStart 会自动切换到内置新版翻译层的兼容镜像并重试。',
+      + '当前系统镜像没有 ARM 转译层。请选择与当前 Android ABI 匹配的安装包。',
     INSTALL_FAILED_OLDER_SDK:
       '安装失败：应用要求的 Android 版本高于当前运行时（需更高系统镜像）。',
     INSTALL_PARSE_FAILED_NO_CERTIFICATES:
       '安装失败：APK 没有有效签名，无法安装。',
     INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES:
-      '安装失败：与已安装版本签名不一致，请先卸载旧版再装。',
+      '安装失败：与已安装版本签名不一致，请使用原开发者签名的更新。',
     INSTALL_FAILED_VERSION_DOWNGRADE:
       '安装失败：设备上已安装更高版本，不能降级覆盖。',
     INSTALL_FAILED_INSUFFICIENT_STORAGE:
@@ -60,12 +61,12 @@ function friendlyInstallError(raw) {
     INSTALL_FAILED_INVALID_APK:
       '安装失败：APK 文件损坏或不完整（可能下载未完成），请重新获取。',
     INSTALL_FAILED_INVALID_URI: '安装失败：APK 路径含特殊字符，请把文件移到纯英文路径后重试。',
-    INSTALL_FAILED_ALREADY_EXISTS: '安装失败：已存在同名应用且签名不同，请先卸载。',
-    INSTALL_FAILED_UPDATE_INCOMPATIBLE: '安装失败：与已安装版本签名不一致，请先卸载旧版。',
+    INSTALL_FAILED_ALREADY_EXISTS: '安装失败：已存在同名应用且签名不同，请检查现有安装。',
+    INSTALL_FAILED_UPDATE_INCOMPATIBLE: '安装失败：与已安装版本签名不一致，请使用原开发者签名的更新。',
     INSTALL_FAILED_DEPRECATED_SDK_VERSION:
       '安装失败：这是面向很老 Android 版本的应用（targetSdk 过低），Android 14 默认禁止安装。'
-      + 'ApkStart 会自动用官方绕过参数重试。',
-    INSTALL_FAILED_TEST_ONLY: '安装失败：这是仅供测试的应用包，已自动加上测试包参数重试。',
+      + '请选择支持 Android 14 的新版应用。',
+    INSTALL_FAILED_TEST_ONLY: '安装失败：这是仅供测试的应用包，请使用正常签名的发行包。',
     INSTALL_FAILED_MISSING_SHARED_LIBRARY: '安装失败：应用依赖的设备特性（如特定厂商库）在当前运行时不存在。',
     INSTALL_FAILED_USER_RESTRICTION: '安装失败：系统限制了安装，请重启运行时后重试。',
     INSTALL_FAILED_CONFLICTING_PROVIDER: '安装失败：与已有应用的 ContentProvider 冲突，请卸载冲突应用。',
@@ -93,6 +94,12 @@ function friendlyLaunchError(raw, pkg) {
     return `${pkg || '应用'} 启动失败：系统拒绝了启动请求（权限或签名问题）。`;
   }
   return `${pkg || '应用'} 未能启动${t ? `：${t.slice(0, 240)}` : '（进程未存活）'}`;
+}
+
+// adb shell joins argv into a remote shell command even when execFile is used.
+function quoteAndroidPath(value) {
+  if (typeof value !== 'string' || /[\x00-\x1f\x7f]/.test(value)) throw Error('Invalid Android path');
+  return "'" + value.replace(/'/g, "'\\''") + "'";
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -126,9 +133,6 @@ function parsePmPaths(text) {
   return String(text || '').split(/\r?\n/).map((l) => l.trim())
     .filter((l) => /^package:/.test(l)).map((l) => l.slice(8).trim()).filter(Boolean);
 }
-
-/** 已解析过的启动入口（adbPath|pkg → activity），10 分钟有效 */
-const LAUNCHER_CACHE = new Map();
 
 /**
  * Windows 版 adb 对非 ASCII 路径处理不稳定（中文用户名/中文下载目录很常见）。
@@ -393,18 +397,9 @@ class AdbClient {
   }
 
   async isOnline() {
-    try {
-      const { stdout } = await this.exec(['get-state'], { timeout: 8000 });
-      return stdout.trim() === 'device';
-    } catch (_) {
-      // get-state 在未指定 serial 时不可用，退化用 devices 列表
-      try {
-        const { stdout } = await this.exec(['devices'], { withSerial: false, timeout: 8000 });
-        return stdout.split('\n').some((l) => l.startsWith(this.serial) && l.includes('device'));
-      } catch (_) {
-        return false;
-      }
-    }
+    // get-state may report "device" for an UNAUTHORIZED ADB guest.
+    // Only the exact serial's state from adb devices is authoritative.
+    return (await this.deviceState()) === 'device';
   }
 
   /**
@@ -444,13 +439,8 @@ class AdbClient {
     if (!fs.existsSync(apkPath)) throw new Error(`APK 不存在: ${apkPath}`);
     const staged = stageApk(apkPath);
     const file = staged.path;
-    const variants = [
-      // -g 自动授予运行时权限，省掉应用里的授权弹窗；部分镜像不支持则自动降级去掉
-      ['install', '-r', '-t', '-g', '--bypass-low-target-sdk-block', file],
-      ['install', '-r', '-t', '--bypass-low-target-sdk-block', file],
-      ['install', '-r', '-t', file],
-      ['install', '-r', file],
-    ];
+    // Only use adb install -g after explicit opt-in in Settings.
+    const variants = installVariants(file, store.getSettings());
     let last = '';
     let timeout = 240000;
     try { timeout = installTimeoutMs(fs.statSync(file).size); } catch (_) { /* 取不到大小就用默认值 */ }
@@ -509,7 +499,7 @@ class AdbClient {
     const totalBytes = staged.reduce((n, s) => n + (fs.existsSync(s.path) ? fs.statSync(s.path).size : 0), 0);
     const timeout = installTimeoutMs(totalBytes);
     try {
-      for (const extra of [['-r', '-t', '--bypass-low-target-sdk-block'], ['-r', '-t']]) {
+      for (const extra of [['-R']]) {
         try {
           // eslint-disable-next-line no-await-in-loop
           const { stdout } = await this.exec(['install-multiple', ...extra, ...files], { timeout });
@@ -533,12 +523,9 @@ class AdbClient {
   }
 
   async uninstall(pkg) {
-    try {
-      await this.exec(['uninstall', pkg], { timeout: 60000 });
-    } catch (e) {
-      // 部分设备需要指定 user
-      await this.exec(['shell', 'pm', 'uninstall', '--user', '0', pkg], { timeout: 60000 });
-    }
+    if (!require('./pkgname').validPackageName(pkg)) throw Error('Invalid package');
+    const result = await this.exec(['uninstall',pkg],{timeout:60000});
+    if (result.stdout.trim() !== 'Success') throw Error('Android did not confirm uninstall');
   }
 
   /**
@@ -566,30 +553,16 @@ class AdbClient {
     return out.split('\n').map((l) => l.replace('package:', '').trim()).filter(Boolean);
   }
 
-  /** 从系统解析真正的启动 Activity（清单里解析不出来时的兜底） */
-  /** 应用升级后入口可能变，解析前先把这个包从缓存里摘掉 */
-  clearLauncherCache(pkg) {
-    if (!pkg) { LAUNCHER_CACHE.clear(); return; }
-    LAUNCHER_CACHE.delete(`${this.adbPath}|${pkg}`);
-  }
-
+  // Profile switches and restores can reuse an ADB serial with different APKs.
   async resolveLauncher(pkg) {
-    // 解析入口 Activity 要一次 adb 往返（~200-400ms），而它在一个启动会话里不会变。
-    // 缓存起来，第二次点同一个应用直接跳过；10 分钟后自然失效，重装应用也不会用错入口。
-    const key = `${this.adbPath}|${pkg}`;
-    const hit = LAUNCHER_CACHE.get(key);
-    if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.value;
     try {
-      const out = await this.shell(
+      const output = await this.shell(
         `cmd package resolve-activity --brief ${pkg}`, { timeout: 10000 },
       );
-      const comp = parseResolvedActivity(pkg, out);
-      if (comp) {
-        LAUNCHER_CACHE.set(key, { value: comp, at: Date.now() });
-        return comp;
-      }
-    } catch (_) { /* 落到 monkey */ }
-    return null;
+      return parseResolvedActivity(pkg, output) || null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /** 应用是否真的活着：am start 返回成功 ≠ 进程没崩 */
@@ -718,20 +691,6 @@ class AdbClient {
     return true;
   }
 
-  /** 开启 freeform（独立窗口）支持，失败不影响主流程 */
-  async ensureFreeform() {
-    // 合成为一次 adb shell：4 次独立 execFile 在 Windows 上要 600ms+，
-    // 而这段正好在「点开应用」的等待里。
-    const out = await this.shell(
-      'settings put global enable_freeform_support 1 ; '
-      + 'settings put global force_resizable_activities 1 ; '
-      + 'settings put global development_settings_enabled 1 ; '
-      + 'settings get global enable_freeform_support',
-      { timeout: 12000 },
-    ).catch(() => '0');
-    return String(out).trim().split(/\r?\n/).pop().trim() === '1';
-  }
-
   async wmSize() {
     const out = await this.shell('wm size');
     const m = /(\d+)x(\d+)/.exec(out.split('\n').pop() || out);
@@ -761,11 +720,11 @@ class AdbClient {
   }
 
   async shellMkdir(remote) {
-    await this.shell(`mkdir -p "${remote}"`);
+    await this.shell(`mkdir -p ${quoteAndroidPath(remote)}`);
   }
 
   async listRemote(remote) {
-    const out = await this.shell(`ls -l "${remote}" 2>/dev/null`);
+    const out = await this.shell(`ls -l ${quoteAndroidPath(remote)} 2>/dev/null`);
     return String(out).split('\n').map((line) => {
       const l = line.trim();
       if (!l || l.startsWith('total ')) return null;
@@ -773,7 +732,7 @@ class AdbClient {
       // "2026-11-12 18:52" 或 "Nov 12 18:52"，用固定正则会全解析不出来。
       // 权限位之后的第 2 个数字即文件大小，最后一段即文件名。
       const parts = l.split(/\s+/);
-      if (parts.length < 6 || !/^[\-dl]/.test(parts[0])) return null;
+      if (parts.length < 6 || !/^[\-d]/.test(parts[0])) return null;
       const sizeIdx = parts.findIndex((p, i) => i >= 2 && /^\d+$/.test(p)
         && /(\d{4}-\d{2}-\d{2}|^[A-Za-z]{3}$)/.test(parts[i + 1] || ''));
       if (sizeIdx < 0) return null;
@@ -793,7 +752,7 @@ class AdbClient {
   async listRemoteStat(remote) {
     let out = '';
     try {
-      out = await this.shell(`cd "${remote}" 2>/dev/null && find . -type f -exec stat -c '%Y|%s|%n' {} + 2>/dev/null`);
+      out = await this.shell(`cd ${quoteAndroidPath(remote)} 2>/dev/null && find . -type f -exec stat -c '%Y|%s|%n' {} + 2>/dev/null`);
     } catch (_) {
       return null;
     }
@@ -804,7 +763,9 @@ class AdbClient {
 
   /** 清除应用数据 */
   async clearData(pkg) {
-    await this.shell(`pm clear ${pkg}`);
+    if (!require('./pkgname').validPackageName(pkg)) throw Error('Invalid package');
+    const result = await this.exec(['shell','pm','clear',pkg],{timeout:60000});
+    if (result.stdout.trim() !== 'Success') throw Error('Android did not confirm data removal');
   }
 
   /** 导出应用数据（Windows/调试版可用 run-as；否则走 adb backup 兜底） */
@@ -848,9 +809,8 @@ class AdbClient {
     // 四五个权限就是 1 秒，而这些命令本身没有任何依赖关系。
     const cmds = [];
     for (const p of denied) cmds.push(`pm grant ${pkg} ${p}`);
-    // 特殊权限走 appops，否则仍然会弹窗
-    const ops = ['MANAGE_EXTERNAL_STORAGE', 'SYSTEM_ALERT_WINDOW', 'REQUEST_INSTALL_PACKAGES', 'WRITE_SETTINGS'];
-    for (const op of ops) cmds.push(`cmd appops set ${pkg} ${op} allow`);
+    // Special Android permissions must be granted by the user in Android Settings.
+    // Never blanket-allow appops such as MANAGE_EXTERNAL_STORAGE or overlay access.
     if (cmds.length) {
       await this.shell(cmds.join(' ; '), { timeout: 20000 }).catch(() => '');
       granted.push(...denied);
@@ -1083,6 +1043,7 @@ class AdbClient {
 }
 
 module.exports = {
+  quoteAndroidPath,
   AdbClient, AdbError, parseStatList, friendlyInstallError, friendlyLaunchError,
   componentArg, parseResolvedActivity, parseDeviceState, isUnauthorizedError, parsePmPaths,
 };

@@ -1,0 +1,185 @@
+name: Android 14 guest validation
+on:
+  workflow_dispatch:
+    inputs:
+      split_fixture:
+        type: choice
+        description: Signed AppManager distribution
+        default: current
+        options: [current, legacy]
+  push:
+    branches: [feature/international-foundation]
+    paths:
+      - '.github/workflows/android-guest.yml'
+      - 'scripts/asi/hosted-android.cjs'
+      - 'scripts/asi/guest-evidence.cjs'
+      - 'scripts/asi/prepare-split-fixtures.py'
+      - 'scripts/asi/windows-shell-smoke.ps1'
+      - 'src/core/apk-bundle.js'
+      - 'src/core/adb.js'
+      - 'src/core/installer.js'
+      - 'src/core/install-*.js'
+      - 'src/core/backup-center.js'
+      - 'src/core/encrypted-backup.js'
+      - 'src/core/runtime-owner.js'
+      - 'src/core/emulator.js'
+      - 'src/core/engine.js'
+      - 'src/core/provision.js'
+      - 'src/core/doctor.js'
+      - 'src/core/shortcut*.js'
+      - 'src/core/appwin.js'
+      - 'src/core/sharer.js'
+      - 'src/core/store.js'
+      - 'src/main.js'
+
+permissions:
+  contents: read
+
+env:
+  ASI_SPLIT_FIXTURE: ${{ inputs.split_fixture || 'current' }}
+
+jobs:
+  guest:
+    name: ${{ matrix.name || matrix.task }} (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-24.04, task: Android guest}
+          - {os: windows-2025, task: Android guest}
+          - {os: windows-2025, task: Android guest, panel: 720p, name: Android guest 720p}
+          - {os: windows-2025, task: Android guest, panel: 720p, scenario: compare-formats, name: Universal and split on one Windows host}
+          - {os: windows-2025, task: Android guest, scenario: migration, name: Encrypted Profile migration}
+          - {os: windows-2025, task: Packaged desktop, fixture: api}
+          - {os: windows-2025, task: Packaged desktop, fixture: calculator, name: Packaged desktop Calculator}
+    env:
+      ASI_SPLIT_FIXTURE: ${{ matrix.scenario == 'compare-formats' && 'current' || inputs.split_fixture || 'current' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Prepare Google SDK and isolated hardware acceleration
+        if: runner.os == 'Linux'
+        run: |
+          packages=(libpulse0 libnss3 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libgl1 libvulkan1)
+          missing=()
+          for package in "${packages[@]}"; do
+            if [[ $(dpkg-query -W -f='${Status}' "$package" 2>/dev/null) != 'install ok installed' ]]; then missing+=("$package"); fi
+          done
+          if (( ${#missing[@]} )); then
+            sources=/etc/apt/sources.list.d/ubuntu.sources
+            [[ -s "$sources" ]] || sources=/etc/apt/sources.list
+            test -s "$sources"
+            opts=(-o "Dir::Etc::sourcelist=$sources" -o 'Dir::Etc::sourceparts=-' -o 'Acquire::Retries=3')
+            sudo apt-get "${opts[@]}" update --error-on=any -qq
+            sudo apt-get "${opts[@]}" install -y --no-install-recommends "${missing[@]}"
+          fi
+          test -c /dev/kvm
+          sudo usermod -aG kvm "$(id -un)"
+          sudo install -d /run/udev/rules.d
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0660"' | sudo tee /run/udev/rules.d/99-asi-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo udevadm settle
+          df -h "$RUNNER_TEMP" "$ANDROID_HOME"
+          sdkmanager=$(find -L "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)
+          test -x "$sdkmanager"
+          sdk_bin=$(dirname "$sdkmanager")
+          test -x "$sdk_bin/avdmanager"
+          echo "$sdk_bin" >> "$GITHUB_PATH"
+          "$sdkmanager" --sdk_root="$ANDROID_HOME" --install 'platform-tools' 'emulator' 'build-tools;35.0.0' 'system-images;android-34;google_apis_playstore;x86_64'
+          test -x "$ANDROID_HOME/platform-tools/adb"
+          sg kvm -c '"$ANDROID_HOME/emulator/emulator" -accel-check'
+      - name: Prepare Windows Android SDK
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber | ConvertTo-Json -Compress
+          Get-CimInstance Win32_Processor | Select-Object Name, NumberOfLogicalProcessors, VirtualizationFirmwareEnabled, SecondLevelAddressTranslationExtensions | ConvertTo-Json -Compress
+          Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | ConvertTo-Json -Compress
+          Get-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform | Select-Object FeatureName, State | ConvertTo-Json -Compress
+          $sdk = Get-ChildItem "$env:ANDROID_HOME/cmdline-tools" -Recurse -Filter sdkmanager.bat | Select-Object -First 1
+          if (!$sdk) { throw 'Android command-line tools missing' }
+          & $sdk.FullName "--sdk_root=$env:ANDROID_HOME" --install 'platform-tools' 'emulator' 'build-tools;35.0.0' 'system-images;android-34;google_apis_playstore;x86_64'
+          if ($LASTEXITCODE -ne 0) { throw 'Google SDK installation failed' }
+          $sdk.DirectoryName | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+      - name: Verify published APK fixtures
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir guest-fixtures
+          cd guest-fixtures
+          curl --proto '=https' --proto-redir '=https' -fLsS --retry 2 'https://github.com/appium/android-apidemos/releases/download/v6.0.18/ApiDemos-debug.apk' -o api.apk
+          curl --proto '=https' --proto-redir '=https' -fLsS --retry 2 'https://github.com/FossifyOrg/Calculator/releases/download/1.4.0/calculator-10-foss-release.apk' -o calculator.apk
+          echo 'a9eecf37b26cd084855c530db81c2bb1b91f4c1b095a04f47aa7c20e2791f686  api.apk' | sha256sum --check
+          echo '7c5443c22d6d62c67dfe80df33ea9161ff0fa440f92590bcb45d7008b57613ed  calculator.apk' | sha256sum --check
+          signer="$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar"
+          java -jar "$signer" verify --verbose --print-certs api.apk
+          java -jar "$signer" verify --verbose --print-certs calculator.apk
+      - name: Verify signed splits and prepare device-specific archives
+        env:
+          ASI_GUEST_SCENARIO: ${{ matrix.scenario }}
+        if: matrix.scenario != 'migration'
+        shell: bash
+        working-directory: ${{ runner.temp }}/guest-fixtures
+        run: |
+          case "$ASI_SPLIT_FIXTURE" in
+            current) url='https://github.com/MuntashirAkon/AppManager/releases/download/v4.1.1/AppManager_v4.1.1.apks' ;;
+            legacy) url='https://raw.githubusercontent.com/MuntashirAkon/AppManager/dc4154f4c04399602895f31f9390bb66b25ea8a0/app/src/test/resources/AppManager_v2.5.22.apks' ;;
+            *) exit 2 ;;
+          esac
+          curl --proto '=https' --proto-redir '=https' -fLsS --retry 2 "$url" -o upstream.apks
+          args=()
+          if [[ "$ASI_GUEST_SCENARIO" == compare-formats ]]; then
+            curl --proto '=https' --proto-redir '=https' -fLsS --retry 2 'https://github.com/MuntashirAkon/AppManager/releases/download/v4.1.1/AppManager_v4.1.1.apk' -o universal.apk
+            args+=(--compare-universal)
+          fi
+          python "$GITHUB_WORKSPACE/scripts/asi/prepare-split-fixtures.py" . "${args[@]}"
+      - name: Package the Windows desktop launcher
+        if: matrix.task == 'Packaged desktop'
+        run: |
+          npm exec --offline -- install-electron
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run pack
+      - name: Install a signed APK through Explorer and open its Windows shortcut
+        if: matrix.task == 'Packaged desktop'
+        shell: powershell
+        env:
+          ASI_RUNNER_KIND: ${{ runner.environment }}
+          ASI_DESKTOP_FIXTURE: ${{ matrix.fixture }}
+        run: |
+          ./scripts/asi/windows-shell-smoke.ps1 -InstallLiveApk -Fixture $env:ASI_DESKTOP_FIXTURE -Executable 'dist/ApkStart-International-win64-portable/ApkStart International.exe'
+      - name: Boot, install, launch, isolate and restore
+        if: matrix.task == 'Android guest'
+        env:
+          TEST_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          ASI_GUEST_SCENARIO: ${{ matrix.scenario }}
+          ASI_GUEST_PANEL: ${{ matrix.panel }}
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            exec sg kvm -c 'node scripts/asi/hosted-android.cjs'
+          fi
+          exec node scripts/asi/hosted-android.cjs
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.task == 'Android guest'
+        with:
+          name: ${{ matrix.scenario == 'compare-formats' && 'windows-universal-vs-split-evidence' || matrix.scenario == 'migration' && 'windows-profile-migration-evidence' || matrix.panel == '720p' && 'windows-android-14-720p-evidence' || runner.os == 'Windows' && 'windows-android-14-guest-evidence' || 'android-14-guest-evidence' }}
+          path: ${{ runner.temp }}/guest-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.task == 'Packaged desktop'
+        with:
+          name: windows-desktop-${{ matrix.fixture }}-evidence
+          path: ${{ runner.temp }}/desktop-evidence.json
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,152 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const { prepareInstall } = require('../src/core/apk-install-guard');
+const { withApprovedCopy } = require('../src/core/install-staging');
+const { installSession, writePart } = require('../src/core/install-session');
+const { buildApkBytes } = require('./lib/make-apk');
+
+async function fixture(fn) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'asi-source-'));
+  try {
+    const file = path.join(dir, 'approved.apk');
+    await fs.writeFile(file, buildApkBytes({ abis: ['x86_64'] }));
+    return await fn(await prepareInstall(file, 'default'));
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
+}
+test('consumer receives an independent reviewed copy; failures clean it and preserve the source', () => fixture(async preview => {
+  let staged;
+  await assert.rejects(withApprovedCopy(preview, 'default', async p => {
+    staged = p.path;
+    assert.notEqual(p.path, preview.path);
+    await fs.writeFile(preview.path, 'replacement source');
+    assert.equal((await prepareInstall(staged, 'default')).sha256, preview.sha256);
+    throw Error('simulated Android failure');
+  }), /simulated/);
+  await assert.rejects(fs.stat(staged), { code: 'ENOENT' });
+  assert.equal(await fs.readFile(preview.path, 'utf8'), 'replacement source');
+}));
+test('modified source and changed profile fail before Android is called', () => fixture(async preview => {
+  await assert.rejects(withApprovedCopy(preview, 'p_0123456789abcdef', assert.fail), /Profile changed/);
+  await fs.appendFile(preview.path, 'changed');
+  await assert.rejects(withApprovedCopy(preview, 'default', assert.fail), /changed/);
+}));
+test('mutated install stream cannot commit; Android only abandons its own session', () => fixture(async p => {
+  // An actual child consuming stdin exercises both pipe completion and the hash check.
+  const part = { path: p.path, bytes: p.bytes, sha256: '0'.repeat(64) };
+  const commands = [];
+  const client = { adbPath: process.execPath, _adbEnv: () => process.env,
+    _args: () => ['-e', "process.stdin.resume().on('end', () => console.log('Success: streamed'))"],
+    exec: async args => {
+      commands.push(args);
+      return { stdout: args.includes('install-create') ? 'Success: created install session [73]' : 'Success' };
+    } };
+  const options = { pkg: p.package, replace: false, checkGuest: async () => {} };
+  await assert.rejects(installSession(client, [part], options), /changed/);
+  assert.ok(commands[0].includes('-R'));
+  assert.deepEqual(commands.slice(1), [['shell','pm','install-abandon','73']]);
+  await writePart(client, '74', 0, { ...part, sha256: p.sha256 });
+}));
+test('loss of guest ownership blocks commit and cleanup on an unknown guest', async () => {
+  let owns = true;
+  const cmds = [];
+  const client = {exec: async a => {cmds.push(a);return {stdout:'Success: created install session [11]'};}};
+  await assert.rejects(installSession(client, [{bytes:1,sha256:'a'.repeat(64)}], {
+    pkg:'com.example.demo', replace:true, checkGuest:async()=>{if(!owns)throw Error('lost ownership');},
+    write:async()=>{owns=false;}
+  }), /lost ownership/);
+  assert.equal(cmds.length,1);
+});
+
+test('host approval stages the imported binary Android manifest and the exact IME bytes',async()=>{
+  const file=require('node:path').join(__dirname,'../assets/PinyinIME.apk');
+  const {prepareInstall}=require('../src/core/apk-install-guard');
+  const {withApprovedCopy}=require('../src/core/install-staging');
+  const approved=await prepareInstall(file,'default');
+  assert.equal(approved.package,'com.android.inputmethod.pinyin');
+  assert.equal(approved.sha256,'9cc5fd7c39b4f9e02739d5a0d7be34caa893fe7634b543ee3ffecd949f11b1a6');
+  let copy;
+  await withApprovedCopy(approved,'default',stage=>{
+    copy=stage.path;
+    assert.notEqual(copy,file);
+    assert.equal(stage.version,'1.0.0');
+    assert.equal(stage.bytes,1668276);
+    assert.equal(stage.sha256,approved.sha256);
+  });
+  assert.equal(require('node:fs').existsSync(copy),false);
+});
+
+test('Windows adb receives text-safe input and Android recovers the approved bytes', async () => {
+  const {createHash} = require('node:crypto');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'asi-adb-bytes-'));
+  try {
+    for (const length of [65537, 131073, 131074]) {
+      const data = Buffer.alloc(length);
+      for (let i = 0; i < length; i++) data[i] = i % 256;
+      data.set([0x1a, 13, 10, 0], 489);
+      const file = path.join(dir, 'payload.apk');
+      await fs.writeFile(file, data);
+      const sha256 = createHash('sha256').update(data).digest('hex');
+      const child = `
+        const chunks = [];
+        process.stdin.on('data', c => chunks.push(c)).on('end', () => {
+          const s = Buffer.concat(chunks).toString('latin1');
+          if (!/^[a-zA-Z0-9+/]+=*$/.test(s)) process.exit(1);
+          const actual = require('node:crypto').createHash('sha256').update(Buffer.from(s, 'base64')).digest('hex');
+          if (actual !== process.argv[1]) process.exit(2);
+          console.log('Success: streamed');
+        });
+      `;
+      const client = {adbPath:process.execPath, _adbEnv:()=>process.env, _args:args=>{
+        assert.deepEqual(args,['shell','-T','base64','-d','|','pm','install-write','-S',String(length),'37','part0.apk','-']);
+        return ['-e',child,sha256];
+      }};
+      await writePart(client,'37',0,{path:file,bytes:length,sha256},'win32');
+    }
+  } finally { await fs.rm(dir,{recursive:true,force:true}); }
+});
+
+test('Android integrity rejection is reported without replaying the commit', async () => {
+  const commands = [];
+  const client = {exec:async args => {
+    commands.push(args);
+    if (args.includes('install-create')) return {stdout:'Success: created install session [42]'};
+    if (args.includes('install-commit')) throw Error('Failure [INSTALL_FAILED_VERIFICATION_FAILURE: Integrity verification timed out for file:///data/app/vmdl42.tmp]');
+    return {stdout:'Success'};
+  }};
+  await assert.rejects(installSession(client,[{bytes:100,sha256:'a'.repeat(64)}], {
+    pkg:'com.example.demo',replace:false,grant:false,checkGuest:async()=>{},write:async()=>{}
+  }), /integrity check timed out.*INSTALL_FAILED_VERIFICATION_FAILURE/);
+  assert.deepEqual(commands.map(args=>args[2]),['install-create','install-commit','install-abandon']);
+});
+
+test('only a confirmed abandoned, pre-commit transfer on the same guest can be replayed once', async () => {
+  for (const mode of ['recovered','write-eof','still-offline','abandon-refused','second-write-fails','commit-lost']) {
+    let created=0, writes=0, commits=0, waits=0;
+    const parts=[{bytes:1,sha256:'a'.repeat(64)}];
+    const client={exec:async args=>{
+      if (args.includes('install-create')) return {stdout:'Success: created install session ['+(++created)+']'};
+      if (args.includes('install-abandon')) return {stdout:mode==='abandon-refused'?'Failure':'Success'};
+      commits++;
+      if (mode==='commit-lost') throw Object.assign(Error('commit result lost'),{code:'EPIPE'});
+      return {stdout:'Success'};
+    }};
+    const run=installSession(client,parts,{
+      pkg:'com.example.app',grant:false,replace:false,checkGuest:async()=>{},
+      recoverWrite:async()=>{waits++;return mode!=='still-offline';},
+      write:async()=>{
+        writes++;
+        if (mode!=='commit-lost' && (writes===1 || mode==='second-write-fails'))
+          throw Object.assign(Error('disconnected during write'),{code:mode==='write-eof'?'EOF':'ADB_WRITE_INTERRUPTED'});
+      }
+    });
+    if (mode==='recovered' || mode==='write-eof') await run;
+    else await assert.rejects(run,/disconnected|result lost/);
+    assert.equal(created,['recovered','write-eof','second-write-fails'].includes(mode)?2:1);
+    assert.equal(commits,['recovered','write-eof','commit-lost'].includes(mode)?1:0);
+    assert.equal(waits,mode==='commit-lost'?0:1);
+  }
+});

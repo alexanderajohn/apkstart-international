@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { safeFilePart } = require('./pkgname');
+const { createRegistry } = require('./profiles');
 
 /**
  * 是不是 Microsoft Store（MSIX / APPX）打包版？
@@ -23,16 +24,17 @@ const { safeFilePart } = require('./pkgname');
  * process.windowsStore 由 Electron 在 MSIX/APPX 环境下注入（普通 node 下是 undefined）。
  */
 const STORE_BUILD = (() => {
-  try { return !!require('electron').app?.isPackaged && !!process.windowsStore; } catch (_) { return false; }
+  try { return !!process.versions.electron && !!process.windowsStore && !!require('electron').app?.isPackaged; } catch (_) { return false; }
 })();
 
 const DATA_DIR = STORE_BUILD
-  ? path.join(os.homedir(), 'ApkStart', 'data')
-  : path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'apkstart');
+  ? path.join(os.homedir(), 'ApkStart International', 'data')
+  : path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'apkstart-international');
 const ICON_DIR = path.join(DATA_DIR, 'icons');
 const APK_DIR = path.join(DATA_DIR, 'apks');
 const APPS_FILE = path.join(DATA_DIR, 'apps.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+const profileRegistry = createRegistry(DATA_DIR);
 
 const DEFAULT_SETTINGS = {
   adbPath: '',
@@ -68,21 +70,24 @@ const DEFAULT_SETTINGS = {
     // 界面上只暴露这一个选项，保存时自动翻译成 liteMode / priorityMode / renderSize，
     // 底部仍然保留细项开关给高级用户。
     resourceMode: 'balanced',
+    // Per-APK process scheduling only; all apps share VM RAM/CPU core allocations.
+    appPerformanceProfiles: {},
     // 数据分区容量（GB）：应用、游戏缓存和它们的更新包都装在这里。
     // 0 = 自动（按磁盘剩余给 6/8GB）。改大后在下次开安卓时**就地扩容**，不丢已装应用。
     dataPartitionGB: 0,
     // 渲染分辨率：越低越流畅、越省电；auto = 按加速状态选 720x1280 / 540x960
     renderSize: 'auto',
-    // 网络加速：给模拟器指定国内公共 DNS。安卓默认的 10.0.2.3 要走主机 DNS，
-    // VPN / 公司网 / 某些运营商下解析会拖到几百毫秒，视频类应用首屏会明显发卡。
-    fastDns: true,
+    // Use the host resolver unless the user selects the regional DNS override.
+    fastDns: false,
     // 系统语言：开机时由 emulator -prop 注入（guest 里 setprop 会被 SELinux 拒绝）。
     // 默认简体中文。设成 en-US 或 off 就回到镜像原生英文。
-    locale: 'zh-CN',
+    locale: 'en-US',
     // 中文输入法：随包带 AOSP 谷歌拼音输入法，开机后静默安装并启用。
     // 系统镜像只带 LatinIME（英文键盘），不装就打不了中文。
-    chineseIme: true,
-    chineseImeDefault: true,
+    chineseIme: false,
+    chineseImeDefault: false,
+    // Permission consent: Android shows permission dialogs unless explicitly enabled.
+    autoGrantAppPermissions: false,
     // 快照：quickboot 内存快照让二次启动只要几秒，代价是磁盘上多一份约 2~3GB 的
     // ram.bin。磁盘紧张时可以关掉（只影响启动速度，不影响应用数据）。
     keepSnapshot: true,
@@ -125,7 +130,7 @@ const DEFAULT_SETTINGS = {
     deployFailedAt: 0,       // 上次自动部署失败的时间戳（0=无失败）。失败后 30 分钟内不再自动重下
     // 轻量版的运行时整包：默认从本项目 GitHub Release 下载（与「软件更新」同源），
     // 拿不到时自动退回 dl.google.com 分组件下载。可在这里换成自建镜像地址。
-    preferGithubRuntime: true,
+    preferGithubRuntime: false,
     runtimePackUrl: '',
     // GitHub 加速镜像前缀（可选）。国内直连 GitHub Releases 经常只有几十 KB/s，
     // 填成 https://ghfast.top/ 之类的镜像前缀即可把 downloads 请求转过去。
@@ -138,12 +143,12 @@ const DEFAULT_SETTINGS = {
     sourcePreference: 'auto',
     // 自动尝试公共 GitHub 加速镜像（ghfast / gh-proxy）。关掉后只用直连 + 自定义前缀。
     // 这两个是第三方服务，只是转发公开的 release 文件，不涉及账号信息。
-    autoMirror: true,
+    autoMirror: false,
     // Gitee 的 releases 接口对公开仓库也要求 access_token（无 token 直接 404），
     // 想用 Gitee 作为更新源就在这里填一个只读 token；留空则只用 GitHub + 镜像。
     giteeToken: '',
   },
-  sharedDir: path.join(os.homedir(), 'ApkStartShared'),
+  sharedDir: path.join(os.homedir(), 'ApkStartInternationalShared'),
   deviceSharedDir: '/sdcard/ApkStartShared',
   autoConnect: true,
   createShortcutOnInstall: true,
@@ -184,7 +189,8 @@ const DEFAULT_SETTINGS = {
 };
 
 function ensureDirs() {
-  for (const d of [DATA_DIR, ICON_DIR, APK_DIR]) {
+  const current = profileRegistry.paths();
+  for (const d of [DATA_DIR, current.iconsDir, current.apkDir]) {
     if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
   }
 }
@@ -242,12 +248,23 @@ function resourcePreset(mode) {
 }
 
 const store = {
-  DATA_DIR, ICON_DIR, APK_DIR,
+  DATA_DIR,
+  backupLocked:false,
+  profiles: profileRegistry,
+  // Dynamic getters preserve the default data while isolating APKs/icons.
+  get ICON_DIR() { return profileRegistry.paths().iconsDir; },
+  get APK_DIR() { return profileRegistry.paths().apkDir; },
   // 商店（MSIX）打包版标记：main.js 据此关掉自更新、跳过需要管理员权限的内核驱动安装
   STORE_BUILD,
 
-  getSettings() {
+  getSettings(profileId = profileRegistry.currentId()) {
     const s = deepMerge(DEFAULT_SETTINGS, readJson(SETTINGS_FILE, {}));
+    if (profileId !== 'default') {
+      const folders = s.profileShareFolders?.[profileId];
+      s.sharedDir = folders?.sharedDir || path.join(profileRegistry.profileRoot(profileId), 'shared');
+      s.deviceSharedDir = folders?.deviceSharedDir || DEFAULT_SETTINGS.deviceSharedDir;
+    }
+    delete s.profileShareFolders;
     /**
      * 0.5.6 起没有第三方底座了：老配置里的 mode=mumu / fydeos / attach，
      * 或者手改出来的任何其它值，一律当 builtin 处理，并把残留的第三方字段删掉。
@@ -271,22 +288,36 @@ const store = {
   },
 
   saveSettings(patch) {
-    const next = deepMerge(this.getSettings(), patch);
+    const id = profileRegistry.currentId();
+    const globalPatch = {...patch};
+    delete globalPatch.profileShareFolders;
+    const folders = {...readJson(SETTINGS_FILE, {}).profileShareFolders};
+    if (id !== 'default') {
+      for (const key of ['sharedDir','deviceSharedDir']) {
+        if (Object.hasOwn(globalPatch,key)) {
+          folders[id] = {...folders[id], [key]:globalPatch[key]};
+          delete globalPatch[key];
+        }
+      }
+    }
+    const next = deepMerge(this.getSettings('default'), globalPatch);
+    if (Object.keys(folders).length) next.profileShareFolders = folders;
     // 只改了「资源策略」时，把它翻译成具体的三个开关，避免两套配置各说各话
     if (patch && patch.engine && patch.engine.resourceMode) {
       Object.assign(next.engine, resourcePreset(next.engine.resourceMode));
     }
     writeJson(SETTINGS_FILE, next);
-    return next;
+    return this.getSettings(id);
   },
 
   getApps() {
-    const data = readJson(APPS_FILE, { apps: [] });
+    const data = readJson(profileRegistry.paths().appsFile, { apps: [] });
     return Array.isArray(data.apps) ? data.apps : [];
   },
 
   saveApps(apps) {
-    writeJson(APPS_FILE, { apps });
+    if (this.backupLocked) throw new Error('Profile backup/restore in progress');
+    writeJson(profileRegistry.paths().appsFile, { apps });
   },
 
   upsertApp(app) {
@@ -310,12 +341,12 @@ const store = {
   iconPath(pkg) {
     // 第二层防御：pkg 来自外部解析的 APK / apps.json，必须锁在数据目录内。
     // 即使有旧版本写入的坏记录，也不能让它拼出 ICON_DIR 之外的路径（issue #2 P0-1）。
-    return path.join(ICON_DIR, `${safeFilePart(pkg)}.png`);
+    return path.join(this.ICON_DIR, `${safeFilePart(pkg)}.png`);
   },
 
   apkPath(pkg, version = 'cur') {
     const v = /^[A-Za-z0-9_-]+$/.test(String(version)) ? version : 'cur';
-    return path.join(APK_DIR, `${safeFilePart(pkg)}-${v}.apk`);
+    return path.join(this.APK_DIR, `${safeFilePart(pkg)}-${v}.apk`);
   },
 
   ensureDirs,

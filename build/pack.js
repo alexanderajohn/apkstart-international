@@ -1,7 +1,7 @@
 'use strict';
 /**
- * 便携版打包：产出 dist/ApkStart-win64-portable/
- *   ApkStart.exe（electron.exe 改名 + 写入图标/版本资源）+ resources/app（本应用源码）
+ * 便携版打包：产出 dist/ApkStart-International-win64-portable/
+ *   ApkStart International.exe（electron.exe 改名 + 写入图标/版本资源）+ resources/app（本应用源码）
  * 无需安装器，解压即用。
  *
  * --full（或 APKSTART_PACK_FULL=1）时产出「完整版」：
@@ -19,7 +19,7 @@ const FULL = process.argv.includes('--full') || process.env.APKSTART_PACK_FULL =
 // 允许指定输出目录（用于目标目录被正在运行的实例占用时，先构建到别处再替换）
 let OUT = process.env.APKSTART_PACK_OUT
   ? path.resolve(process.env.APKSTART_PACK_OUT)
-  : path.join(ROOT, 'dist', FULL ? `ApkStart-v${PKG.version}-win64-full` : 'ApkStart-win64-portable');
+  : path.join(ROOT, 'dist', FULL ? `ApkStart-International-v${PKG.version}-win64-full` : 'ApkStart-International-win64-portable');
 const ELECTRON_DIST = path.join(ROOT, 'node_modules', 'electron', 'dist');
 
 function copy(src, dest) {
@@ -37,7 +37,7 @@ if (fs.existsSync(OUT)) {
   } catch (_) {
     // 某些环境（杀软 / 搜索索引 / 资源管理器）会长时间持有目录句柄，
     // 整目录改名必然 EBUSY；这时退到带版本号的目录，产物一样可用且不再重名。
-    OUT = path.join(ROOT, 'dist', `ApkStart-v${require(path.join(ROOT, 'package.json')).version}-win64-portable`);
+    OUT = path.join(ROOT, 'dist', `ApkStart-International-v${require(path.join(ROOT, 'package.json')).version}-win64-portable`);
     console.log('旧目录被占用，改输出到 →', OUT);
   }
 }
@@ -50,7 +50,7 @@ fs.rmSync(path.join(OUT, 'resources', 'default_app.asar'), { force: true });
 
 // 1.1 语言包瘦身：Electron 自带 55 种语言，合计 41MB，我们只用中文界面。
 //     只留 zh-CN / zh-TW / en-US，其余删掉（-39MB，等于整包小 15%）。
-const KEEP_LOCALES = new Set(['zh-CN.pak', 'zh-TW.pak', 'en-US.pak']);
+const KEEP_LOCALES = new Set(['zh-CN.pak', 'zh-TW.pak', 'en-US.pak', 'vi.pak']);
 let localeSaved = 0;
 try {
   const locDir = path.join(OUT, 'locales');
@@ -81,31 +81,24 @@ for (const rel of ['d3dcompiler_47.dll']) {
   } catch (_) { /* 本来就没有 */ }
 }
 
-// 2. 应用本体
-// assets/ 里是随包分发的资源：PinyinIME.apk（中文输入法），开机时由
-// Runtime.prepare() 静默装进安卓。漏掉它用户就打不了中文。
 console.log('复制应用…');
 const appDir = path.join(OUT, 'resources', 'app');
-for (const item of ['package.json', 'src', 'assets', 'LICENSE']) {
-  const src = path.join(ROOT, item);
-  if (fs.existsSync(src)) copy(src, path.join(appDir, item));
+// Preview artifacts do not redistribute the upstream-bundled Chinese IME APK.
+for (const item of ['package.json', 'src', 'LICENSE', 'CREDITS.md']) {
+  copy(path.join(ROOT, item), path.join(appDir, item));
 }
 
-// 3. 可选目录
-// engine/ 下只有文档类内容随包分发；大体积运行时组件（emulator、system-images、
-// platform-tools、avd）由应用首次启动时自动从官方源下载，不进安装包。
-// tools/ 是开发期自检脚本（黑窗实测、测速），用户用不到，不再随包分发。
-const ENGINE_SKIP = new Set(['emulator', 'system-images', 'platform-tools', 'avd', 'aehd', '_dl', 'qemu']);
-for (const opt of ['engine']) {
-  const src = path.join(ROOT, opt);
-  if (!fs.existsSync(src)) continue;
-  const dest = path.join(appDir, opt);
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    if (opt === 'engine' && ENGINE_SKIP.has(entry.name)) continue;
-    fs.cpSync(path.join(src, entry.name), path.join(dest, entry.name), { recursive: true });
+// Portable runtime needs the native LZMA package for on-demand image expansion.
+for (const name of ['lzma', 'lzma-win32-x64-msvc']) {
+  const dep = path.join(ROOT, 'node_modules', '@napi-rs', name);
+  if (fs.existsSync(dep)) {
+    copy(dep, path.join(appDir, 'node_modules', '@napi-rs', name));
   }
 }
+
+// The source engine directory may also hold a developer's local Android runtime.
+fs.mkdirSync(path.join(appDir, 'engine'), { recursive: true });
+copy(path.join(ROOT, 'engine', 'README.md'), path.join(appDir, 'engine', 'README.md'));
 
 // 3.5 完整版：把运行时（emulator + platform-tools + 系统镜像）也放进去
 if (FULL) {
@@ -125,11 +118,11 @@ if (FULL) {
 assertStandalone(path.join(OUT, 'resources'), { label: '便携版 resources' });
 
 // 4. 改名主程序
-const exePath = path.join(OUT, 'ApkStart.exe');
+const exePath = path.join(OUT, 'ApkStart International.exe');
 fs.renameSync(path.join(OUT, 'electron.exe'), exePath);
 
 /**
- * 给 ApkStart.exe 写入图标与版本资源。
+ * 给 ApkStart International.exe 写入图标与版本资源。
  *
  * 为什么必须做：直改名出来的 exe 里面还是 Electron 的东西 ——
  * FileDescription=Electron、ProductName=Electron、CompanyName=GitHub, Inc.、
@@ -140,6 +133,13 @@ fs.renameSync(path.join(OUT, 'electron.exe'), exePath);
  * rcedit 是 electron-builder / electron-winstaller 用的同一个工具，
  * 这里直接用 node_modules 里现成的那份，不需要联网。
  */
+// Windows PE VERSIONINFO must use 4 numeric parts (prerelease labels are invalid).
+function numericFileVersion(version) {
+  const nums = String(version).match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!nums) throw new Error('Invalid release version: ' + version);
+  const ordinal = /(?:beta|rc)[.-]?(\d+)/i.exec(String(version));
+  return [nums[1],nums[2],nums[3],ordinal ? ordinal[1] : '0'].join('.');
+}
 function embedExeMeta(exe) {
   const rcedit = [
     path.join(ROOT, 'node_modules', 'electron-winstaller', 'vendor', 'rcedit.exe'),
@@ -158,14 +158,14 @@ function embedExeMeta(exe) {
     exe,
     '--set-icon', ico,
     // 四段式文件版本（和 MSIX 的口径一致），产品版本用三段式
-    '--set-file-version', `${PKG.version}.0`,
-    '--set-product-version', PKG.version,
-    '--set-version-string', 'ProductName', 'ApkStart',
-    '--set-version-string', 'FileDescription', 'ApkStart 安卓应用运行器',
-    '--set-version-string', 'CompanyName', PKG.author || 'RoutineMiku',
-    '--set-version-string', 'LegalCopyright', 'Copyright (c) 2026 ApkStart',
-    '--set-version-string', 'OriginalFilename', 'ApkStart.exe',
-    '--set-version-string', 'InternalName', 'ApkStart',
+    '--set-file-version', numericFileVersion(PKG.version),
+    '--set-product-version', numericFileVersion(PKG.version),
+    '--set-version-string', 'ProductName', 'ApkStart International',
+    '--set-version-string', 'FileDescription', 'ApkStart International Android app runner',
+    '--set-version-string', 'CompanyName', 'ApkStart International contributors',
+    '--set-version-string', 'LegalCopyright', 'Copyright (c) 2026 ApkStart International contributors',
+    '--set-version-string', 'OriginalFilename', 'ApkStart International.exe',
+    '--set-version-string', 'InternalName', 'ApkStart International',
   ];
   try {
     execFileSync(rcedit, args, { stdio: 'pipe', windowsHide: true });
@@ -176,13 +176,13 @@ function embedExeMeta(exe) {
     return false;
   }
 }
-embedExeMeta(exePath);
+if (!embedExeMeta(exePath)) throw Error('Cannot embed Windows candidate identity');
 
 // 5. 版本信息
 const pkg = PKG;
-const fullNote = FULL ? '完整版（内置运行时，装完不联网）' : '轻量版（首次启动下载运行时）';
+const fullNote = FULL ? 'Bundled runtime (NOT cleared for redistribution)' : 'Developer preview: no bundled runtime or Pinyin IME; Android SDK downloads on demand';
 fs.writeFileSync(path.join(OUT, 'VERSION.txt'),
-  `ApkStart ${pkg.version}\n${fullNote}\n构建时间：${new Date().toLocaleString('zh-CN')}\n`);
+  `ApkStart International ${pkg.version}\n${fullNote}\n构建时间：${new Date().toLocaleString('en-US')}\n`);
 
 // 6. 体积报告：每次打包都打印，避免以后又悄悄变胖
 function dirSize(dir) {
@@ -201,5 +201,5 @@ console.log(
   + `冗余运行库省了 ${(pruneSaved / 1048576).toFixed(1)} MB）。`,
 );
 console.log('压缩：node build/zip.js ' + path.relative(ROOT, OUT) + ' <输出.zip>');
-console.log(`运行 ${path.join(OUT, 'ApkStart.exe')} 即可使用。`);
+console.log(`运行 ${path.join(OUT, 'ApkStart International.exe')} 即可使用。`);
 if (!FULL) console.log('想要「一次下载、装完不联网」的完整版：node build/pack.js --full');

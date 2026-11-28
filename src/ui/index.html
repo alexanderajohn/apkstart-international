@@ -1,11 +1,12 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
-<title>ApkStart</title>
+<title>ApkStart International</title>
 <link rel="stylesheet" href="style.css" />
 <link rel="stylesheet" href="theme.css" />
+<link rel="stylesheet" href="i18n/i18n.css" />
 </head>
 <body>
 
@@ -30,7 +31,7 @@
     <div class="logo" aria-hidden="true">
       <svg viewBox="0 0 48 48" width="22" height="22"><use href="#brandMark"/></svg>
     </div>
-    <span class="brand-name">ApkStart</span>
+    <span class="brand-name">ApkStart International</span>
     <span class="brand-tag" id="engineTag">未连接运行时</span>
   </div>
   <div class="titlebar-spacer"></div>
@@ -42,6 +43,204 @@
 </header>
 
 <main class="shell">
+  <section id="androidProfilesBar" class="asi-profiles" aria-labelledby="profilesLabel">
+    <div class="asi-profiles-info">
+      <label id="profilesLabel" for="profilePicker">Android Profiles</label>
+      <span id="profilesActiveLabel">Default profile · current Android environment</span>
+    </div>
+    <select id="profilePicker" aria-label="Select Android profile"></select>
+    <button type="button" id="btnSwitchProfile" class="btn ghost sm" disabled>Switch profile</button>
+    <button type="button" id="btnCreateProfile" class="btn ghost sm">+ New profile</button>
+    <p id="profilesNotice" role="status" aria-live="polite">Profiles keep APKs and Android app data separate. Switching requires Android to be stopped and restarts ApkStart.</p>
+  </section>
+  <section id="runtimeReadinessCenter" class="asi-backup" aria-labelledby="runtimeReadinessTitle">
+    <div class="asi-backup-top">
+      <div class="asi-backup-headline">
+        <strong id="runtimeReadinessTitle">Live Android Readiness</strong>
+        <span id="runtimeReadinessNote">Read-only: checks the running, owned Android emulator and current Profile. No APK installation or data changes.</span>
+      </div>
+      <button id="btnRuntimeReadiness" class="btn ghost sm" type="button">Check running Android</button>
+    </div>
+    <div id="runtimeReadinessDetails" class="asi-backup-progress" role="status" aria-live="polite" hidden></div>
+  </section>
+  <section id="backupCenter" class="asi-backup" aria-labelledby="backupCenterTitle">
+    <div class="asi-backup-top">
+      <div class="asi-backup-headline">
+        <strong id="backupCenterTitle">Backup &amp; Restore Center</strong>
+        <span id="backupProfileCaption">Current Android profile: Default</span>
+      </div>
+      <button id="btnBackupToggle" class="btn ghost sm" type="button" aria-controls="backupContent" aria-expanded="false">Open backup tools</button>
+    </div>
+    <div id="backupContent" class="asi-backup-body" hidden>
+      <div class="asi-backup-notice" id="backupSafety">
+        Stop Android first. New backups use AES-256-GCM encryption with a password. Legacy unencrypted backups can still be imported. No cloud upload or silent overwrite.
+      </div>
+      <div class="asi-backup-password-grid">
+        <label for="backupPassword" id="backupPasswordLabel">Backup password (minimum 12 UTF-8 bytes)</label>
+        <input id="backupPassword" type="password" autocomplete="new-password" maxlength="1024" spellcheck="false" placeholder="Password for encrypting or opening a backup" />
+        <label for="backupPasswordConfirm" id="backupPasswordConfirmLabel">Confirm password (only when creating a backup)</label>
+        <input id="backupPasswordConfirm" type="password" autocomplete="new-password" maxlength="1024" spellcheck="false" placeholder="Repeat password for new backup" />
+        <small id="backupPasswordHint">Passwords are never saved. Re-enter the password to verify or restore. Losing it means your encrypted backup cannot be recovered.</small>
+      </div>
+      <div class="asi-backup-actions">
+        <button class="btn primary sm" type="button" id="btnBackupCreate">Create encrypted backup</button>
+        <button class="btn ghost sm" type="button" id="btnBackupPick">Inspect encrypted / legacy backup</button>
+        <button class="btn ghost sm" type="button" id="btnBackupMigrate">Import encrypted profile from another Windows PC</button>
+      </div>
+      <div class="asi-backup-actions">
+        <button class="btn ghost sm" type="button" id="btnBackupRecoveryFind">Find local recovery points</button>
+      </div>
+      <div id="backupRecoveryChoices" hidden>
+        <label for="backupRecoverySelect" id="backupRecoverySelectLabel">Saved profile recovery points</label>
+        <select id="backupRecoverySelect" aria-label="Choose local recovery point"></select>
+        <button class="btn ghost sm" type="button" id="btnBackupRecoveryInspect">Verify selected recovery point</button>
+        <button class="btn ghost sm" type="button" id="btnBackupSealPoint">Encrypt selected safety point</button>
+      </div>
+      <div class="asi-backup-actions">
+        <button class="btn ghost sm" type="button" id="btnBackupSealedList">Find encrypted Safety Vault archives</button>
+      </div>
+      <div id="backupSealedChoices" hidden>
+        <label id="backupSealedLabel" for="backupSealedSelect">Encrypted Safety Vault archives</label>
+        <select id="backupSealedSelect" aria-label="Choose encrypted safety archive"></select>
+        <button class="btn ghost sm" type="button" id="btnBackupSealedOpen">Authenticate and preview sealed point</button>
+      </div>
+      <div class="asi-backup-actions">
+        <button id="btnBackupRetentionToggle" class="btn ghost sm" type="button" aria-expanded="false" aria-controls="backupRetentionPanel">Retention &amp; Cleanup tools</button>
+      </div>
+      <div id="backupRetentionPanel" class="asi-backup-preview" hidden>
+        <strong id="backupRetentionTitle">Safety Vault Retention &amp; Cleanup</strong>
+        <div class="asi-backup-notice" id="backupRetentionNotice">Retention is advisory; no automatic deletion. Cleanup requires an authenticated encrypted archive and two explicit approvals. Secure erasure is not possible here.</div>
+        <div class="asi-backup-actions">
+          <label id="backupRetentionDaysLabel" for="backupRetentionDays">Flag recovery points older than (days)</label>
+          <input id="backupRetentionDays" type="number" min="1" max="3650" step="1" value="30" aria-label="Retention age in days" />
+          <button id="btnBackupRetentionReport" type="button" class="btn ghost sm">Inspect storage usage</button>
+        </div>
+        <div id="backupRetentionSummary" class="asi-backup-progress" role="status" aria-live="polite">Read-only inventory; no cleanup is scheduled.</div>
+        <div class="asi-backup-actions">
+          <button id="btnBackupCleanupPreview" type="button" class="btn ghost sm">Verify selected plaintext point against selected encrypted archive</button>
+        </div>
+        <div id="backupCleanupPreviewPanel" class="asi-backup-preview" hidden>
+          <strong id="backupCleanupTitle">Authenticated plaintext cleanup preview</strong>
+          <div id="backupCleanupDetails"></div>
+          <p id="backupCleanupNotice">This permanently deletes the plaintext safety point, NOT the encrypted archive or active data. Deletion is not secure erase and cannot be undone without the password.</p>
+          <div class="asi-backup-actions">
+            <button id="btnBackupCleanupApply" class="btn primary sm" type="button">Delete plaintext after confirmation</button>
+            <button id="btnBackupCleanupCancel" class="btn ghost sm" type="button">Cancel cleanup preview</button>
+          </div>
+        </div>
+      </div>
+      <div class="asi-backup-actions">
+        <button id="btnBackupHealthToggle" class="btn ghost sm" type="button" aria-expanded="false" aria-controls="backupHealthPanel">Disaster Recovery &amp; Integrity Health Check</button>
+      </div>
+      <div id="backupHealthPanel" class="asi-backup-preview" hidden>
+        <strong id="backupHealthTitle">Disaster Recovery &amp; Integrity Health Check</strong>
+        <p id="backupHealthNotice">Read-only scan detects interrupted cleanup, restore stages and unfinished encrypted archives. It never automatically repairs or deletes anything.</p>
+        <div class="asi-backup-actions">
+          <button id="btnBackupHealthRun" class="btn ghost sm" type="button">Scan local recovery health</button>
+        </div>
+        <div id="backupHealthSummary" class="asi-backup-progress" role="status" aria-live="polite">Run an offline scan to inspect recovery artifacts.</div>
+        <div class="asi-backup-actions">
+          <label id="backupHealthArchiveLabel" for="backupHealthArchiveSelect">Encrypted archives to authenticate</label>
+          <select id="backupHealthArchiveSelect" aria-label="Select encrypted archive for full integrity check"></select>
+          <button id="btnBackupHealthVerify" class="btn ghost sm" type="button">Verify selected encrypted archive with password</button>
+        </div>
+        <div class="asi-backup-actions">
+          <label id="backupHealthQuarantineLabel" for="backupHealthQuarantineSelect">Interrupted cleanup fragments</label>
+          <select id="backupHealthQuarantineSelect" aria-label="Select interrupted cleanup fragments for manual rescue"></select>
+          <button id="btnBackupRescuePreview" class="btn ghost sm" type="button">Inspect selected rescue</button>
+        </div>
+        <div id="backupRescuePreviewPanel" class="asi-backup-preview" hidden>
+          <strong id="backupRescueTitle">Manual fragment rescue preview</strong>
+          <div id="backupRescueDetails"></div>
+          <p id="backupRescueNotice">RESCUE returns only surviving plaintext fragments to safety-copy locations. It cannot recreate missing data or restore active Android files.</p>
+          <div class="asi-backup-actions">
+            <button id="btnBackupRescueApply" class="btn primary sm" type="button">Rescue fragments after confirmation</button>
+            <button id="btnBackupRescueCancel" class="btn ghost sm" type="button">Cancel rescue preview</button>
+          </div>
+        </div>
+      </div>
+      <div class="asi-backup-actions">
+        <button class="btn ghost sm" type="button" id="btnBackupDrillToggle" aria-expanded="false" aria-controls="backupDrillPanel">Recovery Readiness &amp; Restore Drill</button>
+      </div>
+      <div id="backupDrillPanel" class="asi-backup-preview" hidden>
+        <strong id="backupDrillTitle">Recovery Readiness &amp; Restore Drill</strong>
+        <p id="backupDrillNotice">Authenticate the encrypted backup, inspect disk space, and rehearse stage/rollback with synthetic files only. No Android guest boot, live data modifications or backup plaintext on disk.</p>
+        <div class="asi-backup-actions">
+          <button class="btn ghost sm" type="button" id="btnBackupDrillSealed">Inspect selected encrypted Safety Vault archive</button>
+          <button class="btn ghost sm" type="button" id="btnBackupDrillExternal">Choose external encrypted backup for readiness</button>
+        </div>
+        <div id="backupDrillSummary" class="asi-backup-progress" role="status" aria-live="polite">Choose a source and enter its password to perform a full integrity check.</div>
+        <div id="backupDrillPreviewPanel" class="asi-backup-preview" hidden>
+          <strong id="backupDrillPreviewTitle">Authenticated recovery-readiness preview</strong>
+          <div id="backupDrillPreviewDetails" class="asi-backup-progress"></div>
+          <p id="backupDrillPreviewNotice">Type DRILL and confirm again to rehearse using synthetic files. Live Android data and backup contents are not written into temporary storage.</p>
+          <div class="asi-backup-actions">
+            <button class="btn primary sm" id="btnBackupDrillRun" type="button">Run isolated synthetic restore drill</button>
+            <button class="btn ghost sm" id="btnBackupDrillCancel" type="button">Cancel drill preview</button>
+          </div>
+        </div>
+      </div>
+      <div class="asi-backup-actions">
+        <button class="btn ghost sm" type="button" id="btnBackupAuditToggle" aria-expanded="false" aria-controls="backupAuditPanel">Recovery Audit Trail &amp; Verification Reports</button>
+      </div>
+      <div id="backupAuditPanel" class="asi-backup-preview" hidden>
+        <strong id="backupAuditTitle">Recovery Audit Trail &amp; Verification Reports</strong>
+        <p id="backupAuditNotice">Profile-specific offline audit. Only event types, results, counts and SHA-256 evidence IDs are saved. No passwords, raw backup paths, approval tokens or private Android file names.</p>
+        <div class="asi-backup-actions">
+          <button class="btn ghost sm" type="button" id="btnBackupAuditView">Check event-chain integrity and view history</button>
+          <button class="btn ghost sm" type="button" id="btnBackupAuditExport">Export sanitized JSON verification report</button>
+        </div>
+        <div id="backupAuditSummary" class="asi-backup-progress" role="status" aria-live="polite">History is not verified until opened. Hash chaining detects many edits but is not a digital signature.</div>
+        <div id="backupAuditEvents" class="asi-backup-progress"></div>
+        <div class="asi-backup-preview" id="backupSigningPanel">
+          <strong id="backupSigningTitle">Signed Verification Reports &amp; External Checkpoints</strong>
+          <p id="backupSigningNotice">Opt-in Ed25519 signatures with a locally passphrase-encrypted private key. Save checkpoints and trusted fingerprint OFF this PC. Signing cannot prove an Android AVD can boot.</p>
+          <div id="backupSigningStatus" class="asi-backup-progress" role="status" aria-live="polite">Signing identity has not been inspected.</div>
+          <div class="asi-backup-actions">
+            <button class="btn ghost sm" id="btnBackupSigningStatus" type="button">Inspect signing identity</button>
+            <button class="btn ghost sm" id="btnBackupSigningCreate" type="button">Create encrypted Ed25519 signing key</button>
+          </div>
+          <div class="asi-backup-actions">
+            <button class="btn ghost sm" id="btnBackupSigningCheckpoint" type="button">Export independently stored checkpoint</button>
+            <button class="btn ghost sm" id="btnBackupSigningReport" type="button">Export signed verification report</button>
+            <button class="btn ghost sm" id="btnBackupSigningVerify" type="button">Verify external checkpoint/report</button>
+          </div>
+          <div class="asi-backup-actions">
+            <button class="btn ghost sm" id="btnBackupSigningKeyExport" type="button">Export encrypted signing-key backup</button>
+            <button class="btn ghost sm" id="btnBackupSigningKeyImport" type="button">Import signing-key backup</button>
+            <button class="btn ghost sm" id="btnBackupSigningKeyRotate" type="button">Rotate signing key</button>
+          </div>
+          <div class="asi-backup-actions">
+            <button class="btn ghost sm" id="btnBackupTrustExport" type="button">Export public trust bundle</button>
+            <button class="btn ghost sm" id="btnBackupTrustVerify" type="button">Offline verify with pinned fingerprint</button>
+            <button class="btn ghost sm" id="btnBackupTrustHistory" type="button">Rotation history</button>
+            <button class="btn ghost sm" id="btnBackupTrustInventory" type="button">Review orphan keys (read-only)</button>
+          </div>
+          <div class="asi-backup-actions">
+            <button class="btn ghost sm" id="btnBackupTrustSignedExport" type="button">Export signed trust bundle</button>
+            <button class="btn ghost sm" id="btnBackupTrustSignedVerify" type="button">Verify signed trust bundle</button>
+            <button class="btn ghost sm" id="btnBackupTrustRotationCheckpoint" type="button">Export signed rotation checkpoint</button>
+            <button class="btn ghost sm" id="btnBackupTrustRotationVerify" type="button">Verify rotation checkpoint</button>
+          </div>
+          <div class="asi-backup-actions">
+            <button class="btn ghost sm" id="btnBackupKeyQuarantine" type="button">Quarantine inactive key (review + confirm)</button>
+          </div>
+          <div id="backupSigningResult" class="asi-backup-progress" role="status" aria-live="polite">Do not disclose your signing passphrase. Check the fingerprint against a separately trusted copy.</div>
+        </div>
+      </div>
+      <div id="backupProgress" class="asi-backup-progress" role="status" aria-live="polite">Ready. Choose an external folder for a backup.</div>
+      <div id="backupPreview" class="asi-backup-preview" hidden>
+        <strong id="backupPreviewTitle">Verified snapshot</strong>
+        <div id="backupPreviewDetails"></div>
+        <p id="backupRestoreNotice">Restoring requires explicit approval. Current data will be preserved as safety copies; ApkStart must restart afterwards.</p>
+        <div class="asi-backup-actions">
+          <button class="btn primary sm" id="btnBackupRestore" type="button">Restore after confirmation</button>
+          <button class="btn ghost sm" id="btnBackupCancel" type="button">Cancel preview</button>
+        </div>
+      </div>
+      <button class="btn ghost sm" id="btnBackupRestart" type="button" hidden>Restart ApkStart to use restored data</button>
+    </div>
+  </section>
   <section class="toolbar">
     <div class="search">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -69,7 +268,7 @@
         </svg>
       </div>
       <h2>把 APK 拖进来就能装</h2>
-      <p>安装完成后会自动生成桌面图标，双击即以独立窗口运行，和普通 Windows 软件一样。<br/>已注册 .apk 关联时，在资源管理器里双击 APK 也会直接装到 ApkStart。</p>
+      <p>快捷方式与创建它的 Android 环境绑定。<br/>先选择对应的环境，再打开桌面快捷方式。</p>
       <button class="btn primary lg" id="btnInstall2">选择 APK 文件</button>
       <p class="hint" id="emptyHint"></p>
     </div>
@@ -117,6 +316,15 @@
   </div>
 </div>
 
+<!-- Offline APK SmartCheck pre-install review -->
+<div class="modal-mask asi-sc-mask" id="smartCheckMask" hidden>
+  <section class="asi-sc-panel" role="dialog" aria-modal="true" aria-labelledby="smartCheckTitle">
+    <header class="asi-sc-head"><div><span class="asi-sc-eyebrow">APKSTART INTERNATIONAL</span><h2 id="smartCheckTitle">SmartCheck</h2></div><button type="button" class="icon-btn" id="smartCheckClose" aria-label="Close">×</button></header>
+    <div class="asi-sc-scroll"><p id="smartCheckFile"></p><div id="smartCheckStatus" class="asi-sc-status" role="status" aria-live="polite"></div><div id="smartCheckDetails"></div><div id="smartCheckFindings"></div><p id="smartCheckDisclaimer"></p></div>
+    <footer class="asi-sc-footer"><button type="button" class="btn ghost" id="smartCheckCancel">Cancel</button><button type="button" class="btn primary" id="smartCheckProceed" disabled>Install</button></footer>
+  </section>
+</div>
+
 <!-- 安装进度 -->
 <div class="toast-wrap" id="toastWrap"></div>
 
@@ -137,7 +345,7 @@
   <div class="modal">
     <header class="modal-head">
       <h2>设置</h2>
-      <button class="icon-btn" id="btnCloseSettings">
+      <button class="icon-btn" id="btnCloseSettings" aria-label="关闭">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>
       </button>
     </header>
@@ -158,6 +366,17 @@
           <div class="steps" id="setupSteps"></div>
         </div>
         <div id="envCheck" class="env-check" hidden></div>
+        <section class="asi-ar" id="autoRepairSection" aria-labelledby="autoRepairTitle">
+          <div class="asi-ar-bar">
+            <div class="asi-ar-heading">
+              <strong id="autoRepairTitle">Auto-Repair 2.0</strong>
+              <p id="autoRepairCaption">Read-only diagnosis · repairs require your approval</p>
+            </div>
+            <button type="button" class="btn ghost sm" id="btnAutoRepairScan">Diagnose now</button>
+          </div>
+          <div class="asi-ar-result" id="autoRepairResults" aria-live="polite"></div>
+        </section>
+
 
         <div class="setup-guide" id="setupGuide" hidden>
           <h2>安装 Android 到虚拟磁盘</h2>
@@ -208,9 +427,9 @@
           <span class="sub">系统镜像全机共享一份，应用数据用差分层保存；旧镜像、旧快照、日志和锁文件都可回收。日志超过上限会自动滚动，不会无限增长。「重置安卓数据」会真实删除数 GB 用户数据，仅保留系统本身。</span>
         </div>
         <div class="runtime-actions">
-          <button class="btn ghost sm" id="btnDiagnostics">导出诊断报告</button>
+          <button class="btn ghost sm" id="btnDiagnostics">导出隐私保护诊断报告</button>
           <button class="btn ghost sm" id="btnRebuildShortcuts">重建快捷方式</button>
-          <span class="inline-note">诊断报告用于排障；重建会补齐桌面 + 开始菜单入口</span>
+          <span class="inline-note">诊断报告只保存在本机，会遮盖常见敏感信息；分享前仍请检查内容。重建会补齐桌面 + 开始菜单入口。</span>
         </div>
         <div class="field switch-field">
           <div>
@@ -345,6 +564,45 @@
 
       <div class="group" id="perfGroup">
         <div class="group-title">性能与资源占用</div>
+        <section id="smartPerformanceCenter" class="asi-perf" aria-labelledby="perfCenterTitle">
+          <div class="asi-perf-head">
+            <div>
+              <strong id="perfCenterTitle">Smart Performance Engine</strong>
+              <p id="perfSummary">On-demand local performance measurements · no telemetry uploads</p>
+            </div>
+            <div class="asi-perf-control">
+              <button class="btn primary sm" type="button" id="btnPerfStart">Start measuring</button>
+              <button class="btn ghost sm" type="button" id="btnPerfStop" disabled>Stop</button>
+            </div>
+          </div>
+          <div class="asi-perf-metrics" aria-live="polite">
+            <div class="asi-perf-stat"><span id="perfHostCpu">—</span><small id="perfHostCpuLabel">Host CPU</small></div>
+            <div class="asi-perf-stat"><span id="perfHostRam">—</span><small id="perfHostRamLabel">Host RAM</small></div>
+            <div class="asi-perf-stat"><span id="perfGuestCpu">—</span><small id="perfGuestCpuLabel">Emulator CPU</small></div>
+            <div class="asi-perf-stat"><span id="perfGuestRam">—</span><small id="perfGuestRamLabel">Emulator RAM</small></div>
+            <div class="asi-perf-stat"><span id="perfGuestFps">—</span><small id="perfGuestFpsLabel">Android frames/s*</small></div>
+            <div class="asi-perf-stat"><span id="perfGuestGpu">—</span><small id="perfGuestGpuLabel">GPU render mode</small></div>
+          </div>
+          <p class="asi-perf-note" id="perfMeterNote">Emulator CPU/RAM are shared across Android apps, not attributed to any single APK. GPU utilization is not measured. FPS is only available when Android gfxinfo returns recent frames.</p>
+          <div class="asi-perf-form">
+            <label for="perfAppSelect" id="perfAppLabel">App to optimize</label>
+            <select id="perfAppSelect"><option value="">No installed apps</option></select>
+            <label for="perfModeSelect" id="perfModeLabel">Per-app process preset</label>
+            <select id="perfModeSelect">
+              <option value="inherit">Use global mode</option>
+              <option value="save">Save resources</option>
+              <option value="balanced">Balanced</option>
+              <option value="smooth">Smooth / high process priority</option>
+            </select>
+          </div>
+          <div class="asi-perf-advice" id="perfAdvice" role="status">Measure twice for a recommendation. Settings are not changed automatically.</div>
+          <div class="asi-perf-control">
+            <button class="btn ghost sm" id="btnPerfSuggest" type="button" disabled>Choose suggested mode</button>
+            <button class="btn primary sm" id="btnPerfApply" type="button" disabled>Save per-app preset</button>
+          </div>
+          <p class="asi-perf-note" id="perfPrivacy">Sampling runs only while Performance Center is open and Start is enabled. No uploads, Android resets or automatic configuration changes.</p>
+        </section>
+
         <div class="field">
           <label>资源策略</label>
           <select id="setResourceMode">
@@ -405,6 +663,13 @@
         </div>
         <div class="field switch-field">
           <div>
+            <label>自动授予应用权限（不推荐）</label>
+            <span class="sub">关闭时由 Android 逐项询问应用权限。开启后会自动授予应用请求的普通运行时权限；特殊权限仍须用户手动允许。此选项仅适合可信任的 APK，关闭后不会撤销以前授予的权限。</span>
+          </div>
+          <input type="checkbox" id="setAutoGrantAppPermissions" class="switch" />
+        </div>
+        <div class="field switch-field">
+          <div>
             <label>中文输入法（推荐）</label>
             <span class="sub">镜像只带英文键盘，勾上会静默安装并启用随包的谷歌拼音输入法，
               这样在安卓应用里能直接打中文。关掉则保持系统原生输入法。</span>
@@ -413,8 +678,8 @@
         </div>
         <div class="field switch-field">
           <div>
-            <label>网络加速（推荐）</label>
-            <span class="sub">给安卓指定国内公共 DNS（阿里 / 腾讯）。安卓默认走主机的 DNS，主机挂着 VPN 或走公司网时解析会拖到几百毫秒，视频类应用首屏发慢。内网域名访问异常时可关掉。</span>
+            <label>使用中国大陆公共 DNS</label>
+            <span class="sub">默认使用主机的 DNS。开启后，安卓模拟器使用阿里和腾讯的公共 DNS 服务器。</span>
           </div>
           <input type="checkbox" id="setFastDns" class="switch" />
         </div>
@@ -783,7 +1048,7 @@
             </div>
           </div>
           <div class="about-info">
-            <div class="about-name">ApkStart <span class="about-ver" id="aboutVer"></span></div>
+            <div class="about-name">ApkStart International <span class="about-ver" id="aboutVer"></span></div>
             <p class="note">双击即装的 Windows 安卓应用启动器：APK 安装、桌面快捷方式、独立窗口运行、文件双向互通。</p>
             <div class="about-links">
               <a href="https://github.com/RoutineMiku/apkstart" target="_blank" rel="noopener">GitHub · RoutineMiku/apkstart</a>
@@ -802,5 +1067,13 @@
 </div>
 
 <script src="app.js"></script>
+<script src="i18n/catalogs.js"></script>
+<script src="i18n/translator.js"></script>
+<script src="i18n/bridge.js"></script>
+<script src="smartcheck.js"></script>
+<script src="auto-repair.js"></script>
+<script src="performance.js"></script>
+<script src="profiles-ui.js"></script>
+<script src="backup-ui.js"></script>
 </body>
 </html>

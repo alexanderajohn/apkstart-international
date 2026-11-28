@@ -17,6 +17,7 @@ const net = require('net');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { memoryLimits } = require('./resources');
+const { redactText, redactValue } = require('./diagnostic-privacy');
 
 const ASCII = /^[\x20-\x7e]*$/;
 const isAsciiPath = (p) => ASCII.test(String(p || ''));
@@ -65,6 +66,16 @@ function versionNumbers(v) {
  * 结果缓存 10 分钟，避免每次 chooseProfile 都 spawn wmic。
  */
 let _gpuVendorCache = { vendor: 'unknown', at: 0 };
+function gpuVendorFromNames(names) {
+  const lower = String(names).toLowerCase();
+  if (/nvidia|geforce|rtx\s|gtx\s/.test(lower)) return 'nvidia';
+  if (/(?<!virtual\s)(amd|radeon|rx\s\d)/.test(lower)) return 'amd';
+  if (/intel|uhd\s|iris|arc\s/.test(lower)) return 'intel';
+  const adapters=lower.trim().split(/[|\r\n]+/).filter(Boolean);
+  const basic=/microsoft (?:hyper-v video|basic display adapter|remote display adapter)/;
+  if (adapters.length && adapters.every(name=>basic.test(name))) return 'virtual';
+  return 'unknown';
+}
 function detectGpuVendor() {
   if (process.platform !== 'win32') return 'unknown';
   if (Date.now() - _gpuVendorCache.at < 600000) return _gpuVendorCache.vendor;
@@ -84,12 +95,7 @@ function detectGpuVendor() {
           { encoding: 'utf8', windowsHide: true, timeout: 5000 });
       } catch (__) { /* ignore */ }
     }
-    const lower = String(names).toLowerCase();
-    let vendor = 'unknown';
-    // 优先匹配独显（NVIDIA/AMD），虚拟显示适配器排在后面
-    if (/nvidia|geforce|rtx\s|gtx\s/.test(lower)) vendor = 'nvidia';
-    else if (/(?<!virtual\s)(amd|radeon|rx\s\d)/.test(lower)) vendor = 'amd';
-    else if (/intel|uhd\s|iris|arc\s/.test(lower)) vendor = 'intel';
+    const vendor = gpuVendorFromNames(names);
     _gpuVendorCache = { vendor, at: Date.now() };
     return vendor;
   } catch (_) {
@@ -109,13 +115,16 @@ function detectGpuVendor() {
  *   Intel：host 通常 OK，但集显性能弱时 swangle 更稳
  *   unknown：保持默认顺序
  */
-function gpuCandidates(emulatorVersion) {
+function gpuCandidates(emulatorVersion, vendor = detectGpuVendor()) {
   const [major, minor, patch] = versionNumbers(emulatorVersion);
   const modern = major > 36 || (major === 36 && (minor > 4 || (minor === 4 && patch >= 9)));
   const base = modern
     ? ['host', 'swangle', 'software', 'swiftshader']
     : ['host', 'swiftshader_indirect', 'swiftshader'];
-  const vendor = detectGpuVendor();
+  if (vendor === 'virtual') {
+    const software = modern ? 'software' : 'swiftshader_indirect';
+    return [software, ...base.filter(mode => mode !== software)];
+  }
   if (vendor === 'amd' && modern) {
     // AMD 驱动在某些版本下 host 模式会 GL 初始化失败，把 swangle 提到前面
     return ['swangle', 'host', 'software', 'swiftshader'];
@@ -325,7 +334,7 @@ function planVariants(profile) {
     accel: 'off',
     memoryMB: 2048,
     cores: 2,
-    dataMB: Math.min(profile.dataMB, 2048),
+    dataMB: profile.dataMB,
     label: '保守冷启动（最小内存 + 清快照）',
     // 这里**绝对不能** wipe：以前写的是 wipe:true，而磁盘写满时每次尝试都会失败，
     // 于是连续重试把用户已装的应用和存档一起「清快照 + 清数据」了 ——
@@ -338,13 +347,13 @@ function planVariants(profile) {
   });
   // 去重（相同 gpu/accel/wipe 组合不重复试）——但「最后一档」必须保留：
   // 它是唯一「不加载快照」的方案，小内存机器上可能和前一档参数完全一样。
-  const seen = new Set();
-  return out.filter((v) => {
-    const k = `${v.gpu}|${v.accel}|${!!v.wipe}|${v.memoryMB}|${v.snapshot !== false ? 'snap' : 'nosnap'}|${v.lastResort ? 'last' : ''}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+  const unique = new Map();
+  for (const plan of out) {
+    const key = [plan.gpu, plan.accel, plan.wipe, plan.memoryMB, plan.cores, plan.snapshot].join('|');
+    // Keep the final conservative plan when it matches an earlier fallback.
+    unique.set(key, plan);
+  }
+  return [...unique.values()];
 }
 
 /** 检测一对空闲端口（emulator console + adb 注册端口必须相邻偶数/奇数） */
@@ -533,28 +542,30 @@ function writeReport({ dataDir, profile, logLines = [], extra = {} }) {
   const file = path.join(dir, `diagnostic-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`);
   const d = diagnose(logLines);
   const body = [
-    'ApkStart 诊断报告',
+    'ApkStart International — Privacy-safe diagnostics',
+    'The report is saved locally and is NOT uploaded. Sensitive details are masked on a best-effort basis.',
+    'Review its contents before sharing. Some unusual secrets may not be detected.',
     `生成时间：${new Date().toLocaleString()}`,
     '',
     '== 本机 ==',
-    JSON.stringify(hostInfo(), null, 2),
+    JSON.stringify(redactValue(hostInfo()), null, 2),
     '',
     '== 自动配置 ==',
-    JSON.stringify(profile || {}, null, 2),
-    describeProfile(profile || chooseProfile()),
+    JSON.stringify(redactValue(profile || {}), null, 2),
+    redactText(describeProfile(profile || chooseProfile())),
     '',
     '== 诊断 ==',
     `${d.code}：${d.title}`,
     d.hint,
     '',
     '== 附加信息 ==',
-    JSON.stringify(extra, null, 2),
+    JSON.stringify(redactValue(extra), null, 2),
     '',
     '== 运行时日志（末尾 300 行）==',
-    ...(Array.isArray(logLines) ? logLines.slice(-300) : String(logLines || '').split('\n')),
+    ...(Array.isArray(logLines) ? logLines.slice(-300) : String(logLines || '').split('\n')).map((line) => redactText(line)),
   ].join('\n');
   fs.writeFileSync(file, body, 'utf8');
-  return { file, diagnosis: d };
+  return { file, diagnosis: d, privacy: 'best-effort-redacted' };
 }
 
 /**
@@ -587,7 +598,7 @@ function vcRedistOk() {
 
 module.exports = {
   hostInfo, freeDiskMB, isAsciiPath, shortPath, lcdFor, liteProfile,
-  versionNumbers, gpuCandidates, detectGpuVendor, chooseProfile, planVariants,
+  versionNumbers, gpuCandidates, detectGpuVendor, gpuVendorFromNames, chooseProfile, planVariants,
   overridesFromSettings, autoProfile,
   freePortPair, freeAdbPort, snapshotKey, imageIdentity,
   diagnose, describeProfile, writeReport, vcRedistOk,

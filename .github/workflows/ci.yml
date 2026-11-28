@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/international-foundation]
   pull_request:
   workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -32,6 +36,31 @@ jobs:
       - name: 运行测试
         run: npm test
 
+      - name: Check independent fork metadata
+        run: npm run audit:international
+
+      - name: Run internationalization and fork-safety tests
+        run: npm run test:international
+
+      - name: Check Pass 18 runtime modules and renderer syntax
+        shell: pwsh
+        run: |
+          node --check src/core/runtime-readiness.js
+          node --check scripts/asi/live-runtime-smoke.cjs
+          node --check src/ui/profiles-ui.js
+
+      - name: Check manual live-emulator harness without touching Android
+        run: npm run test:runtime:live -- --help
+
+      - name: Verify generated locale bundles are committed
+        shell: pwsh
+        run: |
+          npm run i18n:build
+          if (git status --porcelain -- src/ui/i18n/catalogs.js) {
+            Write-Error "Localization bundle is stale. Run npm run i18n:build and commit catalogs.js."
+            exit 1
+          }
+
       # 直接驱动 agent.ps1 内嵌 C# 的钩子回调，防止键位映射被改坏
       - name: 鼠标钩子逻辑冒烟测试
         shell: powershell
@@ -40,3 +69,213 @@ jobs:
           $out = & .\test\pointer-hook-logic.ps1
           $out | ForEach-Object { Write-Host $_ }
           if (-not ($out -contains 'POINTER_HOOK_LOGIC_OK')) { exit 1 }
+
+  preview:
+    name: Build Windows developer preview (no Android runtime)
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/feature/international-foundation'
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install Electron build dependencies
+        run: npm ci
+      - name: Generate dependency and license inventory
+        shell: pwsh
+        run: |
+          npm sbom --package-lock-only --sbom-format=cyclonedx | Out-File -Encoding utf8 sbom.cdx.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $bom = Get-Content -Raw sbom.cdx.json | ConvertFrom-Json
+          $electron = (Get-Content -Raw node_modules/electron/package.json | ConvertFrom-Json).version
+          if (!($bom.components | Where-Object { $_.name -eq 'electron' -and $_.version -eq $electron })) { throw 'Shipped Electron is missing from SBOM' }
+      - name: Install pinned Electron for Windows packaging
+        run: npm exec --offline -- install-electron
+      - name: Package Windows portable preview with a local-only engine fixture
+        shell: pwsh
+        run: |
+          $fixture = New-Item -ItemType Directory -Path (Join-Path 'engine' ([guid]::NewGuid().ToString('N')))
+          'local fixture' | Set-Content -LiteralPath (Join-Path $fixture.FullName 'image.bin')
+          npm run pack
+      - name: Verify portable executable and bundled code
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD 'dist/ApkStart-International-win64-portable'
+          $exe = Join-Path $root 'ApkStart International.exe'
+          if (!(Test-Path $exe)) { throw "Portable EXE not produced: $exe" }
+          $ui = Join-Path $root 'resources/app/src/ui/index.html'
+          if (!(Test-Path $ui)) { throw "Renderer files missing: $ui" }
+          $app = Join-Path $root 'resources/app'
+          $engineFiles = @(Get-ChildItem -LiteralPath (Join-Path $app 'engine') -Force)
+          if ($engineFiles.Count -ne 1 -or $engineFiles[0].Name -cne 'README.md') { throw 'Unexpected bundled engine contents' }
+          foreach ($file in @('LICENSE', 'CREDITS.md', 'engine/README.md')) {
+            if ((Get-FileHash -LiteralPath (Join-Path $app $file)).Hash -ne (Get-FileHash -LiteralPath $file).Hash) {
+              throw "Bundled file differs from the source: $file"
+            }
+          }
+          Write-Host "Preview built at $exe"
+      - name: Smoke-run SmartCheck with synthetic APK (no Android provisioning)
+        continue-on-error: false
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          $env:APPDATA = Join-Path $env:RUNNER_TEMP 'asi-preview-appdata'
+          $data = Join-Path $env:APPDATA 'apkstart-international'
+          New-Item -ItemType Directory -Force -Path $data | Out-Null
+          '{"autoDeploy":false,"autoStart":false,"welcome":{"disabled":true},"engine":{"prewarm":false,"chineseIme":false}}' | Set-Content -Encoding utf8 (Join-Path $data 'settings.json')
+          $exe = Join-Path $PWD 'dist/ApkStart-International-win64-portable/ApkStart International.exe'
+          $shot = Join-Path $env:RUNNER_TEMP 'asi-preview-smoke.png'
+          $env:ASI_SMARTCHECK_FIXTURE = Join-Path $env:RUNNER_TEMP 'asi-smartcheck-synthetic.apk'
+          node -e "const fs=require('fs'); const { buildApkBytes }=require('./test/lib/make-apk'); fs.writeFileSync(process.env.ASI_SMARTCHECK_FIXTURE,buildApkBytes({permissions:['android.permission.CAMERA','android.permission.INTERNET']}));"
+          $p = Start-Process -FilePath $exe -ArgumentList @('--smoke', $shot, '--smartcheck', '--auto-repair', '--smart-performance', '--profiles', '--backup') -PassThru
+          if (-not $p.WaitForExit(130000)) {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            throw 'UI smoke timed out (Windows CI may not provide a desktop session)'
+          }
+          if ($p.ExitCode -ne 0) {
+            Get-Content -LiteralPath (Join-Path $data 'logs/app.log') -Tail 30 -ErrorAction SilentlyContinue
+            throw "Packaged smoke exited with $($p.ExitCode)"
+          }
+          if (!(Test-Path $shot)) { throw 'No UI smoke screenshot was saved' }
+          Copy-Item $shot (Join-Path $PWD 'asi-preview-smoke.png') -Force
+          $arShot = $shot -replace '\.png$', '-auto-repair.png'
+          if (!(Test-Path $arShot)) { throw 'Auto-Repair screenshot was not saved' }
+          Copy-Item $arShot (Join-Path $PWD 'asi-auto-repair-smoke.png') -Force
+          $perfShot = $shot -replace '\.png$', '-smart-performance.png'
+          if (!(Test-Path $perfShot)) { throw 'Smart Performance screenshot was not saved' }
+          Copy-Item $perfShot (Join-Path $PWD 'asi-smart-performance-smoke.png') -Force
+          $profilesShot = $shot -replace '\.png$', '-profiles.png'
+          if (!(Test-Path $profilesShot)) { throw 'Android Profiles screenshot was not saved' }
+          Copy-Item $profilesShot (Join-Path $PWD 'asi-profiles-smoke.png') -Force
+          $backupShot = $shot -replace '\.png$', '-backup.png'
+          if (!(Test-Path $backupShot)) { throw 'Backup Center screenshot was not saved' }
+          Copy-Item $backupShot (Join-Path $PWD 'asi-backup-smoke.png') -Force
+          $recoveryShot = $shot -replace '\.png$', '-recovery.png'
+          if (!(Test-Path $recoveryShot)) { throw 'Recovery Vault screenshot was not saved' }
+          Copy-Item $recoveryShot (Join-Path $PWD 'asi-recovery-smoke.png') -Force
+          $sealedShot = $shot -replace '\.png$', '-sealed.png'
+          if (!(Test-Path $sealedShot)) { throw 'Encrypted Safety Vault screenshot was not saved' }
+          Copy-Item $sealedShot (Join-Path $PWD 'asi-sealed-smoke.png') -Force
+          $retentionShot = $shot -replace '\.png$', '-retention.png'
+          if (!(Test-Path $retentionShot)) { throw 'Safety Retention screenshot was not saved' }
+          Copy-Item $retentionShot (Join-Path $PWD 'asi-retention-smoke.png' ) -Force
+          $healthShot = $shot -replace '\.png$', '-health.png'
+          if (!(Test-Path $healthShot)) { throw 'Disaster health screenshot was not saved' }
+          Copy-Item $healthShot (Join-Path $PWD 'asi-health-smoke.png') -Force
+          $readinessShot = $shot -replace '\.png$', '-drill-readiness.png'
+          if (!(Test-Path $readinessShot)) { throw 'Restore readiness preview screenshot was not saved' }
+          Copy-Item $readinessShot (Join-Path $PWD 'asi-drill-readiness-smoke.png') -Force
+          $drillShot = $shot -replace '\.png$', '-drill.png'
+          if (!(Test-Path $drillShot)) { throw 'Isolated restore drill screenshot was not saved' }
+          Copy-Item $drillShot (Join-Path $PWD 'asi-drill-smoke.png') -Force
+          $auditShot = $shot -replace '\.png$', '-audit.png'
+          if (!(Test-Path $auditShot)) { throw 'Recovery Audit Trail screenshot was not saved' }
+          Copy-Item $auditShot (Join-Path $PWD 'asi-audit-smoke.png') -Force
+          $signedShot = $shot -replace '\.png$', '-signed.png'
+          if (!(Test-Path $signedShot)) { throw 'Signed checkpoint verification screenshot was not saved' }
+          Copy-Item $signedShot (Join-Path $PWD 'asi-signed-smoke.png') -Force
+      - name: Verify the packaged smoke reports a missing APK fixture
+        shell: pwsh
+        run: |
+          $env:APPDATA = Join-Path $env:RUNNER_TEMP 'asi-negative-smoke-appdata'
+          $data = Join-Path $env:APPDATA 'apkstart-international'
+          New-Item -ItemType Directory -Path $data | Out-Null
+          '{"autoDeploy":false,"autoStart":false,"welcome":{"disabled":true},"engine":{"prewarm":false}}' | Set-Content -Encoding utf8 (Join-Path $data 'settings.json')
+          $env:ASI_SMARTCHECK_FIXTURE = Join-Path $data 'absent.apk'
+          $shot = Join-Path $env:RUNNER_TEMP 'asi-negative-smoke.png'
+          $exe = Join-Path $PWD 'dist/ApkStart-International-win64-portable/ApkStart International.exe'
+          $p = Start-Process -FilePath $exe -ArgumentList @('--smoke', $shot, '--smartcheck') -PassThru
+          if (!$p.WaitForExit(90000)) { $p.Kill(); throw 'Expected failure smoke timed out' }
+          $entry = Select-String -LiteralPath (Join-Path $data 'logs/app.log') -SimpleMatch 'SmartCheck fixture missing'
+          if ($p.ExitCode -ne 1 -or !$entry -or (Test-Path -LiteralPath $shot)) {
+            throw 'Packaged smoke did not report the missing fixture correctly'
+          }
+      - name: Open signed APK from the Windows shell and cancel native approval
+        shell: powershell
+        env:
+          ASI_RUNNER_KIND: ${{ runner.environment }}
+        run: |
+          ./scripts/asi/windows-shell-smoke.ps1 -Executable 'dist/ApkStart-International-win64-portable/ApkStart International.exe'
+      - name: Build unsigned Windows Setup from the smoke-tested portable tree
+        run: npm run pack:setup
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Read and recheck the complete candidate inventory
+        shell: pwsh
+        env:
+          HEAD_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $portable = 'dist/ApkStart-International-win64-portable'
+          node scripts/asi/candidate-files.cjs create $portable candidate-files.json $env:HEAD_REVISION
+          if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
+          node scripts/asi/candidate-files.cjs verify $portable candidate-files.json $env:HEAD_REVISION
+          if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
+      - name: Resolve verified Pass 27 Setup for upgrade and rollback
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ./scripts/asi/previous-setup.ps1 -Revision 'c6fb2268bb03681a349a6d8bb788431d002a190c'
+      - name: Install, upgrade, roll back and uninstall with a disposable Profile
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        shell: pwsh
+        run: |
+          $setup = @(Get-ChildItem 'dist/release/*-Setup.exe')
+          if ($setup.Count -ne 1) { throw 'Expected one Setup executable' }
+          ./scripts/asi/setup-smoke.ps1 -Setup $setup[0].FullName -PreviousSetup $env:ASI_PREVIOUS_SETUP
+      - name: Create and validate the Setup download manifests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = @(Get-ChildItem -File 'dist/release/*-Setup.exe')
+          if ($setup.Count -ne 1) { throw 'Expected one tested Setup executable' }
+          $hash = (Get-FileHash $setup[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = "$hash  $($setup[0].Name)"
+          $expected | Set-Content -Encoding ascii dist/release/SHA256SUMS
+          if ((Get-Content -Raw dist/release/SHA256SUMS).Trim() -cne $expected) { throw 'Setup checksum missing or mismatched' }
+          foreach ($manifest in @('sbom.cdx.json','candidate-files.json')) {
+              if ((Get-Item -LiteralPath $manifest).Length -le 0) { throw "Empty manifest: $manifest" }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ApkStart-International-Windows-Setup-preview
+          path: |
+            dist/release/*-Setup.exe
+            dist/release/SHA256SUMS
+            sbom.cdx.json
+            candidate-files.json
+          if-no-files-found: error
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ApkStart-International-Windows-dev-preview
+          path: dist/ApkStart-International-win64-portable/
+          retention-days: 3
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ApkStart-International-smoke-screenshot
+          path: |
+            asi-preview-smoke.png
+            asi-auto-repair-smoke.png
+            asi-smart-performance-smoke.png
+            asi-profiles-smoke.png
+            asi-backup-smoke.png
+            asi-recovery-smoke.png
+            asi-sealed-smoke.png
+            asi-retention-smoke.png
+            asi-health-smoke.png
+            asi-drill-readiness-smoke.png
+            asi-drill-smoke.png
+            asi-audit-smoke.png
+            asi-signed-smoke.png
+          retention-days: 3
+          if-no-files-found: ignore

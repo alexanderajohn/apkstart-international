@@ -19,9 +19,9 @@ const http = require('http');
 const { URL } = require('url');
 const { cmpVer } = require('./version');
 
-const OWNER_GH = 'RoutineMiku';
+const OWNER_GH = 'alexanderajohn';
 const OWNER_GITEE = 'daily-miku';
-const REPO = 'apkstart';
+const REPO = 'apkstart-international';
 
 const SOURCES = {
   github: {
@@ -286,7 +286,8 @@ class Sources {
 
   async fetchReleases() {
     const prefs = String((this.settings().runtime || {}).sourcePreference || 'auto');
-    const ids = prefs === 'github' || prefs === 'gitee' ? [prefs] : ['github', 'gitee'];
+    // The international fork has no Gitee release mirror. Never fetch upstream Gitee assets.
+    const ids = ['github'];
     // 公开仓库的 releases 接口匿名就能读；仓库若是私有的，Gitee 会回 404
     // "Not Found Project"（而不是 401），那种情况才需要在这里填一个只读 token。
     // 另外匿名调用有频率限制，感兴趣的用户可以填 token 提高额度。

@@ -149,7 +149,7 @@ class AppWindow {
     // 独立窗口模式下「全屏」要作用在模拟器窗口上（我们这层壳是隐藏的，
     // maximize 一个隐藏窗口没有任何视觉效果，openDetached 会读这个标记）。
     this._wantFullscreen = !!fullscreen;
-    this.state = { label: label || '应用', tip: '正在启动安卓运行时…', ready: false, landscape: false };
+    this.state = { locale:o.locale || 'en', maximized:false, label: label || '应用', tip: '正在启动安卓运行时…', ready: false, landscape: false };
 
     const area = this._area();
     const size = AppWindow.sizeFor(area, this.portrait, false);
@@ -177,7 +177,7 @@ class AppWindow {
         preload: path.join(__dirname, '..', 'preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false,
+        sandbox: true,
         spellcheck: false,
         backgroundThrottling: false,
       },
@@ -207,8 +207,8 @@ class AppWindow {
     const refit = () => this.scheduleFit(6);
     this.win.on('resize', refit);
     this.win.on('move', refit);
-    this.win.on('maximize', refit);
-    this.win.on('unmaximize', refit);
+    this.win.on('maximize', () => { this.setState({maximized:true}); refit(); });
+    this.win.on('unmaximize', () => { this.setState({maximized:false}); refit(); });
     this.win.on('restore', () => {
       this.agent.show().catch(() => {});
       this.scheduleFit(6);
@@ -216,6 +216,8 @@ class AppWindow {
     this.win.on('minimize', () => { this.agent.hide().catch(() => {}); });
     this.win.on('close', () => { this._closing = true; });
     this.win.on('closed', () => {
+      clearTimeout(this._fitTimer);
+      this._fitTimer = null;
       if (this._selfClose) return;   // close() 自己在 park 完成后收尾
       this.win = null;
       const pkg = this.pkg;
@@ -440,8 +442,12 @@ class AppWindow {
   scheduleFit(rounds = 1) {
     if (!this.isOpen) return;
     if (this._fitTimer) clearTimeout(this._fitTimer);
+    const win = this.win;
+    const epoch = this._fitEpoch = (this._fitEpoch || 0) + 1;
     const run = async (left) => {
+      if (this.win !== win || !this.isOpen || epoch !== this._fitEpoch) return;
       await this.fitNow().catch(() => {});
+      if (this.win !== win || !this.isOpen || epoch !== this._fitEpoch) return;
       if (left > 1) {
         this._fitTimer = setTimeout(() => run(left - 1), 160);
       } else {

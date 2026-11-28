@@ -30,3 +30,9 @@ tools/platform-tools/*.dll
 
 # 商店截图脚本的中间产物（可随时重生成）
 docs/store-shots/raw-*.png
+
+# ApkStart International
+.env
+.env.*
+!*.example
+src/ui/i18n/.cache/

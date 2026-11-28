@@ -389,7 +389,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg || '断言失败'); 
   console.log('\n[provision.js 兼容镜像 / 完整版]');
 
   await test('playImageInfo 校验 API 34 兼容镜像完整性', async () => {
-    const dir = path.join(TMP, 'apkstart', 'runtime', 'system-images', 'android-34', 'google_apis_playstore', 'x86_64');
+    const dir = path.join(store.DATA_DIR, 'runtime', 'system-images', 'android-34', 'google_apis_playstore', 'x86_64');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'kernel-ranchu'), 'k');
     const prov = new Provisioner(path.join(__dirname, '..'));

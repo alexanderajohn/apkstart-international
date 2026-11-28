@@ -1,0 +1,46 @@
+name: Publish the approved RC1 Developer Preview
+on:
+  push:
+    branches: [feature/international-foundation]
+    paths: ['docs/preview/releases/v1.0.0-rc.1.md']
+permissions: {}
+jobs:
+  publish:
+    if: github.repository == 'alexanderajohn/apkstart-international' && github.ref == 'refs/heads/feature/international-foundation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Publish the tested commit as a prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=v1.0.0-rc.1
+          target=2df10a0ab7141b7e214c5c15b40f826963ef7ab1
+          kit_digest=sha256:b1bb9365acc114376a9a5a2bc8e84486ab32e8e8129e028e7998f83b53eeceb1
+          notes="$RUNNER_TEMP/preview-notes.md"
+          gh api "repos/$GH_REPO/compare/$target...$GITHUB_SHA" |
+            jq -e '.status == "ahead" or .status == "identical"' >/dev/null
+          gh api "repos/$GH_REPO/actions/artifacts/15245219964" |
+            jq -e --arg d "$kit_digest" '.expired == false and .digest == $d and .workflow_run.id == 46101642590' >/dev/null
+          gh api "repos/$GH_REPO/contents/docs/preview/releases/$tag.md?ref=$GITHUB_SHA" --jq '.content' | base64 -d > "$notes"
+          test -s "$notes"
+          tag_sha=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$tag" | jq -r --arg r "refs/tags/$tag" '.[] | select(.ref == $r) | .object.sha')
+          if [[ -n "$tag_sha" && "$tag_sha" != "$target" ]]; then
+            echo 'An existing tag targets another object.'
+            exit 1
+          fi
+          if gh release view "$tag" --json isPrerelease,isDraft > "$RUNNER_TEMP/existing-release.json" 2>/dev/null; then
+            test "$tag_sha" = "$target"
+            jq -e '.isPrerelease and (.isDraft | not)' "$RUNNER_TEMP/existing-release.json" >/dev/null
+            exit 0
+          fi
+          gh release create "$tag" --target "$target" --prerelease --latest=false \
+            --title 'ApkStart International 1.0.0-rc.1 — Windows Developer Preview' --notes-file "$notes"
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq .object.sha)" = "$target"
+          gh release view "$tag" --json url,isPrerelease,isDraft | jq -e 'select(.isPrerelease and (.isDraft | not)) | .url'

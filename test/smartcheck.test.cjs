@@ -1,0 +1,139 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const { inspectApk, assessCompatibility } = require('../src/core/smartcheck');
+const { buildApkBytes } = require('./lib/make-apk');
+
+async function withApk(bytes, fn) {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'asi-smartcheck-'));
+  const filename = path.join(folder, 'example.apk');
+  try {
+    fs.writeFileSync(filename, bytes);
+    await fn(filename);
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+}
+
+test('SmartCheck scans an APK locally, hashes it and extracts manifest permissions', async () => {
+  const bytes = buildApkBytes({ permissions: [
+    'android.permission.CAMERA', 'android.permission.INTERNET',
+    'android.permission.RECORD_AUDIO',
+  ] });
+  await withApk(bytes, async (file) => {
+    const result = await inspectApk(file);
+    assert.equal(result.package, 'com.example.test');
+    assert.equal(result.minSdk, 21);
+    assert.equal(result.targetSdk, 34);
+    assert.deepEqual(result.abis, ['arm64-v8a']);
+    assert.deepEqual(result.permissions, [
+      'android.permission.CAMERA', 'android.permission.INTERNET',
+      'android.permission.RECORD_AUDIO',
+    ]);
+    assert.equal(result.sensitivePermissions.length, 2);
+    assert.equal(result.sha256, crypto.createHash('sha256').update(bytes).digest('hex'));
+    assert.equal(result.signing.verified, false);
+    assert.equal(result.compatibility.level, 'caution');
+    assert.ok(result.compatibility.findings.includes('ARM_TRANSLATION_REQUIRED'));
+    assert.ok(result.canProceed);
+    assert.equal(result.fileName, 'example.apk');
+    assert.equal(result.filePath, undefined, 'Do not send local paths to renderer');
+    assert.equal(result.iconPng, undefined, 'Do not send large PNG buffers to renderer');
+  });
+});
+
+test('Min SDK above Android 14 blocks install by default', async () => {
+  await withApk(buildApkBytes({ minSdk: 35, targetSdk: 35, abis: ['x86_64'] }), async (file) => {
+    const result = await inspectApk(file);
+    assert.equal(result.compatibility.level, 'blocked');
+    assert.ok(result.compatibility.findings.includes('MIN_SDK_ABOVE_RUNTIME'));
+    assert.equal(result.canProceed, false);
+  });
+});
+
+test('A package with matching x86_64 native libraries has no static ABI blocker', async () => {
+  await withApk(buildApkBytes({ abis: ['x86_64'] }), async (file) => {
+    const result = await inspectApk(file);
+    assert.equal(result.compatibility.level, 'ready');
+    assert.deepEqual(result.permissions, []);
+    assert.equal(result.signing.evidence, 'not-detected');
+    assert.equal(result.signing.verified, false);
+  });
+});
+
+test('Signature artifact is evidence only, not cryptographic validation', async () => {
+  await withApk(buildApkBytes({
+    abis: ['x86_64'],
+    extraEntries: [{ name: 'META-INF/CERT.RSA', data: Buffer.from('fake-not-a-certificate') }],
+  }), async (file) => {
+    const result = await inspectApk(file);
+    assert.equal(result.signing.evidence, 'v1-certificate-files');
+    assert.equal(result.signing.verified, false);
+  });
+});
+
+test('Old target SDK is a warning, not a malware or binary safety verdict', () => {
+  const result = assessCompatibility({
+    minSdk: 19, targetSdk: 21, abis: [], sensitivePermissions: [], features: [],
+  });
+  assert.equal(result.level, 'caution');
+  assert.ok(result.findings.includes('OLD_OR_UNKNOWN_TARGET_SDK'));
+});
+
+test('split review requires one base and consistent versions, regardless of entry order', async () => {
+  const { buildStoredZip, buildApkBytes } = require('./lib/make-apk');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(),'asi-bundle-'));
+  const file = path.join(dir,'app.apks');
+  const write = (split,versionCode) => fs.writeFileSync(file, buildStoredZip([
+    {name:'first.apk',data:buildApkBytes({split,versionCode, permissions:['android.permission.CAMERA']})},
+    {name:'second.apk',data:buildApkBytes()}
+  ]));
+  try {
+    write('config.en',7);
+    const result = await inspectApk(file);
+    assert.equal(result.package,'com.example.test');
+    assert.equal(result.splitDigests.length,2);
+    assert.ok(result.sensitivePermissions.includes('android.permission.CAMERA'));
+    write('config.en',8); await assert.rejects(inspectApk(file),/version/);
+    write(null,7); await assert.rejects(inspectApk(file),/one base/);
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test('Unreadable file names, wrong extensions and tiny files are rejected', async () => {
+  await assert.rejects(() => inspectApk('/tmp/random.txt'), /Please select/);
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'asi-invalid-check-'));
+  try {
+    const filename = path.join(folder, 'tiny.apk');
+    fs.writeFileSync(filename, Buffer.from('not an apk'));
+    await assert.rejects(() => inspectApk(filename), /not a valid Android package/);
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+
+test('GUI installs are guarded by a user-approved SmartCheck modal', () => {
+  const main = fs.readFileSync(path.join(__dirname, '../src/main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '../src/preload.js'), 'utf8');
+  const ui = fs.readFileSync(path.join(__dirname, '../src/ui/app.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../src/ui/index.html'), 'utf8');
+  const dialog = fs.readFileSync(path.join(__dirname, '../src/ui/smartcheck.js'), 'utf8');
+  assert.ok(main.includes("ipcMain.handle('apk:inspect'"));
+  assert.ok(preload.includes("smartCheck: (p) => invoke('apk:inspect', p)"));
+  assert.ok(ui.includes('await window.ASI_SMARTCHECK.confirm(p)'));
+  assert.ok(ui.indexOf('await window.ASI_SMARTCHECK.confirm(p)') < ui.indexOf('const r = await api.installApk(p)'));
+  for (const id of ['smartCheckMask', 'smartCheckStatus', 'smartCheckProceed', 'smartCheckCancel']) {
+    assert.ok(html.includes('id="' + id + '"'), id);
+  }
+  assert.ok(html.includes('<script src="smartcheck.js"></script>'));
+  assert.ok(dialog.includes('proceed.disabled=true'));
+  assert.ok(dialog.includes('report.canProceed!==true'));
+  assert.ok(dialog.includes('finish(true)'), 'Approval must require explicit user input');
+  assert.ok(dialog.includes('textContent'), 'Show strings as text, not arbitrary HTML');
+  assert.ok(dialog.includes("'zh-CN':"), 'Chinese translation should be present');
+  assert.ok(dialog.includes('vi:'), 'Vietnamese translation should be present');
+});

@@ -3,15 +3,50 @@
  * ApkStart 主进程
  * 职责：窗口 / 托盘 / 单实例 / 命令行分发（双击 apk、桌面快捷方式启动）/ IPC
  */
-const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, shell, nativeImage, screen, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain: electronIpc, dialog, Tray, Menu, shell, nativeImage, screen, globalShortcut } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
+const {authorizeSender,externalWebUrl} = require('./core/ipc-origin');
+function trustedHandler(channel, listener) {
+  return (event, ...args) => {
+    authorizeSender(event, channel, {index:mainWindow, shell:appWin?.win, splash:splashWin});
+    return listener(event,...args);
+  };
+}
+const ipcMain = {
+  handle(channel,listener){electronIpc.handle(channel,trustedHandler(channel,listener));},
+  on(channel,listener){electronIpc.on(channel,(event,...args)=>{
+    try { trustedHandler(channel,listener)(event,...args); } catch(error) { appLog(error.message); }
+  });},
+};
+
 const store = require('./core/store');
 const { Runtime } = require('./core/engine');
+const { inspectRuntime } = require('./core/runtime-readiness');
+const { PerformanceMonitor } = require('./core/performance-monitor');
+const { BackupCenter } = require('./core/backup-center');
+const { EncryptedBackupCenter, validatePassword } = require('./core/encrypted-backup');
+const { RecoveryVault } = require('./core/recovery-vault');
+const { SafetyRetention } = require('./core/safety-retention');
+const { DisasterHealth } = require('./core/disaster-health');
+const { RestoreDrill } = require('./core/restore-drill');
+const { RecoveryAudit, causeCode } = require('./core/recovery-audit');
+const { AuditSigning } = require('./core/audit-signing');
+const { SigningKeyManagement } = require('./core/signing-key-management');
+const { TrustLifecycle } = require('./core/trust-lifecycle');
+const { signedExport,verifySignedFile,exportRotationCheckpoint,verifyCheckpointFile } = require('./core/trust-hardening');
+const { SafeKeyQuarantine } = require('./core/safe-key-quarantine');
+const performance = require('./core/performance');
+const { validPackageName } = require('./core/pkgname');
+const { shortcutProfile, shortcutLaunch, shortcutIdentity } = require('./core/shortcut-profile');
 const { Installer } = require('./core/installer');
-const { Sharer } = require('./core/sharer');
+const { Sharer, checkShareFolder, plainPath } = require('./core/sharer');
 const { parseApk } = require('./core/apk');
+const { inspectApk } = require('./core/smartcheck');
+const { prepareInstall } = require('./core/apk-install-guard');
+const { installConfirmation } = require('./core/install-confirmation');
+const { withApprovedCopy } = require('./core/install-staging');
 const { drawAppIcon } = require('./core/png');
 
 // 品牌 Logo（build/render-logo.js 生成）；缺失时回退到程序化绘制的旧版图标
@@ -102,7 +137,7 @@ process.on('unhandledRejection', (e) => appLog(`REJECT ${e && (e.stack || e.mess
 
 /**
  * 完整版（内置运行时）自动接管：
- * 发行包里 ApkStart.exe 旁边带有 runtime/（emulator + platform-tools + AEHD + ARM 兼容镜像）。
+ * 发行包里 ApkStart International.exe 旁边带有 runtime/（emulator + platform-tools + AEHD + ARM 兼容镜像）。
  * 首次启动（settings.json 尚不存在）时直接把 runtime.dir 指向它并开启兼容模式，
  * 用户无需任何下载与设置，开箱即用。之后用户仍可在设置里改回在线版。
  */
@@ -213,12 +248,24 @@ const ICON_PNG = loadBrandIcon().toPNG();
 let mainWindow = null;
 let tray = null;
 let runtime = null;
+let performanceMonitor = null;
+let backupCenter = null;
+let encryptedBackupCenter = null;
+let recoveryVault = null;
+let safetyRetention = null;
+let disasterHealth = null;
+let restoreDrill = null;
+let recoveryAudit = null;
+let auditSigning = null;
+let backupBusy = false;
+let backupActiveCount = 0;
 // 「哪些窗口算我们的」由 whenReady 里赋值（见 agentScope）。放模块级是因为
 // runLaunch / 预热定时器都早于那段代码定义，闭包里的 const 在它们的作用域外看不到。
 let armAgent = async () => ({ ok: false });
 let installer = null;
 let sharer = null;
 let quitting = false;
+let smokeExitCode = 0;
 let winAgent = null;
 let appWin = null;
 let notifier = null;
@@ -247,14 +294,10 @@ let splashDone = () => {};
 
 function parseArgs(argv) {
   const args = argv.slice(IS_DEV ? 2 : 1).filter((a) => !a.startsWith('--allow-file-access'));
-  const out = { apk: null, launch: null, silent: false };
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '--launch') {
-      // Electron 会往 argv 里塞自己的开关和 app 路径，只认形如 com.foo.bar 的包名
-      const v = args.slice(i + 1).find((x) => x && /^[a-zA-Z][\w]*(\.[\w]+)+$/.test(x));
-      if (v) { out.launch = v; out.silent = true; }
-    } else if (a === '--silent' || a === '--autostart') out.silent = true;
+  const launch = shortcutLaunch(args);
+  const out = { apk: null, launch, profile:shortcutProfile(args), silent:Boolean(launch) };
+  for (const a of args) {
+    if (a === '--silent' || a === '--autostart') out.silent = true;
     else if (/\.(apk|xapk|apks)$/i.test(a) && !a.startsWith('--')) out.apk = a;
   }
   return out;
@@ -306,7 +349,7 @@ function displaySettings() { return store.getSettings().display || {}; }
  * Windows 任务栏 / 通知的身份。
  *
  * 为什么要按应用切换：每个安卓应用的桌面快捷方式都写了自己的 AUMID
- * （`RoutineMiku.ApkStart.<包名>`，见 installer.createShortcut），而且快捷方式的
+ * （`ApkStartInternational.Desktop.<包名>`，见 installer.createShortcut），而且快捷方式的
  * 图标是**那个应用自己的图标**。Windows 只有在「运行进程的 AUMID == 快捷方式的
  * AUMID」时，才会把正在运行的窗口和任务栏固定项合并成同一个按钮、并沿用快捷方式
  * 的图标。身份对不上就会出现「固定项是应用图标、任务栏上却另起一个 ApkStart 图标」。
@@ -315,7 +358,7 @@ function displaySettings() { return store.getSettings().display || {}; }
  * 一个进程跑多个应用的壳层就是这么做的）。这里只在开窗口之前切，且全程 try/catch ——
  * 万一某个 Windows 版本忽略它，也只是退化成按 exe 图标显示，不影响功能。
  */
-const APP_AUMID = 'RoutineMiku.ApkStart';
+const APP_AUMID = 'ApkStartInternational.Desktop';
 function setAumid(id) {
   try { app.setAppUserModelId(String(id || APP_AUMID).slice(0, 128)); } catch (_) { /* 非 Windows 或旧版本忽略 */ }
 }
@@ -431,7 +474,7 @@ async function restartForOrientation(landscape, { reloadApp = true } = {}) {
     if (reloadApp && pkg) {
       const app = store.getApp(pkg);
       if (app) {
-        await rt.client.install(app.apkPath).catch(() => {});
+        if (!await rt.client.isInstalled(pkg)) throw Error('Reinstall the missing package through SmartCheck');
         await rt.client.startApp(app.package, app.activity, {}).catch(() => {});
       }
       await new Promise((r) => setTimeout(r, 1500));
@@ -459,12 +502,7 @@ async function attachAppWindow() {
     // 独立窗口不需要标题栏里那块区域了，直接让模拟器窗口自己露出来
     return appWin.openDetached().catch(() => false);
   }
-  const ok = await appWin.embed().catch(() => false);
-  if (!ok) {
-    setTimeout(() => { if (appWin.isOpen) appWin.embed().catch(() => {}); }, 1500);
-    setTimeout(() => { if (appWin.isOpen) appWin.embed().catch(() => {}); }, 4000);
-  }
-  return ok;
+  return appWin.embed().catch(() => false);
 }
 
 /**
@@ -510,8 +548,9 @@ async function openAppWindow(pkg, tip) {
   const splashVisible = !!(splashWin && !splashWin.isDestroyed());
   const label = (rec && rec.label) || pkg;
   // 先把这个应用的身份切过去，再开窗口：任务栏才会沿用快捷方式里那个应用的图标
-  setAumid(`${APP_AUMID}.${pkg}`);
+  setAumid(shortcutIdentity(pkg,store.profiles.currentId()).aumid);
   appWin.open({
+    locale:store.getSettings().uiLocale || app.getLocale(),
     pkg,
     label,
     iconPath: rec && rec.icoPath,
@@ -561,7 +600,7 @@ async function toggleDisplayMode() {
 /** 首次运行把 adb / emulator / 系统镜像一次装完，不再分 1~5 步 */
 let deploying = false;
 async function autoDeploy({ force = false } = {}) {
-  if (deploying || !store.getSettings().autoDeploy) return { ok: false, error: 'skipped' };
+  if (backupBusy || deploying || !store.getSettings().autoDeploy) return { ok: false, error: 'skipped' };
   // 下载失败冷却：以前只要 checkEnv() 还缺组件，每次启动 ApkStart 都会重新
   // 拉一遍 1.5GB 的运行时包，用户看到的就是「一直重复下载」。
   // 失败后记一个时间戳，30 分钟内不再自动重试；用户手动点「一键部署」时
@@ -581,36 +620,6 @@ async function autoDeploy({ force = false } = {}) {
   let succeeded = false;
   try {
     const env = await runtime.provisioner.checkEnv();
-    const needEngine = !env.emulator.ok || !env.sysimg.ok;
-    // 随包自带运行时（完整版安装包 / 微软商店版）：**一律不联网**。
-    // 镜像已经在包里（压缩形态），第一次开机由 engine.ensure() 就地展开；
-    // 这里再下一套 1.5GB 纯属浪费，也正是用户抱怨的「装完还在下镜像」。
-    if (bundledRuntimeDir && env.adb.ok && env.emulator.ok && env.sysimg.ok) {
-      appLog(`autoDeploy 跳过：运行时随包内置（${bundledRuntimeDir}），无需联网`
-        + (env.needsExtract ? '，镜像将在首次启动时本地展开' : ''));
-      return { ok: true, source: 'bundled', needsExtract: !!env.needsExtract };
-    }
-    if (bundledRuntimeDir && !env.emulator.ok) {
-      appLog(`autoDeploy 跳过联网下载：运行时目录随包内置（${bundledRuntimeDir}），交给诊断流程`);
-      return { ok: false, error: 'bundled', bundled: true };
-    }
-    // 轻量版优先用「本项目 GitHub 的运行时整包」：一个文件搞定 emulator + 系统镜像，
-    // 下载源和更新源统一在 GitHub 上（国内比 dl.google.com 稳得多）。
-    // 整包拿不到（没网 / 还没发过该资产 / 被限流）再逐个从官方源装。
-    if (needEngine && store.getSettings().runtime.preferGithubRuntime !== false) {
-      try {
-        progress({ message: '正在从 GitHub 下载运行时…' });
-        await runtime.provisioner.installRuntimePack(progress);
-        const afterPack = await runtime.provisioner.checkEnv();
-        if (afterPack.emulator.ok && afterPack.sysimg.ok) {
-          succeeded = true;
-          return { ok: true, source: 'github' };
-        }
-        progress({ message: '运行时整包不完整，改用官方源补齐…' });
-      } catch (e) {
-        progress({ message: `GitHub 运行时不可用（${e.message}），改用官方源…` });
-      }
-    }
     if (!env.adb.ok) {
       progress({ message: '正在准备 adb…' });
       await runtime.provisioner.installAdb(progress);
@@ -647,14 +656,15 @@ function launcherInfo() {
 /** 递归复制目录内容（best-effort，不删源；用于共享目录改路径时一次性搬迁旧文件） */
 function copyDirContents(src, dest) {
   if (!fs.existsSync(src)) return;
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const s = path.join(src, entry.name);
-    const d = path.join(dest, entry.name);
-    try {
-      if (entry.isDirectory()) copyDirContents(s, d);
-      else fs.copyFileSync(s, d);
-    } catch (_) { /* 单文件失败不影响其余 */ }
+  fs.mkdirSync(plainPath(dest), {recursive:true});
+  for (const entry of fs.readdirSync(plainPath(src), {withFileTypes:true})) {
+    if (entry.isSymbolicLink() || entry.name.startsWith('.asi-transfer-')) continue;
+    const source = plainPath(path.join(src,entry.name));
+    const target = plainPath(path.join(dest,entry.name));
+    if (entry.isDirectory()) copyDirContents(source,target);
+    else if (entry.isFile() && !fs.existsSync(target)) {
+      fs.copyFileSync(source,target,fs.constants.COPYFILE_EXCL);
+    }
   }
 }
 
@@ -726,7 +736,7 @@ function createWindow({ show = true } = {}) {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       spellcheck: false,
     },
   });
@@ -748,7 +758,7 @@ function createWindow({ show = true } = {}) {
     return { action: 'deny' };
   });
   mainWindow.webContents.on('will-navigate', (e, url) => {
-    if (url.startsWith('file://')) return;
+
     e.preventDefault();
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
   });
@@ -887,6 +897,8 @@ let installBusy = null;   // 正在安装的文件路径：双击 APK 连点会�
 let lastInstallErr = { msg: '', at: 0 };
 
 async function runInstall(filePath) {
+  if (store.profileSwitching) throw Error('Android Profile is switching');
+  if (backupBusy) throw new Error('Backup or restore is in progress');
   showWindow();
   // 同一个包正在装（用户连点了几次图标 / 拖了好几次）→ 只提示一次，别重复跑一遍安装
   if (installBusy) {
@@ -898,15 +910,45 @@ async function runInstall(filePath) {
     return { ok: false, error: '已有安装任务在进行' };
   }
   installBusy = filePath;
-  send('install:start', { file: filePath });
   try {
-    const result = await installer.install(filePath, (p) => send('install:progress', p));
+    const profileId=store.profiles.currentId();
+    // All entry points (renderer, drag-drop, Explorer and CLI) pass through a
+    // MAIN-process native confirmation with Cancel as the default action.
+    const preview=await prepareInstall(filePath,profileId);
+    const profile=store.profiles.list().profiles.find(p=>p.id===profileId);
+    const existing=!!(preview.package&&store.getApp(preview.package));
+    const approval=await dialog.showMessageBox(mainWindow||undefined,{
+      ...installConfirmation(preview, {existing, profileName:profile?.name, locale:store.getSettings().uiLocale || app.getLocale()}),
+      type:'warning',defaultId:0,cancelId:0,noLink:true
+    });
+    if(approval.response!==1) {
+      send('install:cancelled',{file:filePath});
+      return {ok:false,canceled:true};
+    }
+    send('install:start', { file: filePath });
+    appLog('APK installation approved');
+    let lastStage;
+    const onProgress = progress => {
+      if (progress.stage !== lastStage) {
+        lastStage = progress.stage;
+        appLog('APK installation stage ' + lastStage);
+      }
+      if (progress.stage === 'runtime' || progress.stage === 'shortcut-warn') {
+        const detail = require('./core/diagnostic-privacy').redactText(progress.message).replace(/[\r\n]+/g, ' ').slice(0, 500);
+        appLog('APK installation ' + progress.stage + ': ' + detail);
+      }
+      send('install:progress', progress);
+    };
+    const result = await withApprovedCopy(preview, store.profiles.currentId(), staged =>
+      installer.install(staged, existing, onProgress));
     send('install:done', result);
     // 新建的桌面图标要让资源管理器立刻刷新，否则用户会以为「没创建快捷方式」
     windowctl.refreshShell().catch(() => {});
     notify('安装完成', `${result.app.label} 已安装${result.app.shortcutPath ? '，桌面快捷方式已创建' : ''}`);
     return result;
   } catch (e) {
+    const detail = require('./core/diagnostic-privacy').redactText(e.message).replace(/[\r\n]+/g, ' ').slice(0, 500);
+    appLog('APK installation failed: ' + detail);
     send('install:error', { message: e.message, file: filePath });
     if (e.needsSetup) send('ui:navigate', 'setup');
     // 同一条错误 8 秒内只弹一次系统通知：连续重试时不会在右下角刷屏
@@ -979,7 +1021,14 @@ let launchInFlight = null;
 let accelWarned = false;
 
 async function runLaunch(pkg) {
-  if (launchInFlight) {
+  if (store.profileSwitching) throw Error('Android Profile is switching');
+  if (backupBusy) throw new Error('Backup or restore is in progress');
+  // A bare --launch name from a Windows shortcut must never address a guest
+  // application that is not in the selected Profile's own catalog.
+  if(!validPackageName(pkg)||!store.getApp(pkg))
+    throw new Error('App is not installed in the active Android Profile');
+  const selected = store.profiles.currentId();
+  while (launchInFlight) {
     if (launchInFlight.pkg === pkg) {
       appLog(`launch reused in-flight ${pkg}`);
       return launchInFlight.promise;
@@ -987,6 +1036,7 @@ async function runLaunch(pkg) {
     appLog(`launch queued ${pkg}（等待 ${launchInFlight.pkg} 启动完成）`);
     await launchInFlight.promise.catch(() => {});
   }
+  if (store.profileSwitching || store.profiles.currentId() !== selected) throw Error('Android Profile changed while waiting to launch');
   const entry = { pkg };
   entry.promise = launchOne(pkg).finally(() => {
     if (launchInFlight === entry) launchInFlight = null;
@@ -1000,8 +1050,7 @@ async function launchOne(pkg) {
   const mark = (s) => appLog(`launch ${pkg} ${s} +${Date.now() - t0}ms`);
   // 「提前接画面」的状态：进程一出现就接，但最终成败要等回调回来才知道。
   // 放在函数作用域，供后面的最终判定使用。
-  let attachDoneEarly = false;
-  let earlyAttachOk = false;
+  let pendingAttach = null;
   appLog(`launch start ${pkg}`);
   try {
     // 0) 先把管理窗口收起来，再去开应用窗口。
@@ -1028,19 +1077,20 @@ async function launchOne(pkg) {
       // 观感差别很大（实测点开到出画面 7.2s → 约 3s）。
       // 这里故意不 await：接画面和存活判定并行，谁先完成都不影响另一边。
       onAppUp: () => {
-        attachDoneEarly = true;
+        if (pendingAttach) return;
         mark('app up (提前接画面)');
-        attachAppWindow()
+        pendingAttach = attachAppWindow()
           .then((ok) => {
-            earlyAttachOk = ok;
+
             mark(`early attach=${ok}`);
             // 画面已接到用户眼前 → 开机动画可以淡出了。
             // 放在这里而不是 launch ok 之后，是因为 early attach 时模拟器窗口
             // 已经 show 出来了；如果等 launch ok（还要再等 4 秒存活确认），
             // splash 和模拟器窗口会同时可见好几秒，用户看到 splash 被「顶上去」。
             if (ok && typeof splashDone === 'function') splashDone();
+            return ok;
           })
-          .catch(() => { earlyAttachOk = false; });
+          .catch(() => false);
         // 应用刚起来时 Activity 还在重建，会按自己声明的方向（portrait）再转一次，
         // 把刚锁好的方向覆盖掉 —— 这就是「平板/横屏模式下画面总是 90 度躺着」。
         // 等它稳定后补一次方向自愈（读 init/cur，只有真躺倒才写）。
@@ -1087,13 +1137,8 @@ async function launchOne(pkg) {
     // 2) 应用真的活下来了，才把画面接到用户眼前（否则用户会看到闪一下的桌面/崩溃页）
     // 但如果 onAppUp 已经把画面接上了（提前接管），这里只做一次「确认」，不重复接 ——
     // 重复接在独立窗口模式下会把刚摆好的窗口再隐藏/显示一遍，画面会闪。
-    let embedded;
-    if (attachDoneEarly) {
-      embedded = !!earlyAttachOk;
-      mark(`early attached already (${embedded})`);
-    } else {
-      embedded = await attachAppWindow();
-    }
+    const embedded = (pendingAttach && await pendingAttach) || await attachAppWindow();
+    if (!embedded) throw Error('Android started, but its display window could not be attached. Reopen the app window.');
     // 日志措辞要分清两种模式：独立窗口模式下 embedded=true 的意思是
     // 「画面已经接到用户眼前（在模拟器原生窗口里）」，而不是「嵌进我们的窗口」。
     // 否则看日志的人会以为设置没生效。
@@ -1127,7 +1172,9 @@ async function launchOne(pkg) {
     await runtime.beginApp(pkg, { onActive: onContainerActive }).catch(() => {});
     // 游戏/低延迟模式：让窗口代理降频扫描，减少全桌面 EnumWindows 造成的整机卡顿
     if (winAgent) {
-      const game = store.getSettings().engine?.priorityMode === 'game';
+      const eng = store.getSettings().engine || {};
+      const mode = (eng.appPerformanceProfiles || {})[pkg] || 'inherit';
+      const game = performance.effectivePriority(mode, eng.priorityMode) === 'game';
       winAgent.setPerformanceMode(game).catch(() => {});
     }
     send('app:launched', { package: pkg, engine: r.engine });
@@ -1241,6 +1288,573 @@ function startNotifier() {
 // ---------------- IPC ----------------
 
 function registerIpc() {
+  // Android Profiles: one live guest at a time. Never switch with Android,
+  // installer, auto-download, app windows or another emulator still active.
+  async function profileBusyReason() {
+    if (backupBusy || launchInFlight || installBusy || deploying || updateBusy || runtime.vmStarting
+       || runtime.installing || runtime._ensurePromise || runtime.activeApps.length
+       || currentAppPkg || (appWin && appWin.isOpen)) {
+      return 'Finish active installs, app windows and runtime tasks before switching Android profiles.';
+    }
+    if (runtime.vmRunning) {
+      return 'Android is running. Use Settings > Stop Runtime before switching profiles.';
+    }
+    if (await runtime.client().isOnline().catch(() => false)) {
+      return 'An Android device is still online. Stop it before switching profiles.';
+    }
+    const ports=await runtime.emulatorPorts();
+    if (ports.length) {
+      return 'An Android emulator is still listening on a local port. Close it before switching profiles.';
+    }
+    return '';
+  }
+  // Backup & Restore Center: fixed profile files only. Every path for an export
+  // or import is selected by the operating-system folder dialog. A restore
+  // requires a verified preview AND a short-lived, single-use approval token.
+  async function backupIdleCheck() {
+  if (store.profileSwitching) throw Error('Android Profile is switching');
+    if (installBusy || deploying || updateBusy || runtime.vmStarting ||
+        runtime.installing || runtime._ensurePromise || runtime.activeApps.length ||
+        currentAppPkg || (appWin && appWin.isOpen)) {
+      throw new Error('Close app windows and finish installations/downloads before backup or restore');
+    }
+    if (runtime.vmRunning) throw new Error('Stop Android runtime in Settings before backup or restore');
+    if (await runtime.client().isOnline().catch(() => false))
+      throw new Error('An Android device is online. Stop runtime before proceeding');
+    const ports=await runtime.emulatorPorts();
+    if (ports.length) throw new Error('An Android emulator is still running. Stop it before proceeding');
+  }
+  // Audit records contain strictly whitelisted metadata. Failures to write
+  // are surfaced as warnings but cannot turn a successful restore into a
+  // false failure or hide the original operation exception.
+  function evidenceDigest(text){
+    return require('node:crypto').createHash('sha256').update(String(text)).digest('hex');
+  }
+  async function audited(event,source,operation,details=()=>({})){
+    try{
+      const outcome=await operation();
+      const status=outcome?.canceled?'cancelled':'passed';
+      const fields={source,...details(outcome)};
+      let auditWarning=null;
+      try{await recoveryAudit.append(event,status,fields);}
+      catch(_){auditWarning='Recovery audit history could not be updated; verify the local audit log.';}
+      return auditWarning&&outcome&&typeof outcome==='object'
+        ?{...outcome,auditWarning}:outcome;
+    }catch(e){
+      try{await recoveryAudit.append(event,'failed',{source,reason:causeCode(e)});}
+      catch(_){}
+      throw e;
+    }
+  }
+  // History and reports are read-only unless the user requests an export.
+  // No renderer-provided path is accepted by the export endpoint.
+  // Signing is opt-in, with passphrase-encrypted private key stored locally.
+  // Export or import paths are selected exclusively by OS dialogs.
+  ipcMain.handle('backup:signingStatus', async () => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    return auditSigning.status();
+  });
+  ipcMain.handle('backup:signingInitialize',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    validatePassword(request?.password);
+    if(request?.ack!=='CREATE SIGNING KEY')
+      throw Error('Explicit CREATE SIGNING KEY approval required');
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',
+      buttons:['Cancel','Create encrypted signing identity'],
+      defaultId:0,cancelId:0,noLink:true,
+      title:'Create local Ed25519 signing identity',
+      message:'Create a new passphrase-encrypted signing key for this profile?',
+      detail:'Private key is stored locally encrypted with your passphrase, not uploaded. Passphrase recovery and automatic key rotation are not available. Record the displayed public-key fingerprint independently.',
+    });
+    if(approval.response!==1)return {canceled:true};
+    return auditSigning.initialize(request.password);
+  });
+  ipcMain.handle('backup:signingExport',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    validatePassword(request?.password);
+    const kind=request?.kind;
+    if(kind!=='report'&&kind!=='checkpoint')
+      throw Error('Invalid signed audit export kind');
+    const status=await auditSigning.status();
+    if(!status.initialized)throw Error('Initialize encrypted signing identity first');
+    const chosen=await dialog.showSaveDialog(mainWindow,{
+      title:kind==='checkpoint'?'Save independent audit checkpoint':'Export signed audit verification report',
+      defaultPath:kind==='checkpoint'?'ApkStart-Audit-Checkpoint.json':'ApkStart-Signed-Recovery-Report.json',
+      buttonLabel:'Export signed JSON',
+      filters:[{name:'Signed JSON evidence',extensions:['json']}],
+    });
+    if(chosen.canceled||!chosen.filePath)return {canceled:true};
+    return kind==='checkpoint'
+      ?auditSigning.exportCheckpoint(chosen.filePath,request.password)
+      :auditSigning.exportSignedReport(chosen.filePath,request.password);
+  });
+  ipcMain.handle('backup:signingVerifyExternal',async ()=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    const chosen=await dialog.showOpenDialog(mainWindow,{
+      title:'Choose independently held signed audit checkpoint or report',
+      properties:['openFile'],
+      filters:[{name:'Signed JSON evidence',extensions:['json']}],
+      buttonLabel:'Verify signature and compare audit history',
+    });
+    if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
+    return auditSigning.verifyExternal(chosen.filePaths[0]);
+  });
+  // Pass 15: paths are exclusively chosen by native Windows dialogs.
+  ipcMain.handle('backup:keyExport',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    validatePassword(request?.keyPassword);validatePassword(request?.backupPassword);
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',buttons:['Cancel','Export encrypted key backup'],defaultId:0,cancelId:0,noLink:true,
+      message:'Export the signing private key encrypted with a separate backup password?',
+      detail:'Anyone with this backup and BOTH passwords can sign as this identity. Store the backup and password independently.'
+    });
+    if(approval.response!==1)return {canceled:true};
+    const chosen=await dialog.showSaveDialog(mainWindow,{
+      title:'Save encrypted signing-key backup outside application data',defaultPath:'ApkStart-Signing-Key-Backup.json',
+      filters:[{name:'Encrypted JSON key backup',extensions:['json']}]
+    });
+    if(chosen.canceled||!chosen.filePath)return {canceled:true};
+    return new SigningKeyManagement({signing:auditSigning}).exportEncrypted(chosen.filePath,request.keyPassword,request.backupPassword);
+  });
+  ipcMain.handle('backup:keyImport',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    if(request?.ack!=='IMPORT SIGNING KEY')throw Error('Typed import approval required');
+    validatePassword(request?.keyPassword);validatePassword(request?.backupPassword);
+    const chosen=await dialog.showOpenDialog(mainWindow,{
+      title:'Select encrypted signing-key backup',properties:['openFile'],
+      filters:[{name:'Encrypted JSON key backup',extensions:['json']}]
+    });
+    if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',buttons:['Cancel','Import into empty profile'],defaultId:0,cancelId:0,noLink:true,
+      message:'Import signing identity for the current profile?',
+      detail:'Only an empty signing identity is accepted. An existing identity is never replaced.'
+    });
+    if(approval.response!==1)return {canceled:true};
+    return new SigningKeyManagement({signing:auditSigning}).importEncrypted(chosen.filePaths[0],request.backupPassword,request.keyPassword);
+  });
+  ipcMain.handle('backup:keyRotate',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    if(request?.ack!=='ROTATE SIGNING KEY')throw Error('Typed rotation approval required');
+    validatePassword(request?.oldPassword);validatePassword(request?.newPassword);
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',buttons:['Cancel','Rotate signing identity'],defaultId:0,cancelId:0,noLink:true,
+      message:'Rotate the signing key for this Android profile?',
+      detail:'Export an encrypted copy of the old key first. Existing signatures retain their previous fingerprint. Rotation is not revocation.'
+    });
+    if(approval.response!==1)return {canceled:true};
+    return new SigningKeyManagement({signing:auditSigning}).rotate(request.oldPassword,request.newPassword);
+  });
+  // Pass 16: no renderer-provided paths. All files chosen by native dialogs.
+  ipcMain.handle('backup:trustExport',async ()=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    const chosen=await dialog.showSaveDialog(mainWindow,{
+      title:'Export public-only trust bundle',defaultPath:'ApkStart-Public-Trust-Bundle.json',
+      filters:[{name:'Trust bundle JSON',extensions:['json']}]});
+    if(chosen.canceled||!chosen.filePath)return {canceled:true};
+    return new TrustLifecycle({signing:auditSigning}).exportBundle(chosen.filePath);
+  });
+  ipcMain.handle('backup:trustVerifyOffline',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    if(typeof request?.pin!=='string'||!/^[0-9a-f]{64}$/.test(request.pin))
+      throw Error('Independent trusted fingerprint is required');
+    const bundle=await dialog.showOpenDialog(mainWindow,{
+      title:'Choose public trust bundle',properties:['openFile'],
+      filters:[{name:'JSON',extensions:['json']}]});
+    if(bundle.canceled||!bundle.filePaths?.[0])return {canceled:true};
+    const evidence=await dialog.showOpenDialog(mainWindow,{
+      title:'Choose signed evidence',properties:['openFile'],
+      filters:[{name:'JSON',extensions:['json']}]});
+    if(evidence.canceled||!evidence.filePaths?.[0])return {canceled:true};
+    return new TrustLifecycle({signing:auditSigning}).verifyFiles(bundle.filePaths[0],evidence.filePaths[0],request.pin);
+  });
+  ipcMain.handle('backup:trustInventory',async ()=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    return new TrustLifecycle({signing:auditSigning}).inventory();
+  });
+  ipcMain.handle('backup:trustHistory',async ()=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    return new TrustLifecycle({signing:auditSigning}).rotationHistory();
+  });
+  const keyQuarantine=new SafeKeyQuarantine({signing:auditSigning});
+  ipcMain.handle('backup:trustSignedExport',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    validatePassword(request?.password);
+    const dest=await dialog.showSaveDialog(mainWindow,{title:'Export signed public trust bundle',
+      defaultPath:'ApkStart-Signed-Trust-Bundle.json',filters:[{name:'Signed JSON',extensions:['json']}]});
+    if(dest.canceled||!dest.filePath)return {canceled:true};
+    return signedExport(new TrustLifecycle({signing:auditSigning}),dest.filePath,request.password);
+  });
+  ipcMain.handle('backup:trustSignedVerify',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    if(typeof request?.pin!=='string'||!/^[0-9a-f]{64}$/.test(request.pin))
+      throw Error('Independent trusted fingerprint required');
+    const chosen=await dialog.showOpenDialog(mainWindow,{title:'Verify signed trust bundle',
+      properties:['openFile'],filters:[{name:'JSON',extensions:['json']}]});
+    if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
+    return verifySignedFile(chosen.filePaths[0],request.pin);
+  });
+  ipcMain.handle('backup:trustRotationCheckpoint',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    validatePassword(request?.password);
+    const dest=await dialog.showSaveDialog(mainWindow,{title:'Export signed rotation checkpoint',
+      defaultPath:'ApkStart-Rotation-Checkpoint.json',filters:[{name:'Signed JSON',extensions:['json']}]});
+    if(dest.canceled||!dest.filePath)return {canceled:true};
+    return exportRotationCheckpoint(new TrustLifecycle({signing:auditSigning}),dest.filePath,request.password);
+  });
+  ipcMain.handle('backup:trustRotationVerify',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    if(typeof request?.pin!=='string'||!/^[0-9a-f]{64}$/.test(request.pin))
+      throw Error('Independent trusted fingerprint required');
+    const chosen=await dialog.showOpenDialog(mainWindow,{title:'Verify external signed rotation checkpoint',
+      properties:['openFile'],filters:[{name:'JSON',extensions:['json']}]});
+    if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
+    return verifyCheckpointFile(chosen.filePaths[0],request.pin,new TrustLifecycle({signing:auditSigning}));
+  });
+  ipcMain.handle('backup:keyQuarantinePreview',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    return keyQuarantine.preview(request?.fingerprint);
+  });
+  ipcMain.handle('backup:keyQuarantineConfirm',async (_e,request)=>{
+    if(backupBusy)throw Error('Backup Center is busy');
+    if(request?.ack!=='QUARANTINE KEY')throw Error('Explicit quarantine acknowledgment required');
+    const yes=await dialog.showMessageBox(mainWindow,{type:'warning',
+      buttons:['Cancel','Move inactive key to quarantine'],defaultId:0,cancelId:0,noLink:true,
+      title:'Quarantine inactive encrypted signing key',
+      message:'Move this verified INACTIVE signing slot into quarantine?',
+      detail:'The action is not deletion. Confirm external recovery copies and the fingerprint; do not quarantine an active key.'});
+    if(yes.response!==1)return {canceled:true};
+    return keyQuarantine.quarantine(request);
+  });
+  ipcMain.handle('backup:auditSummary', async () => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    return recoveryAudit.summary();
+  });
+  ipcMain.handle('backup:auditExport', async () => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    const history=await recoveryAudit.summary();
+    if(history.integrity!=='verified')
+      throw Error('Audit history integrity failed; report export is blocked');
+    const chosen=await dialog.showSaveDialog(mainWindow,{
+      title:'Export privacy-minimized Recovery Verification Report',
+      defaultPath:'ApkStart-Recovery-Verification-'+new Date().toISOString().slice(0,10)+'.json',
+      buttonLabel:'Save verified JSON report',
+      filters:[{name:'JSON report',extensions:['json']}],
+    });
+    if(chosen.canceled||!chosen.filePath)return {canceled:true};
+    return recoveryAudit.exportReport(chosen.filePath);
+  });
+  ipcMain.handle('backup:status', () => ({
+    profileId:store.profiles.currentId(),busy:backupBusy,
+    directoryFormat:true,encrypted:true,cipher:'AES-256-GCM',legacyRestoreSupported:true,
+  }));
+  ipcMain.handle('backup:create', async (_e,password) => {
+    validatePassword(password); // Never write passwords to logs, settings or disk.
+    if (backupBusy) throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    const picked=await dialog.showOpenDialog(mainWindow,{
+      title:'Choose a folder OUTSIDE ApkStart data for a verified Android profile backup',
+      properties:['openDirectory','createDirectory'],
+      buttonLabel:'Select backup destination',
+    });
+    if(picked.canceled||!picked.filePaths?.[0])return {canceled:true};
+    return audited('backup-create','external',()=>encryptedBackupCenter.create(picked.filePaths[0],password),
+      r=>({files:r.files,bytes:r.bytes}));
+  });
+  ipcMain.handle('backup:pickRestore', async (_e,password) => {
+    if (backupBusy) throw new Error('Backup Center is busy');
+    const chosen=await dialog.showOpenDialog(mainWindow,{
+      title:'Choose an ASI-Backup folder to VERIFY (no restore yet)',
+      properties:['openDirectory'],
+      buttonLabel:'Verify backup folder',
+    });
+    if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
+    const folder=chosen.filePaths[0];
+    // Old, unencrypted v5 backups remain readable, but new exports are encrypted.
+    const isEncrypted=fs.existsSync(path.join(folder,'header.json'));
+    return audited('restore-verify',isEncrypted?'encrypted':'legacy',async()=>{
+      if(isEncrypted)return encryptedBackupCenter.previewRestore(folder,password);
+      return {...await backupCenter.previewRestore(folder),encrypted:false,legacy:true};
+    },r=>({files:r.files,bytes:r.bytes,
+      evidenceId:isEncrypted?encryptedBackupCenter.pending?.fingerprint:null}));
+  });
+  ipcMain.handle('backup:pickMigration', async (_e,password) => {
+    validatePassword(password);
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    const chosen=await dialog.showOpenDialog(mainWindow,{
+      title:'Choose an encrypted profile backup for portable migration',
+      properties:['openDirectory'],buttonLabel:'Inspect encrypted migration',
+    });
+    if(chosen.canceled||!chosen.filePaths?.[0])return {canceled:true};
+    return audited('restore-verify','migration',
+      ()=>encryptedBackupCenter.previewMigration(chosen.filePaths[0],password),
+      r=>({files:r.files,bytes:r.bytes,
+        evidenceId:encryptedBackupCenter.pending?.fingerprint}));
+  });
+  // Recovery Vault accepts only IDs discovered for the active profile.
+  // The renderer cannot choose arbitrary files or a different profile target.
+  ipcMain.handle('backup:sealedList', async () => {
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    return recoveryVault.listSealed();
+  });
+  ipcMain.handle('backup:sealedPreview', async (_event,request) => {
+    const password=request?.password,archiveId=request?.archiveId;
+    validatePassword(password);
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    return audited('sealed-verify','sealed',()=>recoveryVault.previewSealed(archiveId,password),
+      r=>({files:r.files,bytes:r.bytes,
+        evidenceId:encryptedBackupCenter.pending?.fingerprint}));
+  });
+  ipcMain.handle('backup:sealedCreate', async (_event,request) => {
+    const password=request?.password,pointId=request?.pointId;
+    validatePassword(password);
+    if(request?.ack!=='SEAL'||typeof pointId!=='string'
+      ||!/^(restore|recovery):[a-f0-9]{20}$/.test(pointId))
+      throw new Error('Explicit SEAL approval and an existing recovery point are required');
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',buttons:['Cancel','Encrypt recovery point'],
+      defaultId:0,cancelId:0,noLink:true,
+      title:'Confirm encrypted Safety Vault export',
+      message:'Create a new encrypted local copy of this recovery point?',
+      detail:'Original local safety copies are plaintext and WILL NOT be deleted automatically. A lost vault password cannot be recovered. Android must remain stopped.',
+    });
+    if(approval.response!==1)return {canceled:true};
+    return audited('vault-seal','local',()=>recoveryVault.sealPoint(pointId,password),
+      r=>({files:r.files,bytes:r.bytes}));
+  });
+  // Retention is advisory only. No timers, background pruning or deletion
+  // endpoints accepting raw filesystem paths are exposed to the renderer.
+  // Health Check never accepts filesystem paths or an arbitrary profile ID.
+  // Only a checked quarantine ID may be moved, with explicit approval.
+  // Readiness and drill never invoke backup:restore. Folder choice happens
+  // exclusively in the main-process operating-system picker.
+  ipcMain.handle('backup:drillSealedPreview', async (_event,request) => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    await backupIdleCheck();
+    validatePassword(request?.password);
+    return audited('readiness-verify','sealed',
+      ()=>restoreDrill.preview('sealed',request?.archiveId,request.password),
+      r=>({files:r.files,bytes:r.bytes,evidenceId:restoreDrill.pending?.fingerprint}));
+  });
+  ipcMain.handle('backup:drillExternalPreview', async (_event,password) => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    await backupIdleCheck();
+    validatePassword(password);
+    const picked=await dialog.showOpenDialog(mainWindow,{
+      title:'Choose encrypted backup directory for a SAFE restore rehearsal',
+      properties:['openDirectory'],
+      buttonLabel:'Inspect encrypted backup for recovery drill',
+    });
+    if(picked.canceled||!picked.filePaths?.[0])return {canceled:true};
+    return audited('readiness-verify','external',
+      ()=>restoreDrill.preview('external',picked.filePaths[0],password),
+      r=>({files:r.files,bytes:r.bytes,evidenceId:restoreDrill.pending?.fingerprint}));
+  });
+  ipcMain.handle('backup:drillCancel',(_event,token)=>({
+    canceled:restoreDrill.cancel(token),
+  }));
+  ipcMain.handle('backup:drillRun', async (_event,request) => {
+    if(request?.ack!=='DRILL'||typeof request?.token!=='string'
+      ||!/^[0-9a-f]{48}$/.test(request.token)
+      ||restoreDrill?.pending?.token!==request.token)
+      throw Error('Verified drill preview and typed DRILL approval required');
+    if(backupBusy)throw Error('Backup Center is busy');
+    await backupIdleCheck();
+    validatePassword(request?.password);
+    const confirm=await dialog.showMessageBox(mainWindow,{
+      type:'info',buttons:['Cancel','Run synthetic restore drill'],
+      defaultId:0,cancelId:0,noLink:true,
+      title:'Confirm safe restore drill',
+      message:'Run an isolated synthetic restore-and-rollback rehearsal?',
+      detail:'This reauthenticates every encrypted file, checks target-drive free space, then tests synthetic staging and rollback in OS temporary storage. No user plaintext is written, no live Android Profile is modified and Android is NOT booted.',
+    });
+    if(confirm.response!==1){
+      restoreDrill.cancel(request.token);
+      return {canceled:true};
+    }
+    const evidenceId=restoreDrill.pending?.fingerprint;
+    return audited('restore-drill','synthetic',
+      ()=>restoreDrill.run(request.token,request.password),
+      r=>({files:r.filesVerified,bytes:r.bytesVerified,evidenceId,synthetic:true,bootTested:false}));
+  });
+  ipcMain.handle('backup:healthReport', async () => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    await backupIdleCheck();
+    return disasterHealth.report();
+  });
+  ipcMain.handle('backup:healthVerify', async (_e,request) => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    await backupIdleCheck();
+    validatePassword(request?.password);
+    return audited('health-verify','sealed',
+      ()=>disasterHealth.verifyArchive(request?.archiveId,request.password),
+      r=>({files:r.files,bytes:r.bytes,evidenceId:evidenceDigest(r.archiveId)}));
+  });
+  ipcMain.handle('backup:rescuePreview', async (_e,id) => {
+    if(backupBusy)throw Error('Backup Center is busy');
+    await backupIdleCheck();
+    return disasterHealth.previewRescue(id);
+  });
+  ipcMain.handle('backup:rescueCancel',(_e,token)=>({
+    canceled:disasterHealth.cancelRescue(token),
+  }));
+  ipcMain.handle('backup:rescueApply', async (_e,request) => {
+    const token=request?.token;
+    if(typeof token!=='string'||!/^[a-f0-9]{48}$/.test(token)
+      ||request?.ack!=='RESCUE'||disasterHealth?.pending?.token!==token)
+      throw Error('A verified interruption preview and typed RESCUE are required');
+    if(backupBusy)throw Error('Backup Center is busy');
+    await backupIdleCheck();
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',
+      buttons:['Cancel','Rescue remaining safety fragments'],
+      defaultId:0,cancelId:0,noLink:true,
+      title:'Confirm manual disaster rescue',
+      message:'Move remaining interrupted-cleanup fragments back into safety-copy locations?',
+      detail:'No live Android data or encrypted archives will be modified. This may only be a PARTIAL recovery; already deleted files cannot be reconstructed. Original destination paths must be empty. No automatic cleanup will run.',
+    });
+    if(approval.response!==1){
+      disasterHealth.cancelRescue(token);
+      return {canceled:true};
+    }
+    return audited('rescue','local',()=>disasterHealth.applyRescue(token));
+  });
+  ipcMain.handle('backup:retentionReport', async (_e,days) => {
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    return safetyRetention.report(days===undefined?30:days);
+  });
+  ipcMain.handle('backup:cleanupPreview', async (_e,request) => {
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    validatePassword(request?.password);
+    return safetyRetention.preview(request?.pointId,request?.archiveId,request.password);
+  });
+  ipcMain.handle('backup:cleanupCancel', (_e,token) => ({
+    canceled:safetyRetention.cancel(token),
+  }));
+  ipcMain.handle('backup:cleanupApply', async (_e,request) => {
+    const token=request?.token;
+    validatePassword(request?.password);
+    if(typeof token!=='string'||!/^[a-f0-9]{48}$/.test(token)
+      ||request?.ack!=='DELETE PLAINTEXT'
+      ||safetyRetention?.pending?.token!==token)
+      throw new Error('Cleanup requires verified point, typed DELETE PLAINTEXT and one-time token');
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',
+      buttons:['Cancel','Delete verified plaintext copies'],
+      defaultId:0,cancelId:0,noLink:true,
+      title:'Confirm irreversible plaintext cleanup',
+      message:'Permanently remove this selected local plaintext recovery point?',
+      detail:'An AES-256-GCM encrypted copy has been verified, but it requires the password to recover. This deletion is irreversible and is NOT secure erase. Existing active Android profile data and the encrypted copy will be preserved. Power loss can leave cleanup fragments.',
+    });
+    if(approval.response!==1){
+      safetyRetention.cancel(token);
+      return {canceled:true};
+    }
+    return audited('cleanup','sealed',()=>safetyRetention.apply(token,request.password),
+      r=>({files:r.files,bytes:r.estimatedReclaimedBytes,evidenceId:evidenceDigest(r.archiveId)}));
+  });
+  ipcMain.handle('backup:recoveryList', async () => {
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    return recoveryVault.list();
+  });
+  ipcMain.handle('backup:recoveryPreview', async (_e,pointId) => {
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    return recoveryVault.preview(pointId);
+  });
+  ipcMain.handle('backup:recoveryApply', async (_e,request) => {
+    const token=request?.token;
+    if(typeof token!=='string'||!/^[a-f0-9]{48}$/.test(token)
+      ||request?.ack!=='RECOVER'||recoveryVault?.pending?.token!==token)
+      throw new Error('Verified recovery preview and typed RECOVER approval required');
+    if(backupBusy)throw new Error('Backup Center is busy');
+    await backupIdleCheck();
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',
+      buttons:['Cancel','Recover profile data'],
+      defaultId:0,cancelId:0,noLink:true,
+      title:'Confirm Recovery Vault rollback',
+      message:'Recover this selected safety point into the active Android profile?',
+      detail:'Current data will be preserved in .before-recovery copies. The existing recovery point is kept. Android must remain stopped. A restart is required.',
+    });
+    if(approval.response!==1)return {canceled:true};
+    return audited('recovery','local',()=>recoveryVault.apply(token),
+      r=>({files:r.files,bytes:r.bytes}));
+  });
+  ipcMain.handle('backup:restore', async (_event, request) => {
+    const token=typeof request==='string'?request:request?.token;
+    const password=typeof request==='object'?request?.password:'';
+    if (typeof token !== 'string' || !/^[a-f0-9]{48}$/.test(token))
+      throw new Error('Invalid restore approval token');
+    const encrypted=encryptedBackupCenter?.pending?.token===token;
+    const migrating=encrypted&&encryptedBackupCenter.pending.migration;
+    if(!encrypted && backupCenter?.pending?.token!==token)
+      throw new Error('No verified restore preview. Inspect the backup again.');
+    if(encrypted)validatePassword(password);
+    await backupIdleCheck();
+    // Native dialog protects against renderer/UI mistakes or bypassed prompt.
+    // Default action is Cancel; the main process never silently overwrites data.
+    const approval=await dialog.showMessageBox(mainWindow,{
+      type:'warning',
+      buttons:['Cancel',migrating?'Import verified migration':'Restore verified profile'],
+      defaultId:0,cancelId:0,noLink:true,
+      title:'Confirm Android profile restore',
+      message:migrating?'Import this encrypted profile into the active Android profile?':'Replace the selected Android profile with the verified backup?',
+      detail:'Android must be stopped. Current APK data and Android userdata are renamed to .before-restore safety copies, not deleted. A restart is required.',
+    });
+    if(approval.response!==1)return {canceled:true};
+    const evidenceId=encrypted?encryptedBackupCenter.pending?.fingerprint:null;
+    const event=migrating?'migration':'restore';
+    const source=migrating?'migration':encrypted?'encrypted':'legacy';
+    return audited(event,source,()=>encrypted
+      ?encryptedBackupCenter.restore(token,password):backupCenter.restore(token),
+      r=>({files:r.files,bytes:r.bytes,evidenceId}));
+  });
+  ipcMain.handle('profiles:list', () => store.profiles.list());
+  ipcMain.handle('profiles:create', async (_event, name) => {
+    const busy=await profileBusyReason();
+    if(busy) throw new Error(busy);
+    return store.profiles.create(name);
+  });
+  ipcMain.handle('profiles:switch', async (_event, id) => {
+    const registry=store.profiles.list();
+    if (!registry.profiles.some(p => p.id===id)) throw new Error('Unknown Android profile');
+    if (id===registry.activeId) return {ok:true,changed:false,activeId:id};
+    if (store.profileSwitching) throw Error('Profile switch already in progress');
+    store.profileSwitching = true;
+    let result;
+    try {
+      const busy=await profileBusyReason();
+      if (busy) throw new Error(busy);
+      result=store.profiles.activate(id);
+    } catch (error) { store.profileSwitching = false; throw error; }
+    // Restart rather than mutating paths while IPC/renderer or background
+    // tasks could still hold file descriptors to the old profile.
+    setTimeout(() => {
+      try {
+        quitting=true;
+        app.relaunch();
+        app.quit();
+      } catch(e) {
+        try{store.profiles.activate(result.previousId);}catch(_){}
+        store.profileSwitching = false;
+        appLog('Profile relaunch failed: '+e.message);
+      }
+    }, 350).unref?.();
+    return {ok:true,changed:true,restarting:true,activeId:id};
+  });
+
   ipcMain.handle('app:info', () => ({    version: app.getVersion(),
     isDev: IS_DEV,
     dataDir: store.DATA_DIR,
@@ -1306,9 +1920,12 @@ function registerIpc() {
   });
 
   ipcMain.handle('apk:parse', async (_e, filePath) => parseApk(filePath));
+  // Offline read-only inspection; does not execute or upload APKs.
+  ipcMain.handle('apk:inspect', async (_e, filePath) => inspectApk(filePath));
 
   ipcMain.handle('apk:install', async (_e, filePath) => {
     const r = await runInstall(filePath);
+    if(r?.canceled||r?.ok===false)return r;
     return { ok: true, app: r.app, warnings: r.warnings };
   });
 
@@ -1323,10 +1940,21 @@ function registerIpc() {
    */
   ipcMain.handle('app:stop', async (_e, pkg, opts = {}) => stopApp(pkg, opts));
 
-  ipcMain.handle('app:uninstall', async (_e, pkg) => {
-    await installer.uninstall(pkg);
-    return { ok: true };
-  });
+  async function changePackage(pkg, action) {
+    if (installBusy || backupBusy || store.profileSwitching) throw Error('Profile is busy');
+    const id = store.profiles.currentId();
+    if (!validPackageName(pkg) || !store.getApp(pkg)) throw Error('Unknown Profile package');
+    installBusy = true;
+    try {
+      const answer = await dialog.showMessageBox(mainWindow, {type:'warning',title:action,
+        message:action+' '+pkg+' ('+id+')?', buttons:['Cancel',action],defaultId:0,cancelId:0});
+      if (answer.response !== 1) return {ok:false,canceled:true};
+      if (id !== store.profiles.currentId()) throw Error('Profile changed');
+      await installer.changePackage(pkg,id,action==='Uninstall');
+      return {ok:true};
+    } finally { installBusy=false; }
+  }
+  ipcMain.handle('app:uninstall', (_e,pkg) => changePackage(pkg,'Uninstall'));
 
   ipcMain.handle('app:shortcut', async (_e, pkg) => {
     const appRecord = store.getApp(pkg);
@@ -1336,12 +1964,7 @@ function registerIpc() {
     return { ok: true, path: p };
   });
 
-  ipcMain.handle('app:clearData', async (_e, pkg) => {
-    const rt = await runtime.ensure();
-    if (!rt.ok) throw new Error(rt.error);
-    await rt.client.clearData(pkg);
-    return { ok: true };
-  });
+  ipcMain.handle('app:clearData', (_e,pkg) => changePackage(pkg,'Clear Android app data'));
 
   ipcMain.handle('app:pin', async (_e, { pkg, pinned }) => {
     store.upsertApp({ package: pkg, pinned: !!pinned });
@@ -1424,7 +2047,15 @@ function registerIpc() {
     const newDir = dir.trim();
     const oldDir = store.getSettings().sharedDir;
     try {
-      if (oldDir && oldDir !== newDir) copyDirContents(oldDir, newDir);
+      checkShareFolder(newDir);
+      if (oldDir && path.resolve(oldDir) !== path.resolve(newDir)) {
+        const {within} = require('./core/backup-center');
+        if (within(newDir,oldDir) || within(oldDir,newDir)) throw Error('Choose a folder outside the previous shared folder');
+        // A legacy folder may already overlap another Profile. Leave that content in place.
+        let safeSource = true;
+        try { checkShareFolder(oldDir); } catch { safeSource = false; }
+        if (safeSource) copyDirContents(oldDir,newDir);
+      }
       fs.mkdirSync(newDir, { recursive: true });
       store.saveSettings({ sharedDir: newDir });
       return { ok: true, oldDir, newDir };
@@ -1574,6 +2205,18 @@ function registerIpc() {
     return { ok: true, overview: await driverOverview() };
   });
 
+  // Pass 18: read-only, profile-scoped live Android evidence.
+  // Does not boot an emulator, run repairs, install APKs or mutate userdata.
+  ipcMain.handle('runtime:readiness',async ()=>{
+    return inspectRuntime({
+      client:runtime.client(),serial:runtime.emuSerial,
+      profileId:store.profiles.currentId(),
+      owned:runtime._profileOwnedRuntime===true,
+      running:runtime.emulator.running(),
+      busy:!!(installBusy||backupBusy||deploying||updateBusy||
+        runtime.vmStarting||runtime.installing||runtime._ensurePromise)
+    });
+  });
   ipcMain.handle('runtime:status', async () => runtime.status());
   ipcMain.handle('runtime:probe', async () => runtime.probe());
   ipcMain.handle('runtime:start', async () => {
@@ -1615,6 +2258,58 @@ function registerIpc() {
    * 系统问题自动校验：启动前/运行中自动检查常见导致「装不上、起不来」的根因，
    * 并给出可操作的修复建议（在首页横幅 + 设置面板里展示，按问题一键修复）。
    */
+  // Auto-Repair 2.0: read-only evidence collection. No user data, raw logs,
+  // personal file paths or ADB credentials are sent back to the renderer.
+  async function currentAutoRepairSnapshot() {
+    const { buildRepairPlan } = require('./core/auto-repair');
+    const env = await runtime.provisioner.checkEnv().catch(() => ({}));
+    const running = !!runtime.vmRunning;
+    let adbState = '';
+    if (running && env.adb?.ok) {
+      adbState = await runtime.client().deviceState().catch(() => '');
+    }
+    let failure = null;
+    let diagnosis = null;
+    let logLines = [];
+    if (!running) {
+      failure = runtime.emulator.lastFailure ? runtime.emulator.lastFailure() : null;
+      diagnosis = runtime.emulator.lastDiagnosis || (failure && failure.diagnosis) || null;
+      logLines = runtime.emulator.recentLog ? runtime.emulator.recentLog(200) : [];
+      if ((!logLines || !logLines.length) && runtime.emulator.tailLogFile) {
+        logLines = runtime.emulator.tailLogFile(200);
+      }
+    }
+    const plan = buildRepairPlan({
+      env, vmRunning: running, adbState, failure, diagnosis, logLines,
+      settings: store.getSettings(),
+    });
+    return { plan, env };
+  }
+
+  ipcMain.handle('doctor:repairPlan', async () => {
+    const snap = await currentAutoRepairSnapshot();
+    return snap.plan;
+  });
+
+  // Explicit user-initiated allowlisted repair only. Recompute the plan at
+  // execution time to prevent stale/replayed or arbitrary renderer actions.
+  ipcMain.handle('doctor:applySafeRepair', async (_e, action) => {
+    const { applySafeRepair } = require('./core/auto-repair');
+    if (typeof action !== 'string' || action.length > 40) {
+      throw new Error('Invalid repair request');
+    }
+    const snap = await currentAutoRepairSnapshot();
+    const port = Number(process.env.ANDROID_ADB_SERVER_PORT || runtime.emulator.adbPort || 5044);
+    return applySafeRepair(action, {
+      plan: snap.plan,
+      settings: store.getSettings(),
+      saveSettings: (patch) => store.saveSettings(patch),
+      runtime,
+      emulatorVersion: snap.env.emulator?.version || '',
+      adbPort: port,
+    });
+  });
+
   ipcMain.handle('doctor:selfCheck', async () => {
     const doctor = require('./core/doctor');
     const issues = [];
@@ -1723,6 +2418,32 @@ function registerIpc() {
 
   ipcMain.handle('runtime:usage', () => runtime.usage());
 
+  // Smart Performance Engine: on-demand telemetry, never transmitted.
+  ipcMain.handle('performance:sample', async (_e, rawPackage = '') => {
+    const pkg = typeof rawPackage === 'string' && validPackageName(rawPackage)
+      && store.getApps().some(a => a.package === rawPackage) ? rawPackage : '';
+    return performanceMonitor.snapshot(pkg);
+  });
+  ipcMain.handle('performance:profiles', () => {
+    const engine = store.getSettings().engine || {};
+    const raw = engine.appPerformanceProfiles || {};
+    // Expose only the user-selected presets; avoid leaking paths/logs.
+    return Object.fromEntries(Object.entries(raw).filter(([pkg, mode]) =>
+      validPackageName(pkg) && performance.validMode(mode)));
+  });
+  ipcMain.handle('performance:setProfile', (_e, args = {}) => {
+    const {pkg, mode} = args && typeof args === 'object' ? args : {};
+    if (!validPackageName(pkg) || pkg.length > 160 || !performance.validMode(mode))
+      throw new Error('Invalid app performance profile');
+    if (!store.getApps().some(app => app.package === pkg))
+      throw new Error('Only installed APKs may have performance presets');
+    const current = store.getSettings().engine?.appPerformanceProfiles || {};
+    const next = {...current, [pkg]:mode};
+    store.saveSettings({engine:{appPerformanceProfiles:next}});
+    return {ok:true,pkg,mode,appliesOnNextLaunch:true,scope:'process-priority-only'};
+  });
+
+
   // 通用确认框（渲染层统一走这里，避免各处自己拼 dialog 文案）
   ipcMain.handle('app:confirm', async (_e, opts = {}) => {
     const { response } = await dialog.showMessageBox(mainWindow || undefined, {
@@ -1756,7 +2477,19 @@ function registerIpc() {
    * 就地扩容做不到时（quickboot 差量盘）走这条：按目标容量重建 /data。
    * 会清空已装应用与存档 —— 调用方必须已经让用户明确确认过。
    */
+  async function confirmResetData() {
+    const id = store.profiles.currentId();
+    if (installBusy || launchInFlight || backupBusy || store.profileSwitching)
+      throw Error('Finish active Profile operations before a reset');
+    const result = await dialog.showMessageBox(mainWindow || undefined, {
+      type:'warning', buttons:['Cancel','Erase Android data'], cancelId:0, defaultId:0,
+      title:'Erase Android Profile data?', message:'Erase apps, saved data and snapshots in Profile ' + id + '?'
+    });
+    return result.response === 1 && id === store.profiles.currentId() &&
+      !installBusy && !launchInFlight && !backupBusy && !store.profileSwitching;
+  }
   ipcMain.handle('runtime:resetAndResize', async (_e, gb) => {
+    if (!await confirmResetData()) return {ok:false,cancelled:true};
     const res = require('./core/resources');
     const doctor = require('./core/doctor');
     const freeMB = doctor.freeDiskMB(runtime.provisioner.paths().root);
@@ -1835,6 +2568,7 @@ function registerIpc() {
   // 彻底重置安卓数据：清空 /data 用户分区 + 已装应用 + 快速启动快照，
   // AVD 还原成「刚装好系统」的干净状态。会真实删除数 GB 数据，UI 必须二次确认。
   ipcMain.handle('runtime:resetData', async () => {
+    if (!await confirmResetData()) return {ok:false,cancelled:true};
     try {
       const r = await runtime.resetAndroidData();
       if (!r.ok) return { ok: false, error: r.error };
@@ -2173,25 +2907,15 @@ function registerIpc() {
   ipcMain.handle('share:sync', async () => sharer.sync({ onLog: (m) => send('runtime:log', m) }));
   ipcMain.handle('share:open', async () => {
     const dir = store.getSettings().sharedDir;
+    checkShareFolder(dir);
     fs.mkdirSync(dir, { recursive: true });
     shell.openPath(dir);
   });
 
   /** 清理上次残留的 AVD 锁文件：会让下次启动被误判为「AVD 已被占用」而 FATAL */
-  ipcMain.handle('app:clearLocks', async () => {
-    try {
-      const avdHome = runtime.provisioner.paths().avdHome;
-      let removed = 0;
-      for (const f of fs.readdirSync(avdHome)) {
-        if (/\.lock$/i.test(f)) {
-          try { fs.rmSync(path.join(avdHome, f), { force: true }); removed++; } catch (_) { /* ignore */ }
-        }
-      }
-      return { ok: true, removed };
-    } catch (e) {
-      return { ok: false, error: e.message };
-    }
-  });
+  ipcMain.handle('app:clearLocks', () => ({
+    ok:false, error:'Close the emulator that owns this AVD lock. Restart Windows if its process is no longer visible.'
+  }));
 
   /**
    * 一键卸载 ApkStart 本体：
@@ -2204,7 +2928,7 @@ function registerIpc() {
       try { await assoc.unregisterAssociation(); } catch (_) { /* 取消关联失败不影响卸载 */ }
       const exeDir = path.dirname(process.execPath);
       // 和 updater.flavor 用同一套识别规则：electron-builder 生成的是
-      // "Uninstall ApkStart.exe"，旧代码只找 "uninstaller.exe"，
+      // "Uninstall ApkStart International.exe"，旧代码只找 "uninstaller.exe"，
       // 导致安装版点「一键卸载」被误判成便携版、只弹提示不真卸载（issue #51）。
       const unName = findUninstaller(exeDir);
       if (!unName) {
@@ -2214,11 +2938,10 @@ function registerIpc() {
       const { spawn } = require('child_process');
       // 卸载前先收掉常驻的模拟器：qemu 会锁住 resources\runtime 里的 exe/dll，
       // NSIS 删不掉就会留下半个安装目录。这里只针对「真的在卸载」，不影响日常退出。
-      try { await runtime?.emulator?.killOrphanProcesses(); } catch (_) { /* ignore */ }
+
       // 先让本程序退出，再由一个独立进程延迟 2 秒拉起卸载器：
       // 运行中的 exe 会锁住安装目录里的文件，直接拉起卸载器容易删不干净。
-      const cmd = `ping 127.0.0.1 -n 3 >nul & start "" "${uninstaller}"`;
-      spawn('cmd.exe', ['/c', cmd], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+      spawn(uninstaller, [], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
       setTimeout(() => app.quit(), 300);
       return { ok: true, portable: false };
     } catch (e) {
@@ -2226,7 +2949,7 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle('shell:open', (_e, url) => shell.openExternal(url));
+  ipcMain.handle('shell:open', (_e, url) => shell.openExternal(externalWebUrl(url)));
 
   /**
    * 打开「启用或关闭 Windows 功能」对话框。
@@ -2406,13 +3129,29 @@ function registerIpc() {
 
 // ---------------- 生命周期 ----------------
 
-const gotLock = app.requestSingleInstanceLock();
+const initialIntent = parseArgs(process.argv);
+const gotLock = app.requestSingleInstanceLock(initialIntent.launch ? {
+  shortcut: ['--launch=' + initialIntent.launch, '--profile=' + (initialIntent.profile || '')],
+} : {});
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', (_evt, argv) => {
+  app.on('second-instance', (_evt, argv, _workingDirectory, data) => {
     const args = parseArgs(argv);
-    if (args.launch) { runLaunch(args.launch); return; }
+    if (Array.isArray(data?.shortcut) && data.shortcut.length === 2 &&
+        data.shortcut.every(value => typeof value === 'string' && value.length <= 512)) {
+      args.launch = shortcutLaunch(data.shortcut);
+      args.profile = shortcutProfile(data.shortcut);
+    }
+    if (args.launch) appLog('Received shortcut for ' + args.launch + ' in Profile ' + args.profile);
+    if (args.launch && args.profile !== store.profiles.currentId()) {
+      showWindow();
+      send('toast',{type:'error',message:'Switch to the Android Profile named in this shortcut before launching it.'});
+      return;
+    }
+    if (args.launch) { runLaunch(args.launch).catch(e=>{
+      showWindow();send('toast',{type:'error',message:String(e.message||e)});
+    }); return; }
     if (args.apk) { runInstall(args.apk).catch(() => {}); return; }
     showWindow();
   });
@@ -2427,6 +3166,48 @@ if (!gotLock) {
     // 固定项显示的还是 ApkStart 的图标。
     setAumid(APP_AUMID);
     runtime = new Runtime(APP_ROOT);
+    performanceMonitor = new PerformanceMonitor(runtime);
+    let backupPortLastChecked=0;
+    const backupOptions = {
+      registry:store.profiles,
+      dataDir:store.DATA_DIR,
+      getAvdHome:()=>runtime.provisioner.paths().avdHome,
+      assertIdle:async()=>{
+        // Called repeatedly while copying/staging to catch an external VM
+        // that started after the initial preflight.
+        const bad=installBusy||deploying||updateBusy||runtime.vmStarting
+          ||runtime.installing||runtime._ensurePromise||runtime.activeApps.length
+          ||currentAppPkg||(appWin&&appWin.isOpen)||runtime.vmRunning;
+        if(bad)throw new Error('Android runtime or install task became active during backup');
+        if(await runtime.client().isOnline().catch(()=>false))
+          throw new Error('ADB is online during backup');
+        // Throttle expensive Windows tasklist/netstat to avoid one subprocess
+        // scan for every small file in a profile containing thousands of APKs.
+        if(Date.now()-backupPortLastChecked>2500){
+          const ports=await runtime.emulatorPorts();
+          if(ports.length)throw new Error('Android emulator port active during backup');
+          backupPortLastChecked=Date.now();
+        }
+      },
+      onBusy:busy=>{
+        // Recovery Vault may call EncryptedBackupCenter for nested operations.
+        // Reference count prevents an inner completion from unlocking the UI.
+        backupActiveCount=Math.max(0,backupActiveCount+(busy?1:-1));
+        backupBusy=backupActiveCount>0;
+        store.backupLocked=backupBusy;
+      },
+      onProgress:ev=>send('backup:progress',ev),
+    };
+    backupCenter = new BackupCenter(backupOptions);
+    encryptedBackupCenter = new EncryptedBackupCenter(backupOptions);
+    recoveryVault = new RecoveryVault({...backupOptions,encryptedBackupCenter});
+    safetyRetention = new SafetyRetention({vault:recoveryVault,encryptedBackupCenter});
+    disasterHealth = new DisasterHealth({vault:recoveryVault,encryptedBackupCenter});
+    restoreDrill = new RestoreDrill({vault:recoveryVault,encryptedBackupCenter});
+    recoveryAudit = new RecoveryAudit({
+      dataDir:store.DATA_DIR,getProfileId:()=>store.profiles.currentId(),
+    });
+    auditSigning = new AuditSigning({audit:recoveryAudit});
     // 启动即留一行痕迹：出问题时用户把 app.log 发过来就能看到版本与数据目录
     appLog(`start v${app.getVersion()} data=${store.DATA_DIR} pid=${process.pid}`);
 
@@ -2452,7 +3233,7 @@ if (!gotLock) {
         show: false,
         webPreferences: {
           preload: path.join(__dirname, 'splash-preload.js'),
-          contextIsolation: true, nodeIntegration: false, sandbox: false,
+          contextIsolation: true, nodeIntegration: false, sandbox: true,
         },
       });
       // 用 screen-saver 级别确保不被模拟器窗口盖住（之前 alwaysOnTop 默认 level
@@ -2674,6 +3455,10 @@ if (!gotLock) {
 
     const args = parseArgs(process.argv);
     if (args.apk) runInstall(args.apk).catch(() => {});
+    else if (args.launch && args.profile !== store.profiles.currentId()) {
+      showWindow();
+      send('toast',{type:'error',message:'Select the matching Android Profile, then open this shortcut again.'});
+    }
     else if (args.launch) await runLaunch(args.launch);
     else {
       // 没有直接启动应用：splash 在主窗口 ready 后淡出
@@ -2765,6 +3550,26 @@ if (!gotLock) {
       mainWindow.webContents.once('did-finish-load', () => {
         setTimeout(async () => {
           try {
+            if (process.argv.includes('--profiles')) {
+              const passed = await mainWindow.webContents.executeJavaScript(`
+                (async () => {
+                  const picker = document.getElementById('asi-language');
+                  const initial = picker.value;
+                  try {
+                    for (const [code, expected] of [['vi','Khởi động Android'],['zh-CN','启动运行时'],['en','Start Android runtime']]) {
+                      picker.value = code;
+                      picker.dispatchEvent(new Event('change'));
+                      await new Promise(resolve => requestAnimationFrame(resolve));
+                      if ((await window.apkstart.getSettings()).uiLocale !== code) return false;
+                      if (document.documentElement.lang !== code ||
+                          document.getElementById('btnRuntimeStart').textContent.trim() !== expected) return false;
+                    }
+                    return true;
+                  } finally { window.ASI_I18N.setLanguage(initial); }
+                })()
+              `);
+              if (!passed) throw Error('Language switch smoke failed');
+            }
             if (process.argv.includes('--setup')) {
               // 运行时面板已并入设置：--setup 与 --settings 等价，直接打开设置截图
               await mainWindow.webContents.executeJavaScript(
@@ -2790,6 +3595,26 @@ if (!gotLock) {
               );
               console.log('[smoke] dom =', dbg);
             }
+            if (process.argv.includes('--smartcheck')) {
+              // CI-only synthetic APK demo: inspect in the real renderer, without installing.
+              const fixture = process.env.ASI_SMARTCHECK_FIXTURE;
+              if (!fixture || !fs.existsSync(fixture)) throw new Error('SmartCheck fixture missing');
+              const started = await mainWindow.webContents.executeJavaScript(
+                'window.ASI_SMARTCHECK.confirm(' + JSON.stringify(fixture) + '); true;',
+              );
+              if (!started) throw new Error('SmartCheck dialog did not start');
+              let verified = false;
+              for (let i = 0; i < 35; i += 1) {
+                await new Promise((r) => setTimeout(r, 100));
+                const state = await mainWindow.webContents.executeJavaScript(
+                  "JSON.stringify({ opened: document.getElementById('smartCheckMask').classList.contains('on'), ready: !document.getElementById('smartCheckProceed').disabled, hash: document.getElementById('smartCheckDetails').textContent.includes('SHA-256') })",
+                );
+                const status = JSON.parse(state);
+                if (status.opened && status.ready && status.hash) { verified = true; break; }
+              }
+              if (!verified) throw new Error('SmartCheck did not render local APK inspection');
+              console.log('[smoke] SmartCheck visible with local SHA-256; no install triggered');
+            }
             // 窗口可能被遮挡导致拿到旧帧：强制重绘 + 连拍两帧取后一帧
             const snap = async (file) => {
               mainWindow.webContents.invalidate();
@@ -2800,6 +3625,354 @@ if (!gotLock) {
               console.log('[smoke] saved', file);
             };
             await snap(out);
+            if (process.argv.includes('--auto-repair')) {
+              await mainWindow.webContents.executeJavaScript(`
+                (async () => {
+                  document.getElementById('smartCheckCancel').click();
+                  const settings = document.getElementById('settingsMask');
+                  if (!settings.classList.contains('on')) document.getElementById('btnSettings').click();
+                  const until = async (check, message) => {
+                    const deadline = Date.now() + 30000;
+                    while (Date.now() < deadline) {
+                      if (check()) return;
+                      await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                    throw Error(message);
+                  };
+                  await until(() => settings.classList.contains('on'), 'Settings did not open');
+                  const box = document.getElementById('autoRepairResults');
+                  document.getElementById('btnAutoRepairScan').click();
+                  await until(() => {
+                    const failure = box.querySelector('.asi-ar-msg.error');
+                    if (failure) throw Error(failure.textContent);
+                    return box.querySelector('.asi-ar-item,.asi-ar-ok');
+                  }, 'Auto-Repair 2.0 did not render a diagnostic plan');
+                  document.getElementById('autoRepairSection').scrollIntoView({block:'center'});
+                })()
+              `);
+              console.log('[smoke] Auto-Repair 2.0 diagnosis rendered; no repair executed');
+              await snap(out.replace(/\.png$/i, '-auto-repair.png'));
+            }
+            if (process.argv.includes('--smart-performance')) {
+              const result = await mainWindow.webContents.executeJavaScript(
+                "(async () => {" +
+                "  const mask=document.getElementById('settingsMask');" +
+                "  if (!mask.classList.contains('on')) document.getElementById('btnSettings').click();" +
+                "  for(let i=0;i<40;i++) {" +
+                "    if(mask.classList.contains('on')) break;" +
+                "    await new Promise(r=>setTimeout(r,100));" +
+                "  }" +
+                "  document.getElementById('btnPerfStart').click();" +
+                "  let rendered=false;" +
+                "  for(let i=0;i<170;i++) {" +
+                "    await new Promise(r=>setTimeout(r,100));" +
+                "    const val=document.getElementById('perfHostRam').textContent;" +
+                "    if(val.includes('%') && document.getElementById('perfAdvice').textContent.length>6){" +
+                "      rendered=true;break;" +
+                "    }" +
+                "  }" +
+                "  document.getElementById('btnPerfStop').click();" +
+                "  document.getElementById('smartPerformanceCenter').scrollIntoView({block:'center'});" +
+                "  return {rendered,shown:mask.classList.contains('on')," +
+                "    v:document.getElementById('perfHostRam').textContent};" +
+                "})()"
+              );
+              if (!result || !result.rendered || !result.shown) {
+                throw new Error('Smart Performance Center failed host-only smoke measurement');
+              }
+              console.log('[smoke] Performance metrics rendered locally; no Android guest installed');
+              await snap(out.replace(/\.png$/i, '-smart-performance.png'));
+            }
+            if (process.argv.includes('--profiles')) {
+              const result = await mainWindow.webContents.executeJavaScript(
+                "(async () => {" +
+                "  document.getElementById('btnDoneSettings').click();" +
+                "  const before=await window.apkstart.profilesList();" +
+                "  const profile=await window.apkstart.profilesCreate('CI Smoke Profile');" +
+                "  await window.ASI_PROFILES.reload();" +
+                "  const picker=document.getElementById('profilePicker');" +
+                "  picker.value=profile.id;" +
+                "  picker.dispatchEvent(new Event('change'));" +
+                "  const after=await window.apkstart.profilesList();" +
+                "  return {stable:before.activeId==='default'&&after.activeId==='default'," +
+                "    created:after.profiles.some(x=>x.id===profile.id)," +
+                "    switchEnabled:!document.getElementById('btnSwitchProfile').disabled," +
+                "    visible:!!document.getElementById('androidProfilesBar')};" +
+                "})()"
+              );
+              if (!result || !result.stable || !result.created ||
+                  !result.switchEnabled || !result.visible) {
+                throw new Error('Android Profiles failed isolated creation UI smoke');
+              }
+              console.log('[smoke] Android Profiles created with Default untouched; no switch/Android boot');
+              await snap(out.replace(/\.png$/i, '-profiles.png'));
+            }
+            if (process.argv.includes('--backup')) {
+              // CI fixture: create a small default-profile snapshot in a safe
+              // temp folder, verify its manifest, then render the actual UI.
+              // Never perform restore against the running CI test profile.
+              const smokeData=path.join(store.DATA_DIR,'apps.json');
+              if (!fs.existsSync(smokeData)) fs.writeFileSync(smokeData,'{"apps":[]}\n');
+              const exportRoot=fs.mkdtempSync(path.join(require('os').tmpdir(),'asi-backup-ci-'));
+              // Synthetic test-only random password, never a user credential.
+              const smokeKey=require('node:crypto').randomBytes(32).toString('hex');
+              const snapshot=await encryptedBackupCenter.create(exportRoot,smokeKey);
+              const inspected=await encryptedBackupCenter.previewRestore(snapshot.path,smokeKey);
+              if(!snapshot.encrypted ||
+                 fs.existsSync(path.join(snapshot.path,'manifest.json')) ||
+                 !fs.existsSync(path.join(snapshot.path,'manifest.enc')))
+                throw new Error('Encrypted backup smoke emitted an unencrypted manifest');
+              if (!inspected || inspected.profileId !== 'default' || !inspected.token ||
+                  !Array.isArray(inspected.components)) {
+                throw new Error('Backup Center manifest verification failed in Windows smoke test');
+              }
+              const result=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  window.ASI_BACKUP.open();" +
+                "  window.ASI_BACKUP.renderPreview(" + JSON.stringify(inspected) + ");" +
+                "  const preview=document.getElementById('backupPreview');" +
+                "  const title=document.getElementById('backupPreviewTitle').textContent;" +
+                "  const details=document.getElementById('backupPreviewDetails').textContent;" +
+                "  return {shown:!preview.hidden,hasData:details.includes('SHA')||details.includes('Files:')," +
+                "    title,restoreEnabled:!document.getElementById('btnBackupRestore').disabled," +
+                "    restartHidden:getComputedStyle(document.getElementById('btnBackupRestart')).display==='none'};" +
+                "})()"
+              );
+              if(!result || !result.shown || !result.restoreEnabled || !result.restartHidden)
+                throw new Error('Backup Center preview UI did not render');
+              console.log('[smoke] AES-256-GCM backup authenticated and preview shown; no restore executed');
+              await snap(out.replace(/\.png$/i,'-backup.png'));
+              // Recovery Vault smoke: verify a synthetic local safety copy,
+              // render a read-only preview, never apply any rollback.
+              const recoveryTag=require('node:crypto').randomBytes(10).toString('hex');
+              const recoveryPath=smokeData+'.asi-'+recoveryTag+'.before-restore';
+              fs.writeFileSync(recoveryPath,'{"apps":["synthetic-recovery"]}\n',{flag:'wx'});
+              const available=await recoveryVault.list();
+              const recoveryPoint=available.points.find(x=>x.id==='restore:'+recoveryTag);
+              if(!recoveryPoint)throw new Error('Recovery Vault did not find the synthetic safety point');
+              const recoveryPreview=await recoveryVault.preview(recoveryPoint.id);
+              const shown=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  window.ASI_BACKUP.renderPreview("+JSON.stringify(recoveryPreview)+");" +
+                "  return {visible:!document.getElementById('backupPreview').hidden," +
+                "    recoveryLabel:document.getElementById('backupPreviewTitle').textContent," +
+                "    enabled:!document.getElementById('btnBackupRestore').disabled," +
+                "    findButton:!!document.getElementById('btnBackupRecoveryFind')};" +
+                "})()"
+              );
+              if(!recoveryPreview.recovery||!shown?.visible||!shown?.enabled||!shown?.findButton)
+                throw new Error('Recovery Vault read-only UI smoke failed');
+              console.log('[smoke] Recovery Vault preview rendered; no recovery applied');
+              await snap(out.replace(/\.png$/i,'-recovery.png'));
+              // Seal the same synthetic recovery point using the existing
+              // AES-256-GCM engine, verify locally and render without restore.
+              const sealed=await recoveryVault.sealPoint(recoveryPoint.id,smokeKey);
+              const sealedEntry=(await recoveryVault.listSealed()).archives[0];
+              const sealedPreview=await recoveryVault.previewSealed(sealedEntry.id,smokeKey);
+              if(!sealed.encrypted||!sealedPreview.sealed||!sealedPreview.encrypted
+                 ||!sealed.plaintextStillExists)
+                throw new Error('Encrypted Safety Vault smoke failed verification');
+              const sealedShown=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  window.ASI_BACKUP.renderPreview("+JSON.stringify(sealedPreview)+");" +
+                "  return {shown:!document.getElementById('backupPreview').hidden," +
+                "    findButton:!!document.getElementById('btnBackupSealedList')," +
+                "    label:document.getElementById('backupPreviewTitle').textContent," +
+                "    restartHidden:getComputedStyle(document.getElementById('btnBackupRestart')).display==='none'};" +
+                "})()"
+              );
+              if(!sealedShown?.shown||!sealedShown?.findButton||!sealedShown?.restartHidden)
+                throw new Error('Encrypted Safety Vault UI preview did not render');
+              console.log('[smoke] Encrypted Safety Vault authenticated; plaintext source preserved; no restore');
+              await snap(out.replace(/\.png$/i,'-sealed.png'));
+              // Feature #10 smoke is READ-ONLY: report is advisory, preview
+              // authenticates both inputs, but no cleanup IPC/apply executes.
+              const retentionReport=await safetyRetention.report(30);
+              const cleanupPreview=await safetyRetention.preview(recoveryPoint.id,sealedEntry.id,smokeKey);
+              if(!cleanupPreview.authenticated||retentionReport.automaticCleanup
+                ||retentionReport.totals.plaintextPoints!==1)
+                throw new Error('Safety retention verification failed');
+              const retentionShown=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  const pane=document.getElementById('backupRetentionPanel');pane.hidden=false;" +
+                "  window.ASI_BACKUP.renderRetention("+JSON.stringify(retentionReport)+");" +
+                "  window.ASI_BACKUP.renderCleanupPreview("+JSON.stringify(cleanupPreview)+");" +
+                "  pane.scrollIntoView({block:'center'});" +
+                "  return {summary:document.getElementById('backupRetentionSummary').textContent," +
+                "    shown:!document.getElementById('backupCleanupPreviewPanel').hidden," +
+                "    button:!document.getElementById('btnBackupCleanupApply').disabled," +
+                "    details:document.getElementById('backupCleanupDetails').textContent};" +
+                "})()"
+              );
+              if(!retentionShown?.shown||!retentionShown?.button
+                 ||!retentionShown?.summary||!retentionShown?.details.includes(sealedEntry.id))
+                throw new Error('Safety Vault retention UI smoke did not render');
+              if(!fs.existsSync(recoveryPath)||!fs.existsSync(sealed.path))
+                throw new Error('Safety retention smoke unexpectedly removed test data');
+              console.log('[smoke] Safety retention advisory and verified cleanup preview only; no deletion executed');
+              await snap(out.replace(/\.png$/i,'-retention.png'));
+              // Feature #11: detect simulated interrupted cleanup/restore.
+              // Authenticate an existing sealed archive, render the rescue
+              // preview only. NEVER execute applyRescue in Windows smoke.
+              const healthPointTag=require('node:crypto').randomBytes(10).toString('hex');
+              const healthTxnTag=require('node:crypto').randomBytes(10).toString('hex');
+              const healthQuarantine=smokeData+'.asi-'+healthPointTag+
+                '.before-restore.asi-'+healthTxnTag+'.cleanup-pending';
+              fs.writeFileSync(healthQuarantine,'{"synthetic":"cleanup interrupted"}\n',{flag:'wx'});
+              const healthStage=smokeData+'.asi-'+require('node:crypto').randomBytes(10).toString('hex')+'.stage';
+              fs.writeFileSync(healthStage,'SYNTHETIC_INCOMPLETE_STAGE',{flag:'wx'});
+              const healthPartial=path.join(await recoveryVault.sealedFolder(),
+                'ASI-Sealed-'+new Date().toISOString().slice(0,10)+'-'+
+                require('node:crypto').randomBytes(6).toString('hex')+'.partial');
+              fs.mkdirSync(healthPartial);
+              const healthReport=await disasterHealth.report();
+              const healthVerified=await disasterHealth.verifyArchive(sealedEntry.id,smokeKey);
+              const healthEntry=healthReport.quarantine.find(q=>q.rescuable);
+              if(!healthEntry||healthReport.stages.length<1||healthReport.partialArchives.length<1
+                 ||!healthVerified.authenticated||healthReport.archivesAuthenticated)
+                throw new Error('Disaster health check failed to diagnose synthetic interruptions');
+              const rescuePreview=await disasterHealth.previewRescue(healthEntry.id);
+              const healthShown=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  const pane=document.getElementById('backupHealthPanel');pane.hidden=false;" +
+                "  window.ASI_BACKUP.renderHealthReport("+JSON.stringify(healthReport)+");" +
+                "  window.ASI_BACKUP.renderRescuePreview("+JSON.stringify(rescuePreview)+");" +
+                "  pane.scrollIntoView({block:'center'});" +
+                "  return {summary:document.getElementById('backupHealthSummary').textContent," +
+                "    rescue:!document.getElementById('backupRescuePreviewPanel').hidden," +
+                "    enabled:!document.getElementById('btnBackupRescueApply').disabled};" +
+                "})()"
+              );
+              if(!healthShown?.summary||!healthShown.rescue||!healthShown.enabled)
+                throw new Error('Disaster health UI smoke did not render a manual rescue preview');
+              if(!fs.existsSync(healthQuarantine)||!fs.existsSync(healthStage)
+                 ||!fs.existsSync(healthPartial)||!fs.existsSync(sealed.path))
+                throw new Error('Disaster health smoke unexpectedly changed synthetic files');
+              console.log('[smoke] Disaster health and encrypted integrity check passed; no rescue, deletion or restore executed');
+              await snap(out.replace(/\.png$/i,'-health.png'));
+              // Feature #12: an authenticated, isolated restore rehearsal
+              // using only synthetic temporary content (never user backup
+              // plaintext or live Android userdata). Only test fixtures used.
+              const drillBefore=fs.readFileSync(smokeData,'utf8');
+              const drillReadiness=await restoreDrill.preview('sealed',sealedEntry.id,smokeKey);
+              if(!drillReadiness.authenticated||drillReadiness.guestBootTested
+                ||drillReadiness.privatePlaintextWritten)
+                throw new Error('Restore readiness did not fail closed');
+              const drillPreviewShown=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  document.getElementById('backupDrillPanel').hidden=false;" +
+                "  window.ASI_BACKUP.renderDrillPreview("+JSON.stringify(drillReadiness)+");" +
+                "  document.getElementById('backupDrillPanel').scrollIntoView({block:'center'});" +
+                "  return {visible:!document.getElementById('backupDrillPreviewPanel').hidden," +
+                "    enabled:!document.getElementById('btnBackupDrillRun').disabled};" +
+                "})()"
+              );
+              if(!drillPreviewShown?.visible||!drillPreviewShown?.enabled)
+                throw new Error('Recovery Readiness preview UI did not render');
+              await snap(out.replace(/\.png$/i,'-drill-readiness.png'));
+              const syntheticDrill=await restoreDrill.run(drillReadiness.token,smokeKey);
+              if(!syntheticDrill.ok||!syntheticDrill.syntheticSandboxCleaned
+                ||syntheticDrill.liveProfileModified||syntheticDrill.privatePlaintextWritten
+                ||syntheticDrill.guestBootTested)
+                throw new Error('Isolated synthetic restore drill failed');
+              const drillComplete=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  window.ASI_BACKUP.renderDrillResult("+JSON.stringify(syntheticDrill)+");" +
+                "  return {summary:document.getElementById('backupDrillSummary').textContent," +
+                "    noOpenPreview:document.getElementById('backupDrillPreviewPanel').hidden};" +
+                "})()"
+              );
+              if(!drillComplete?.summary||!drillComplete?.noOpenPreview
+                 ||fs.readFileSync(smokeData,'utf8')!==drillBefore||!fs.existsSync(sealed.path))
+                throw new Error('Safe restore drill changed synthetic live data or UI state');
+              console.log('[smoke] Restore Readiness & synthetic rollback drill passed; no Android files restored');
+              await snap(out.replace(/\.png$/i,'-drill.png'));
+              // Feature #13: synthetic privacy-minimized audit chain & JSON
+              // report. Existing profile and sealed source remain untouched.
+              const auditEvidence=require('node:crypto').createHash('sha256')
+                .update(sealedEntry.id).digest('hex');
+              await recoveryAudit.append('readiness-verify','passed',{
+                source:'sealed',files:drillReadiness.files,bytes:drillReadiness.bytes,
+                evidenceId:auditEvidence,bootTested:false
+              });
+              await recoveryAudit.append('restore-drill','passed',{
+                source:'synthetic',files:syntheticDrill.filesVerified,
+                bytes:syntheticDrill.bytesVerified,evidenceId:auditEvidence,
+                synthetic:true,bootTested:false
+              });
+              const auditSnapshot=await recoveryAudit.summary();
+              if(auditSnapshot.integrity!=='verified'||auditSnapshot.eventsCount<2
+                ||auditSnapshot.totals.passed<2)
+                throw new Error('Recovery audit chain failed synthetic fixture verification');
+              const auditFilePath=path.join(require('node:os').tmpdir(),
+                'asi-audit-smoke-'+require('node:crypto').randomBytes(10).toString('hex')+'.json');
+              try{
+                const exported=await recoveryAudit.exportReport(auditFilePath);
+                const raw=fs.readFileSync(auditFilePath,'utf8');
+                if(!exported.ok||raw.includes(smokeKey)
+                   ||raw.includes(smokeData)
+                   ||raw.includes(drillReadiness.token)
+                   ||!JSON.parse(raw).verification)
+                  throw new Error('Recovery verification report leaked private fixture data');
+              }finally{
+                if(fs.existsSync(auditFilePath))fs.unlinkSync(auditFilePath);
+              }
+              const auditShown=await mainWindow.webContents.executeJavaScript(
+                "(() => {" +
+                "  const pane=document.getElementById('backupAuditPanel');pane.hidden=false;" +
+                "  window.ASI_BACKUP.renderAudit("+JSON.stringify(auditSnapshot)+");" +
+                "  pane.scrollIntoView({block:'center'});" +
+                "  return {summary:document.getElementById('backupAuditSummary').textContent," +
+                "    history:document.getElementById('backupAuditEvents').textContent," +
+                "    exportButton:!!document.getElementById('btnBackupAuditExport')};" +
+                "})()"
+              );
+              if(!auditShown?.summary.includes('2 events')||!auditShown?.history
+                 ||!auditShown?.exportButton||!fs.existsSync(sealed.path))
+                throw new Error('Recovery Audit Trail UI smoke did not render verified history');
+              console.log('[smoke] Sanitized audit chain and JSON export verified with synthetic evidence only');
+              await snap(out.replace(/\.png$/i,'-audit.png'));
+              // Feature #14: opt-in signing on disposable CI profile only;
+              // no private key, password or profile data in the screenshots.
+              const signIdentity=await auditSigning.initialize(smokeKey);
+              const signedCheckpoint=path.join(require('node:os').tmpdir(),
+                'asi-checkpoint-smoke-'+require('node:crypto').randomBytes(8).toString('hex')+'.json');
+              const signedReport=path.join(require('node:os').tmpdir(),
+                'asi-signed-report-smoke-'+require('node:crypto').randomBytes(8).toString('hex')+'.json');
+              try{
+                const outCheckpoint=await auditSigning.exportCheckpoint(signedCheckpoint,smokeKey);
+                const outReport=await auditSigning.exportSignedReport(signedReport,smokeKey);
+                const verified=await auditSigning.verifyExternal(signedCheckpoint);
+                const verifiedReport=await auditSigning.verifyExternal(signedReport);
+                const signingStatus=await auditSigning.status();
+                if(!outCheckpoint.ok||!outReport.ok||!verified.signatureValid
+                  ||!verified.localHistoryMatches||!verifiedReport.signatureValid
+                  ||!signingStatus.initialized||signIdentity.fingerprint!==signingStatus.fingerprint)
+                  throw new Error('Signed recovery checkpoint smoke verification failed');
+                const rawCheckpoint=fs.readFileSync(signedCheckpoint,'utf8');
+                const rawReport=fs.readFileSync(signedReport,'utf8');
+                if(rawCheckpoint.includes(smokeKey)||rawReport.includes(smokeKey)
+                   ||rawCheckpoint.includes(smokeData)||rawReport.includes(smokeData))
+                  throw new Error('Signing material leaked sensitive synthetic data into exported JSON');
+                const signedShown=await mainWindow.webContents.executeJavaScript(
+                  "(() => {" +
+                  "  window.ASI_BACKUP.renderSigningStatus("+JSON.stringify(signingStatus)+");" +
+                  "  window.ASI_BACKUP.renderSigningVerification("+JSON.stringify(verified)+");" +
+                  "  document.getElementById('backupAuditPanel').scrollIntoView({block:'center'});" +
+                  "  return {fingerprint:document.getElementById('backupSigningStatus').textContent," +
+                  "    valid:document.getElementById('backupSigningResult').textContent};" +
+                  "})()"
+                );
+                if(!signedShown?.fingerprint.includes(signIdentity.fingerprint)
+                   ||!signedShown?.valid.includes(signIdentity.fingerprint))
+                  throw new Error('Signed checkpoint verification UI did not render');
+                console.log('[smoke] Ed25519 signed checkpoint/report verified with synthetic audit history only');
+                await snap(out.replace(/\.png$/i,'-signed.png'));
+              }finally{
+                for(const f of [signedCheckpoint,signedReport])
+                  if(fs.existsSync(f))fs.unlinkSync(f);
+              }
+            }
             if (process.argv.includes('--perf')) {
               // 拍一张「性能与资源占用」区（设置页里控件最多的一块）
               await mainWindow.webContents.executeJavaScript(
@@ -2822,7 +3995,9 @@ if (!gotLock) {
               await snap(out.replace(/\.png$/i, '-about.png'));
             }
           } catch (e) {
-            console.error('[smoke] 截图失败', e);
+            smokeExitCode = 1;
+            appLog('Packaged smoke failed: ' + (e.stack || e.message || String(e)));
+            console.error('[smoke]', e);
           }
           quitting = true;
           app.quit();
@@ -2836,7 +4011,7 @@ if (!gotLock) {
   app.on('window-all-closed', () => {
     // 正常关闭窗口时只隐藏到托盘（close 事件已拦截），
     // 走到这里说明是真正要退出，必须放行，否则进程会残留并占住单实例锁。
-    if (quitting) app.exit(0);
+    if (quitting) app.exit(smokeExitCode);
   });
 
   let quitReady = false;
@@ -2858,7 +4033,8 @@ if (!gotLock) {
         runtime?.dispose();
         // 隐藏的图标解码窗口也算一个窗口，不关掉会让 window-all-closed 永远不触发
         try { if (decodeWindow && !decodeWindow.isDestroyed()) decodeWindow.destroy(); } catch (_) { /* ignore */ }
-        app.quit();
+        if (smokeExitCode) app.exit(smokeExitCode);
+        else app.quit();
       };
       setTimeout(finish, 400);
       return;
