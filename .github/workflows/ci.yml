@@ -97,8 +97,12 @@ jobs:
           if (!($bom.components | Where-Object { $_.name -eq 'electron' -and $_.version -eq $electron })) { throw 'Shipped Electron is missing from SBOM' }
       - name: Install pinned Electron for Windows packaging
         run: npm exec --offline -- install-electron
-      - name: Package Windows portable preview
-        run: npm run pack
+      - name: Package Windows portable preview with a local-only engine fixture
+        shell: pwsh
+        run: |
+          $fixture = New-Item -ItemType Directory -Path (Join-Path 'engine' ([guid]::NewGuid().ToString('N')))
+          'local fixture' | Set-Content -LiteralPath (Join-Path $fixture.FullName 'image.bin')
+          npm run pack
       - name: Verify portable executable and bundled code
         shell: pwsh
         run: |
@@ -107,6 +111,14 @@ jobs:
           if (!(Test-Path $exe)) { throw "Portable EXE not produced: $exe" }
           $ui = Join-Path $root 'resources/app/src/ui/index.html'
           if (!(Test-Path $ui)) { throw "Renderer files missing: $ui" }
+          $app = Join-Path $root 'resources/app'
+          $engineFiles = @(Get-ChildItem -LiteralPath (Join-Path $app 'engine') -Force)
+          if ($engineFiles.Count -ne 1 -or $engineFiles[0].Name -cne 'README.md') { throw 'Unexpected bundled engine contents' }
+          foreach ($file in @('LICENSE', 'CREDITS.md', 'engine/README.md')) {
+            if ((Get-FileHash -LiteralPath (Join-Path $app $file)).Hash -ne (Get-FileHash -LiteralPath $file).Hash) {
+              throw "Bundled file differs from the source: $file"
+            }
+          }
           Write-Host "Preview built at $exe"
       - name: Smoke-run SmartCheck with synthetic APK (no Android provisioning)
         continue-on-error: false

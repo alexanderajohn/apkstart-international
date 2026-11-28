@@ -81,15 +81,11 @@ for (const rel of ['d3dcompiler_47.dll']) {
   } catch (_) { /* 本来就没有 */ }
 }
 
-// 2. 应用本体
-// assets/ 里是随包分发的资源：PinyinIME.apk（中文输入法），开机时由
-// Runtime.prepare() 静默装进安卓。漏掉它用户就打不了中文。
 console.log('复制应用…');
 const appDir = path.join(OUT, 'resources', 'app');
 // Preview artifacts do not redistribute the upstream-bundled Chinese IME APK.
-for (const item of ['package.json', 'src', 'LICENSE']) {
-  const src = path.join(ROOT, item);
-  if (fs.existsSync(src)) copy(src, path.join(appDir, item));
+for (const item of ['package.json', 'src', 'LICENSE', 'CREDITS.md']) {
+  copy(path.join(ROOT, item), path.join(appDir, item));
 }
 
 // Portable runtime needs the native LZMA package for on-demand image expansion.
@@ -100,21 +96,9 @@ for (const name of ['lzma', 'lzma-win32-x64-msvc']) {
   }
 }
 
-// 3. 可选目录
-// engine/ 下只有文档类内容随包分发；大体积运行时组件（emulator、system-images、
-// platform-tools、avd）由应用首次启动时自动从官方源下载，不进安装包。
-// tools/ 是开发期自检脚本（黑窗实测、测速），用户用不到，不再随包分发。
-const ENGINE_SKIP = new Set(['emulator', 'system-images', 'platform-tools', 'avd', 'aehd', '_dl', 'qemu']);
-for (const opt of ['engine']) {
-  const src = path.join(ROOT, opt);
-  if (!fs.existsSync(src)) continue;
-  const dest = path.join(appDir, opt);
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    if (opt === 'engine' && ENGINE_SKIP.has(entry.name)) continue;
-    fs.cpSync(path.join(src, entry.name), path.join(dest, entry.name), { recursive: true });
-  }
-}
+// The source engine directory may also hold a developer's local Android runtime.
+fs.mkdirSync(path.join(appDir, 'engine'), { recursive: true });
+copy(path.join(ROOT, 'engine', 'README.md'), path.join(appDir, 'engine', 'README.md'));
 
 // 3.5 完整版：把运行时（emulator + platform-tools + 系统镜像）也放进去
 if (FULL) {

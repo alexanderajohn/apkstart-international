@@ -115,7 +115,7 @@ test('preview package identity avoids upstream collisions', () => {
 
 test('portable preview excludes redistributable third-party IME bundle', () => {
   const pack=fs.readFileSync(path.join(root,'build/pack.js'),'utf8');
-  assert.ok(pack.includes("['package.json', 'src', 'LICENSE']"));
+  assert.ok(pack.includes("['package.json', 'src', 'LICENSE', 'CREDITS.md']"));
   assert.ok(pack.includes('lzma-win32-x64-msvc'));
   assert.ok(pack.includes('ApkStart-International-win64-portable'));
 });

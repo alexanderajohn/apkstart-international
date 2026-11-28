@@ -41,6 +41,12 @@ if ($PreviousSetup) {
     if ((Install-Candidate $PreviousSetup) -ne $before) {throw 'Rollback did not restore the previous program'}
     if ((Install-Candidate $Setup) -ne $current) {throw 'Re-upgrade changed the program'}
 } elseif ((Install-Candidate $Setup) -ne $current) {throw 'Reinstallation changed the program'}
+foreach ($file in @('LICENSE', 'CREDITS.md', 'engine/README.md')) {
+    $installed = Join-Path $target "resources/app/$file"
+    if ((Get-FileHash -LiteralPath $installed).Hash -ne (Get-FileHash -LiteralPath $file).Hash) {
+        throw "Installed attribution or engine documentation differs from the checkout: $file"
+    }
+}
 $uninstaller = @(Get-ChildItem -LiteralPath $target -Filter 'Uninstall*.exe')
 if ($uninstaller.Count -ne 1) {throw 'Expected one uninstaller'}
 $exit = Start-Process -FilePath $uninstaller[0].FullName -ArgumentList @('/S',"_?=$target") -Wait -PassThru
