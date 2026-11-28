@@ -9,7 +9,7 @@
 
 The [tester guide](docs/preview/TESTING.en.md) covers the unsigned evaluation package and its known limits.
 
-Download the Portable or Setup artifact for a **verified revision** in the [build and verification table](docs/DEVELOPMENT_PROGRESS.md). Extract the Portable ZIP into its own directory and open `ApkStart International.exe`. For Setup, verify the executable against its included SHA-256 file first. Back up existing Profiles and AVDs before testing upgrades.
+Download the Portable or Setup artifact for a **verified revision** in the [build and verification table](docs/DEVELOPMENT_PROGRESS.md). Extract the Portable ZIP into its own directory and open `ApkStart International.exe`. For Setup, verify the executable against the revision-specific SHA-256 in the [candidate guide](docs/CANDIDATE_VALIDATION.md). Back up existing Profiles and AVDs before testing upgrades.
 
 See the [installation, rollback and comparison guide](docs/CANDIDATE_VALIDATION.md), [Android hardware procedure](docs/LIVE_ANDROID_VALIDATION.md) and [release blockers](docs/RELEASE_BLOCKERS.md). The Windows packages contain the launcher. Android SDK components are downloaded separately from Google's indexes.
 

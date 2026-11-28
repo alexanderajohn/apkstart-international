@@ -11,7 +11,7 @@ ApkStart International hướng tới trải nghiệm chạy ứng dụng Androi
 **Phiên bản 1.0.0-rc.1 đang ở trạng thái Release Blocked.** GitHub Actions đã chạy APK thật trên Android 14 với Windows Server và Linux. Kiểm thử trên máy Windows 10/11, kiểm tra đầy đủ ba ngôn ngữ và ký bản phân phối vẫn còn mở.
 
 1. Chọn một commit đã đạt Windows CI trong [bảng kết quả và tải xuống](docs/DEVELOPMENT_PROGRESS.md). Tải **Portable** hoặc **Setup** ở đúng dòng của commit đó. Cả hai bản đều chưa ký.
-2. Với Portable, giải nén toàn bộ vào một thư mục rồi mở `ApkStart International.exe`. Với Setup, giải nén và đối chiếu SHA-256 của tệp cài đặt với `SHA256SUMS`. Sao lưu Profile và AVD trước khi thử nâng cấp.
+2. Với Portable, giải nén toàn bộ vào một thư mục rồi mở `ApkStart International.exe`. Với Setup, giải nén và đối chiếu SHA-256 của tệp cài đặt với mã băm của đúng commit trong [hướng dẫn xác minh](docs/CANDIDATE_VALIDATION.md). Sao lưu Profile và AVD trước khi thử nâng cấp.
 3. Mở ứng dụng và làm theo hướng dẫn thiết lập Android. Bộ công cụ Android và ảnh hệ thống được tải riêng. Xem [hướng dẫn cài đặt và khôi phục phiên bản](docs/CANDIDATE_VALIDATION.md).
 
 ## SmartCheck trước khi cài

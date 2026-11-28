@@ -8,6 +8,7 @@
   },
   "setup": {
     "id": "15220994335",
-    "sha256": "770cf45188bb3e1121ffdbaa37d5989e14c0e0ae28712c925fbdef8edafd7dab"
+    "sha256": "770cf45188bb3e1121ffdbaa37d5989e14c0e0ae28712c925fbdef8edafd7dab",
+    "executableSha256": "ec4c8a4db200bd1c3de1e6da53353bf542c6ed28a76d8f230f162cbd219d3bae"
   }
 }

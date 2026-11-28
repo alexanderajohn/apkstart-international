@@ -218,9 +218,19 @@ jobs:
           $setup = @(Get-ChildItem 'dist/release/*-Setup.exe')
           if ($setup.Count -ne 1) { throw 'Expected one Setup executable' }
           ./scripts/asi/setup-smoke.ps1 -Setup $setup[0].FullName -PreviousSetup $env:ASI_PREVIOUS_SETUP
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Create and validate the Setup download manifests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = @(Get-ChildItem -File 'dist/release/*-Setup.exe')
+          if ($setup.Count -ne 1) { throw 'Expected one tested Setup executable' }
           $hash = (Get-FileHash $setup[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $($setup[0].Name)" | Set-Content -Encoding ascii dist/release/SHA256SUMS
+          $expected = "$hash  $($setup[0].Name)"
+          $expected | Set-Content -Encoding ascii dist/release/SHA256SUMS
+          if ((Get-Content -Raw dist/release/SHA256SUMS).Trim() -cne $expected) { throw 'Setup checksum missing or mismatched' }
+          foreach ($manifest in @('sbom.cdx.json','candidate-files.json')) {
+              if ((Get-Item -LiteralPath $manifest).Length -le 0) { throw "Empty manifest: $manifest" }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: ApkStart-International-Windows-Setup-preview

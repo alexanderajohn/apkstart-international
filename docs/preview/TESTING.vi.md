@@ -12,7 +12,7 @@ Gói này dành cho người thử chức năng mở ứng dụng Android từ W
    Get-FileHash .\portable.zip, .\setup.zip -Algorithm SHA256
    ```
 
-2. Chọn **một** cách dùng. Với Portable, giải nén toàn bộ `portable.zip` vào thư mục riêng và mở `ApkStart International.exe`. Với Setup, giải nén `setup.zip` rồi mở tệp `*-Setup.exe` trong thư mục `dist/release`. Nếu máy yêu cầu chữ ký của nhà phát hành, dừng tại đó.
+2. Chọn **một** cách dùng. Với Portable, giải nén toàn bộ `portable.zip` vào thư mục riêng và mở `ApkStart International.exe`. Với Setup, giải nén `setup.zip` rồi mở tệp `*-Setup.exe` trong thư mục `dist/release`. Đối chiếu SHA-256 của EXE với `SETUP-EXE-SHA256.txt` ở thư mục ngoài cùng trước khi chạy. Nếu máy yêu cầu chữ ký của nhà phát hành, dừng tại đó.
 3. Dùng một **Profile thử nghiệm mới**. Giữ bản sao lưu ngoại tuyến của các Profile có dữ liệu quan trọng. Trình thiết lập lấy Android Emulator và ảnh hệ thống riêng từ Google.
 4. Với APK có nguồn gốc rõ ràng, kiểm tra tên gói, Profile và SHA-256 trong hộp thoại trước khi xác nhận. Mở shortcut của ứng dụng, thử thu nhỏ rồi khôi phục và mở lại ứng dụng sau khi khởi động lại ApkStart.
 

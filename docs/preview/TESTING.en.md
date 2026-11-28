@@ -5,7 +5,7 @@
 This kit contains the original Portable and Setup archives from commit `2df10a0ab7141b7e214c5c15b40f826963ef7ab1`. The tester workflow downloads both archives, checks their pinned hashes, verifies the Portable inventory and exercises both downloaded packages on Windows Server 2025.
 
 1. Sign in to GitHub, download **ApkStart-International-Windows-Tester-Preview** and extract it into a new folder. Run `Get-FileHash .\portable.zip, .\setup.zip -Algorithm SHA256` in PowerShell and compare the results with `SHA256SUMS.txt`.
-2. Choose one package. Extract all of `portable.zip` to a separate directory and open `ApkStart International.exe`, or extract `setup.zip` and run the `*-Setup.exe` file under `dist/release`. If your system requires a publisher signature, stop here.
+2. Choose one package. Extract all of `portable.zip` to a separate directory and open `ApkStart International.exe`, or extract `setup.zip` and run the `*-Setup.exe` file under `dist/release`. Compare the hash of the extracted EXE with `SETUP-EXE-SHA256.txt` in the outer kit before starting the installer. If your system requires a publisher signature, stop here.
 3. Start with a new test Profile. Back up existing Profiles offline before trying an upgrade. The Android SDK and system image are obtained separately from Google.
 4. Open a signed APK from a trusted source. Check the package name, Profile and SHA-256 in the approval dialog. Open the generated shortcut, minimize and restore the window, then try reopening it after restarting ApkStart.
 
